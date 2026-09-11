@@ -6,6 +6,7 @@
   "engines": {
     "node": ">=20"
   },
+  "packageManager": "pnpm@10.16.1",
   "scripts": {
     "dev:api": "pnpm --filter @devforge/api dev",
     "dev:frontend": "pnpm --filter @devforge/frontend dev",
@@ -16,6 +17,6 @@
     "typecheck": "pnpm --filter @devforge/api typecheck && pnpm --filter @devforge/frontend typecheck && pnpm --filter @devforge/integration-tests typecheck"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "prisma"]
+    "onlyBuiltDependencies": ["esbuild", "prisma", "bcrypt", "@prisma/engines"]
   }
 }
