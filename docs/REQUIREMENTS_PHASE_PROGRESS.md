@@ -287,7 +287,8 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     real-HTTP integration tests already re-verified in Milestone 6, every test this phase
     added is green together, not just individually.
   - Test users/projects from the Docker verification deleted afterward.
-- Commit: recorded below once made.
+- Commit: `acd1026` — "feat: wire AI_SERVICE_URL/ANTHROPIC_API_KEY into Docker Compose,
+  update docs — Phase 2 complete".
 
 ## Phase 2 (Requirements Analysis): complete
 
