@@ -18,7 +18,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 6. Implement project creation, listing and detail retrieval
 - [x] 7. Add authentication and project ownership tests
 - [x] 8. Scaffold the React frontend and design tokens
-- [ ] 9. Wire register and login pages to the real API
+- [x] 9. Wire register and login pages to the real API
 - [ ] 10. Wire project list, create project and project overview pages
 - [ ] 11. Add the integration test for register → login → create project → list project
 - [ ] 12. Add Docker Compose verification and update the README
@@ -245,7 +245,37 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `1882f6d` — "feat(frontend): scaffold React/TypeScript app with design tokens".
 
 ### 9. Wire register and login pages to the real API
-(pending)
+- Files: `frontend/src/services/apiClient.ts`, `frontend/src/services/authApi.ts`,
+  `frontend/src/types/user.ts`, `frontend/src/hooks/useAuth.tsx`,
+  `frontend/src/components/RequireAuth.tsx`, `frontend/src/pages/{Register,Login,
+  ProjectsPlaceholder}.tsx` + their `.test.tsx` files, `frontend/src/vite-env.d.ts`,
+  `frontend/src/App.tsx` (routes + AuthProvider), `frontend/.env` (not committed).
+- `ProjectsPlaceholder.tsx` is a deliberate, clearly-labeled stand-in for the real Projects
+  page (Milestone 10) — just enough ("signed in as X, workspace built next" + logout) that
+  this milestone's register/login flow has somewhere real to land and is testable end-to-end
+  on its own, not a claim that project management works yet.
+- Bug caught and fixed before running anything: `apiRequest()` called `res.json()`
+  unconditionally; logout returns 204 with an empty body, which throws on `.json()` and would
+  have made every logout surface as a false `UNKNOWN_ERROR`. Added an explicit 204
+  short-circuit before the JSON parse.
+- Commands run and results:
+  - `pnpm exec tsc -b` (frontend) → clean.
+  - `pnpm exec eslint .` (frontend) → 1 warning (react-refresh, for exporting both
+    `AuthProvider` and `useAuth` from one file — the standard pattern for this kind of hook,
+    not a defect), 0 errors.
+  - `pnpm exec vitest run` (frontend) → `8 passed (8)` across Button/Register/Login tests:
+    client-side validation blocks the API call; valid submission calls register/login with
+    the right payload; server error messages (EMAIL_TAKEN, INVALID_CREDENTIALS) render;
+    submit button disables while the request is pending.
+  - Manual: started both the api and frontend dev servers, drove the real browser with a
+    throwaway Playwright script — registered a new user through the actual `/register` UI,
+    confirmed redirect to `/projects` showing the real registered email, clicked Log out,
+    confirmed redirect to `/login`, logged back in with the same credentials, confirmed
+    redirect to `/projects` again. Verified via `psql` that the user really exists in
+    Postgres, then deleted the test row. Zero uncaught page errors (`pageerror` listener);
+    the two console entries were expected network-level 401 logs from the initial "am I
+    logged in" check on page load, not exceptions.
+- Commit: `b5ecf37` — "feat(frontend): wire register and login pages to the real API".
 
 ### 10. Wire project list, create project and project overview pages
 (pending)
