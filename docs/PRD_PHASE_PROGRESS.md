@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. AI-service PRD contract/provider
 - [x] 4. API endpoints (Node)
 - [x] 5. Frontend PRD flow
-- [ ] 6. Tests
+- [x] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
 
@@ -242,7 +242,64 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `0391502` — "feat(frontend): add PRD section with dependency, generate, and version flows".
 
 ### 6. Tests
-(pending)
+- ai-service pytest coverage for PRD (`PROVIDER_NOT_CONFIGURED` real for real, `FakePrdProvider`
+  success/validation-error paths via monkeypatch, `AIResponseInvalidError`/`ProviderRequestError`
+  → 502) was already written and verified in Milestone 3 (`ai-service/tests/test_prd.py`,
+  8 cases, 15 total in the suite) — not repeated here.
+- New files this milestone: `api/src/routes/prd.test.ts` (Supertest, mocking only the outbound
+  `fetch()` to ai-service — mirrors `requirements.test.ts` exactly), `frontend/src/components/
+  PrdSection.test.tsx` (Vitest + RTL, mocking `requirementsApi`/`prdApi` — mirrors
+  `RequirementsSection.test.tsx`), `tests/prd.test.ts` (real HTTP integration, mirrors
+  `requirements.test.ts`).
+- `api/src/routes/prd.test.ts` — 17 cases: 401 without a session; 404 for a project owned by
+  someone else; 400 `NO_ACTIVE_REQUIREMENTS` with no requirements (confirms `fetch` is never
+  called — the dependency guard fires before any ai-service call); successful generate from a
+  mocked ai-service response, asserting `sourceRequirementsVersionId` matches the seeded active
+  requirements version; a real `PROVIDER_NOT_CONFIGURED` ai-service response mapped to
+  `503 AI_PROVIDER_UNAVAILABLE` with nothing persisted; `502 AI_SERVICE_UNREACHABLE` on a
+  network failure; list/get/update/activate/compare coverage mirroring the requirements test
+  file's shape one-for-one (400 malformed id, 404 missing, in-place PATCH update, 400 invalid
+  content shape, single-active-version invariant on activate, structural diff on compare with
+  the `goals` field, 400 comparing a version against itself, 404 for a foreign id). Requirements
+  used as the dependency are seeded through the real `/requirements/analyze` endpoint (itself
+  behind a mocked `fetch`), not a direct Prisma insert, so the seeded state is exactly what that
+  endpoint actually produces.
+- `frontend/src/components/PrdSection.test.tsx` — 7 cases: blocked state renders the dependency
+  message with no Generate control anywhere in the DOM; list-load failure shows the error state
+  with retry; empty state shows the single "Generate PRD from Requirements v{N}" button;
+  generation failure surfaces the real error message and stays in the empty state (no fabricated
+  success content rendered); populated state renders the active version's content and version
+  list with no "Make active" button on the active version; switching to a non-active version and
+  activating it calls `activatePrdVersionRequest` with the right ids; editing and saving calls
+  `updatePrdVersionRequest` with the edited content and surfaces a server error on failure.
+- `tests/prd.test.ts` — real HTTP integration against genuinely running api/ai-service/Postgres.
+  Because no `ANTHROPIC_API_KEY` is configured in this environment, requirements analysis itself
+  cannot succeed (established in the Phase 2 integration test), so the project used here
+  genuinely has zero requirements versions — the real path this test exercises. Asserts:
+  registering and creating a project works over real HTTP; the project's requirements list is
+  genuinely empty; calling `POST /prd/generate` returns the real `400 NO_ACTIVE_REQUIREMENTS`
+  (not a provider error masking the actual dependency problem); nothing was persisted; and,
+  as a check that this environment's state hasn't silently changed, a direct call to
+  ai-service's own `/prd/generate` still genuinely returns `503 PROVIDER_NOT_CONFIGURED`.
+- Commands run and results:
+  - `cd api && pnpm exec vitest run src/routes/prd.test.ts` → `17 passed (17)`.
+  - `cd api && pnpm exec vitest run` (full suite) → `60 passed (60)` (43 pre-existing + 17 new).
+  - `cd api && pnpm exec tsc --noEmit` → clean. `pnpm exec eslint .` → clean.
+  - `cd frontend && pnpm exec vitest run src/components/PrdSection.test.tsx` → `7 passed (7)`.
+  - `cd frontend && pnpm exec vitest run` (full suite) → `30 passed (30)` (23 pre-existing + 7
+    new).
+  - `cd frontend && pnpm exec tsc --noEmit` → clean. `pnpm exec eslint .` → clean (one
+    pre-existing, unrelated warning in `useAuth.tsx`).
+  - Started fresh api (:4000) and ai-service (:8001) instances against the real Docker Postgres
+    (no `ANTHROPIC_API_KEY`), after confirming both ports were free.
+  - `cd tests && pnpm exec vitest run prd.test.ts` → `1 passed (1)`.
+  - `cd tests && pnpm exec vitest run` (full suite) → `4 passed (4)` (register-login-project,
+    requirements, prd). `pnpm exec tsc --noEmit` → clean.
+  - Confirmed no leftover `*integration-test*` users in Postgres afterward (the test's own
+    `afterAll` deleted its seeded user).
+  - Killed both manually-started processes by exact PID; confirmed ports 4000/8001 free
+    afterward with no orphaned children this time.
+- Commit: `<pending>` — "test(api,frontend,tests): add PRD generation, versioning, and comparison coverage".
 
 ### 7. Docker verification
 (pending)
