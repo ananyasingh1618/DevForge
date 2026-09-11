@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Initialize Git and scaffold the repository
 - [x] 2. Create the API and implement GET /health
-- [ ] 3. Add PostgreSQL and Prisma
+- [x] 3. Add PostgreSQL and Prisma
 - [ ] 4. Add users, sessions and projects tables
 - [ ] 5. Implement register, login, logout and /auth/me
 - [ ] 6. Implement project creation, listing and detail retrieval
@@ -72,7 +72,49 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `16769b0` — "feat(api): scaffold Express app with GET /health".
 
 ### 3. Add PostgreSQL and Prisma
-(pending)
+- Files: `docker-compose.yml` (postgres service), `api/prisma.config.ts`,
+  `api/prisma/schema.prisma` (datasource + generator only, no models yet),
+  `api/src/lib/prisma.ts`, edits to `api/src/env.ts` (DATABASE_URL/SESSION_SECRET now
+  required), `api/vitest.config.ts` (fake test env vars), `.env.example` and `api/.env`
+  (not committed).
+- Blocking technical issue hit and resolved without needing your input (not a product
+  decision, a tooling fact-finding problem): the installed Prisma CLI auto-resolved to a
+  `8.0.0-rc.13` pre-release; pinned both `prisma` and `@prisma/client` to the latest actual
+  stable release, `7.10.0`. Prisma 7 turned out to have two breaking changes from the
+  tutorials/docs most people know: (1) the datasource `url` can no longer live in
+  `schema.prisma` — it moved to a `prisma.config.ts` used only by the Migrate CLI; (2)
+  `PrismaClient` now refuses to construct without an explicit driver adapter at runtime, so
+  `@prisma/adapter-pg` + `pg` were added and `prisma.ts` passes `new PrismaPg({ connectionString })`
+  into the client constructor.
+- Second issue hit and resolved: this machine already runs a native Homebrew
+  `postgresql@17` service bound to `127.0.0.1:5432`/`[::1]:5432` for unrelated projects.
+  Docker's Postgres container was silently shadowed by it on `localhost`. Fixed by mapping
+  the container to host port **5433** instead (`docker-compose.yml`, `.env.example`,
+  `api/.env`, `api/vitest.config.ts` all updated) — the native service was left completely
+  untouched.
+- Commands run and results:
+  - `open -a Docker` + poll `docker info` → Docker Desktop came up in ~10s.
+  - `docker compose up -d postgres` → image pulled, container started.
+  - `docker inspect --format='{{.State.Health.Status}}' devforge-postgres-1` → `healthy`.
+  - `PGPASSWORD=devforge psql -h localhost -p 5433 -U devforge -d devforge -c "SELECT current_user, current_database();"` →
+    returned `devforge | devforge` (after the port fix; the pre-fix attempt on 5432 failed
+    with `role "devforge" does not exist`, which was the native-Postgres-shadowing symptom).
+  - `pnpm exec prisma validate` → `The schema at prisma/schema.prisma is valid`.
+  - `pnpm exec prisma generate` → generated into
+    `node_modules/.pnpm/@prisma+client@7.10.0.../node_modules/@prisma/client` (resolves via
+    the normal `@prisma/client` import).
+  - A throwaway `tsx` script importing the real `src/lib/prisma.ts` and running
+    `prisma.$queryRawUnsafe("SELECT 1 as ok")` → `CONNECTION_OK [{"ok":1}]`.
+  - `pnpm exec prisma migrate dev --name init` → `Already in sync, no schema change or
+    pending migration was found` (expected — no models exist yet; migration history creation
+    is exercised for real in Milestone 4).
+  - `pnpm --filter @devforge/api typecheck` → clean.
+  - `pnpm --filter @devforge/api lint` → clean.
+  - `pnpm --filter @devforge/api test` → `2 passed (2)`.
+  - Manual: `pnpm dev` in background, `curl -i http://localhost:4000/health` → `200
+    {"data":{"status":"ok"}}` (confirms the server still boots now that DATABASE_URL/
+    SESSION_SECRET are required env vars); server stopped afterward.
+- Commit: `bb2cdc2` — "feat(api): wire up PostgreSQL and Prisma".
 
 ### 4. Add users, sessions and projects tables
 (pending)
