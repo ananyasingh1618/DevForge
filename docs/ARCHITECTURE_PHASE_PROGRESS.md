@@ -10,7 +10,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration
-- [ ] 3. ai-service architecture contract/provider
+- [x] 3. ai-service architecture contract/provider
 - [ ] 4. API endpoints (Node)
 - [ ] 5. Frontend architecture flow
 - [ ] 6. Tests
@@ -80,7 +80,49 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `6548f2f` — "feat(api): add architecture_versions data model and migration".
 
 ### 3. ai-service architecture contract/provider
-(pending)
+- Files: `ai-service/app/schemas.py` (added `ArchitectureContent`, `GenerateArchitectureRequest`
+  — reusing `PrdContent` as-is for the input, exactly how `GeneratePrdRequest` reused
+  `RequirementsContent` — and `GenerateArchitectureResponse`),
+  `ai-service/app/agents/architecture/{__init__,provider,router}.py`, `ai-service/main.py`
+  (wires the new router), `ai-service/tests/test_architecture.py`. Also corrected two stale
+  docstrings found while touching this area: `ai-service/app/agents/__init__.py` still said
+  "PRD/architecture generation are not [implemented]" (true when written in Phase 2, false
+  since Phase 3 shipped PRD — never updated then) and `ai-service/app/agents/prd/__init__.py`
+  said architecture "remains not implemented"; both corrected as part of this milestone's
+  change, not a separate cleanup.
+- `ArchitectureProvider` is its own ABC, not a shared generic one with `PrdProvider` — same
+  reasoning as Phase 3: input/output shapes genuinely differ (`PrdContent` in,
+  `ArchitectureContent` out), so a shared ABC would be premature abstraction for two call
+  sites. What's genuinely shared — `get_anthropic_api_key`/`ProviderNotConfiguredError` — was
+  already written generically enough in Milestone 3 of Phase 3 to call unmodified here;
+  confirmed by reading it before using it, not assumed.
+- Commands run and results:
+  - `.venv/bin/python -m pytest tests/ -v` (before adding new architecture tests, right after
+    the schema addition) → `15 passed` — confirms the schema/router changes are fully
+    behavior-preserving for requirements and PRD.
+  - Manual (real, unmocked): started uvicorn with `ANTHROPIC_API_KEY` genuinely unset —
+    `GET /health` → `{"status":"ok"}`; `POST /architecture/generate` with `{}` → real `400`
+    "Field required" on `prd`; with `{"prd":{"overview":123}}` (wrong type) → real `400` with
+    Pydantic field-level detail for both the type error and the missing
+    `problem_statement`; with a fully valid PRD body → real `503
+    {"error":{"code":"PROVIDER_NOT_CONFIGURED","message":"...to enable architecture
+    generation."}}` (the feature-specific message); re-curled `/prd/generate` and
+    `/requirements/analyze` and confirmed both messages are byte-for-byte unchanged after
+    wiring in the third router.
+  - Verified before writing the test (not assumed): a body with only
+    `{"overview":"x","problem_statement":"y"}` is minimal-but-valid (every other `PrdContent`
+    field defaults to an empty list), correctly reaching the 503 provider check, not a 400 —
+    written into the suite as
+    `test_generate_accepts_minimal_valid_prd_and_reaches_the_provider_check`.
+  - `.venv/bin/python -m pytest tests/ -v` (full suite) → `23 passed` (8 new architecture
+    cases, mirroring `test_prd.py`'s 8 exactly: health; 400 missing `prd`; 400 wrong field
+    type; the minimal-valid-body case above; the real 503 not-configured case with the
+    architecture-specific message; a `FakeArchitectureProvider` success case via monkeypatch;
+    `AIResponseInvalidError` → 502; `ProviderRequestError` → 502 — plus the 15 pre-existing
+    requirements/PRD cases, unaffected).
+  - Killed the manually-started uvicorn process by exact PID; confirmed port 8001 free
+    afterward.
+- Commit: `<pending>` — "feat(ai-service): add architecture-generation endpoint and provider abstraction".
 
 ### 4. API endpoints (Node)
 (pending)

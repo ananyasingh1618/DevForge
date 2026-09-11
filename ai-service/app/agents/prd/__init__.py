@@ -1,5 +1,5 @@
 """PRD generation: structured requirements -> structured PrdContent.
 
-Implemented alongside requirements/ (Phase 3). Architecture generation
-described in app/agents/__init__.py remains not implemented.
+Implemented alongside requirements/ (Phase 3). See app/agents/architecture/
+(Phase 4) for the next step in the chain.
 """

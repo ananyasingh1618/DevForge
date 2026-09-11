@@ -68,3 +68,29 @@ class GeneratePrdRequest(BaseModel):
 
 class GeneratePrdResponse(BaseModel):
     content: PrdContent
+
+
+class ArchitectureContent(BaseModel):
+    overview: str
+    system_architecture: str
+    technology_stack: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
+    data_model: list[str] = Field(default_factory=list)
+    api_design: list[str] = Field(default_factory=list)
+    data_flows: list[str] = Field(default_factory=list)
+    security: list[str] = Field(default_factory=list)
+    scalability: list[str] = Field(default_factory=list)
+    deployment: list[str] = Field(default_factory=list)
+    tradeoffs: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
+class GenerateArchitectureRequest(BaseModel):
+    # Reuses PrdContent as-is: architecture generation's input is exactly
+    # the shape PRD generation already produces.
+    prd: PrdContent
+
+
+class GenerateArchitectureResponse(BaseModel):
+    content: ArchitectureContent
