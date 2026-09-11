@@ -15,7 +15,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. Add PostgreSQL and Prisma
 - [x] 4. Add users, sessions and projects tables
 - [x] 5. Implement register, login, logout and /auth/me
-- [ ] 6. Implement project creation, listing and detail retrieval
+- [x] 6. Implement project creation, listing and detail retrieval
 - [ ] 7. Add authentication and project ownership tests
 - [ ] 8. Scaffold the React frontend and design tokens
 - [ ] 9. Wire register and login pages to the real API
@@ -175,7 +175,26 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `83f99b0` — "feat(api): implement register, login, logout and /auth/me".
 
 ### 6. Implement project creation, listing and detail retrieval
-(pending)
+- Files: `api/src/schemas/projects.ts`, `api/src/services/projects.ts`,
+  `api/src/controllers/projects.ts`, `api/src/routes/projects.ts` (wired into `app.ts`),
+  `api/src/routes/projects.test.ts`; `api/vitest.config.ts` gained `fileParallelism: false`.
+- Bug caught by the tests, not written intentionally: adding a second test file exposed that
+  Vitest runs test files in parallel by default. Both `auth.test.ts` and `projects.test.ts`
+  share one real Postgres test database and each does its own `beforeEach` cleanup
+  (`deleteMany` on sessions/projects/users) — running concurrently, one file's cleanup was
+  deleting rows the other file's in-flight request depended on, surfacing as a foreign-key
+  violation in `auth.test.ts` and unexpected 401s in `projects.test.ts`. Fixed by setting
+  `fileParallelism: false`; all 22 tests passed immediately after, so this was the only cause.
+- Commands run and results:
+  - `pnpm --filter @devforge/api typecheck` → clean.
+  - `pnpm --filter @devforge/api lint` → clean.
+  - `pnpm --filter @devforge/api test` → `22 passed (22)` (10 auth + 12 project tests, across
+    2 files, after the parallelism fix — before the fix, 3 failed intermittently).
+  - Manual: dev server + `curl` — registered user A, created a project (201), listed it back
+    (1 item), fetched it by id (200); registered a separate user B and confirmed
+    `GET /projects/:id` for A's project returns 404 `NOT_FOUND` for B (not 403, not the
+    project data), and B's own `GET /projects` stays `[]`. Test users deleted afterward.
+- Commit: `bb0b869` — "feat(api): implement project creation, listing and detail retrieval".
 
 ### 7. Add authentication and project ownership tests
 (pending)
