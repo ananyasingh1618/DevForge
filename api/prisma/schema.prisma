@@ -1,0 +1,12 @@
+// DevForge — Prisma schema
+// Foundation phase: no models yet. Models (users, sessions, projects) are added
+// in Milestone 4. This file exists now to verify Prisma is wired up and can
+// connect to PostgreSQL before any schema is defined.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
