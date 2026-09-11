@@ -9,7 +9,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 ## Milestones
 
 - [x] 1. Inspect and plan
-- [ ] 2. Prisma schema and migration
+- [x] 2. Prisma schema and migration
 - [ ] 3. ai-service architecture contract/provider
 - [ ] 4. API endpoints (Node)
 - [ ] 5. Frontend architecture flow
@@ -50,7 +50,34 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `40b4ea4` — "docs: Phase 4 (Architecture Generation) plan and progress tracker".
 
 ### 2. Prisma schema and migration
-(pending)
+- Files: `api/prisma/schema.prisma` (new `ArchitectureVersion` model + `Project.architectureVersions`
+  and `PrdVersion.architectureVersions` relations, updated header comment),
+  `api/prisma/migrations/20260911231732_add_architecture_versions/migration.sql`.
+- `ArchitectureVersion` mirrors `PrdVersion` exactly one field for field:
+  `sourcePrdVersionId` (instead of `sourceRequirementsVersionId`) is the only structural
+  difference. Generated SQL confirms: `ON DELETE CASCADE` to `projects`, `ON DELETE RESTRICT`
+  to `prd_versions`, unique index on `(project_id, version)`, indexes on `project_id` and
+  `source_prd_version_id` — exactly matching the plan and `PrdVersion`'s precedent.
+- Commands run and results:
+  - `pnpm exec prisma format` → clean (also reformatted the surrounding relation-array column
+    alignment, a cosmetic Prisma-formatter side effect, not a manual edit).
+  - `pnpm exec prisma migrate dev --name add_architecture_versions` → migration created and
+    applied to the local dev database.
+  - `DATABASE_URL=...devforge_test pnpm exec prisma migrate deploy` → applied to the test
+    database too.
+  - `pnpm exec prisma generate` → client regenerated.
+  - A throwaway `tsx` script: created a user → project → active requirements version → active
+    PRD version → architecture version referencing it; confirmed the source-tracking FK
+    resolves to the right id; confirmed a duplicate `(projectId, version)` insert is rejected;
+    confirmed **directly attempting to delete the referenced PRD version while the
+    architecture version still exists is blocked** (RESTRICT firing for real); then deleted
+    the user and confirmed both the architecture version and PRD version were cascade-deleted
+    via the project relation (0 remaining each).
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `60 passed (60)` — all pre-existing tests (Foundation + Phase 2 +
+    Phase 3) still pass unchanged.
+- Commit: `<pending>` — "feat(api): add architecture_versions data model and migration".
 
 ### 3. ai-service architecture contract/provider
 (pending)

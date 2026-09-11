@@ -2,9 +2,10 @@
 // Foundation phase models: users, sessions, projects.
 // Phase 2 (Requirements Analysis) adds: requirements_versions.
 // Phase 3 (PRD Generation) adds: prd_versions.
-// Future entities (architecture_versions, epics, tasks, repositories,
-// code_chunks, conversations, reviews, review_findings, feedback) are
-// intentionally not modeled yet — see docs/PRD_PHASE_PLAN.md,
+// Phase 4 (Architecture Generation) adds: architecture_versions.
+// Future entities (epics, tasks, repositories, code_chunks, conversations,
+// reviews, review_findings, feedback) are intentionally not modeled yet —
+// see docs/ARCHITECTURE_PHASE_PLAN.md, docs/PRD_PHASE_PLAN.md,
 // docs/REQUIREMENTS_PHASE_PLAN.md and docs/FOUNDATION_PROGRESS.md for how
 // they will attach to `projects` / `repositories` once those phases start.
 
@@ -64,6 +65,7 @@ model Project {
   owner                User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   requirementsVersions RequirementsVersion[]
   prdVersions          PrdVersion[]
+  architectureVersions ArchitectureVersion[]
 
   @@index([ownerId])
   @@map("projects")
@@ -110,11 +112,36 @@ model PrdVersion {
   createdAt                   DateTime @default(now()) @map("created_at")
   updatedAt                   DateTime @updatedAt @map("updated_at")
 
-  project                   Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  sourceRequirementsVersion RequirementsVersion @relation(fields: [sourceRequirementsVersionId], references: [id])
+  project                   Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceRequirementsVersion RequirementsVersion   @relation(fields: [sourceRequirementsVersionId], references: [id])
+  architectureVersions      ArchitectureVersion[]
 
   @@unique([projectId, version])
   @@index([projectId])
   @@index([sourceRequirementsVersionId])
   @@map("prd_versions")
+}
+
+// One row per architecture-generation run (or manual edit) for a project.
+// `content` is validated structured JSON, generated from — and tracing back
+// to — whichever PrdVersion was active at generation time via
+// `sourcePrdVersionId`. Same single-active-version invariant as PrdVersion,
+// enforced the same way (see api/src/services/architecture.ts).
+model ArchitectureVersion {
+  id                 String   @id @default(uuid())
+  projectId          String   @map("project_id")
+  version            Int
+  sourcePrdVersionId String   @map("source_prd_version_id")
+  content            Json
+  isActive           Boolean  @default(false) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  project          Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourcePrdVersion PrdVersion @relation(fields: [sourcePrdVersionId], references: [id])
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@index([sourcePrdVersionId])
+  @@map("architecture_versions")
 }
