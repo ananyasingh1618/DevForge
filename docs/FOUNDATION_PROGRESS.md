@@ -17,7 +17,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 5. Implement register, login, logout and /auth/me
 - [x] 6. Implement project creation, listing and detail retrieval
 - [x] 7. Add authentication and project ownership tests
-- [ ] 8. Scaffold the React frontend and design tokens
+- [x] 8. Scaffold the React frontend and design tokens
 - [ ] 9. Wire register and login pages to the real API
 - [ ] 10. Wire project list, create project and project overview pages
 - [ ] 11. Add the integration test for register → login → create project → list project
@@ -216,7 +216,33 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `e5ee64f` — "test(api): add dedicated ownership and session-expiry tests".
 
 ### 8. Scaffold the React frontend and design tokens
-(pending)
+- Files: full Vite+React+TS scaffold under `frontend/` (see commit `1882f6d`) — key ones:
+  `frontend/src/index.css` (design tokens), `frontend/src/components/{Button,Input,Card,
+  StateViews}.tsx`, `frontend/src/App.tsx`, `frontend/src/main.tsx`, `frontend/eslint.config.js`,
+  `frontend/vitest.config.ts`.
+- Blocking technical issues hit and resolved without needing input: (1) `create-vite`'s
+  current template defaults to oxlint and TypeScript ~6.0.2 — swapped to ESLint +
+  typescript-eslint and pinned TypeScript to 5.9.3 to stay consistent with `api/` and avoid
+  the same peer-dependency mismatch hit in Milestone 3; (2) after adding frontend's
+  React-related deps, pnpm's dependency graph shifted and `@prisma/client`'s resolved path
+  changed, breaking the api tests with `Cannot find module '.prisma/client/default'` — fixed
+  by re-running `prisma generate`, not a real regression, just a stale generated-client path.
+- No `chromium-cli` was available in this environment for the visual check the `run` skill's
+  playwright pattern recommends; used the machine's cached Playwright + Chromium (via npx's
+  package cache) directly instead — noted here in case a `/run-skill-generator` pass is
+  wanted later to capture that as a reusable project skill.
+- Commands run and results:
+  - `pnpm --filter @devforge/frontend typecheck` → clean.
+  - `pnpm --filter @devforge/frontend lint` → clean.
+  - `pnpm --filter @devforge/frontend build` → succeeded (`vite build`, ~262KB JS / 13KB CSS
+    before gzip).
+  - `pnpm --filter @devforge/frontend test` → `2 passed (2)` (a Button smoke test: click
+    handling, disabled+`aria-busy` loading state).
+  - Manual: started the dev server, drove it with a throwaway Playwright script — screenshots
+    taken in light mode (default), forced dark mode, a keyboard-focus state (Tab lands a
+    visible accent ring on the Primary button), and a 375px mobile viewport; zero browser
+    console errors in any case. Screenshots sent to the user in-session, not stored in the repo.
+- Commit: `1882f6d` — "feat(frontend): scaffold React/TypeScript app with design tokens".
 
 ### 9. Wire register and login pages to the real API
 (pending)
