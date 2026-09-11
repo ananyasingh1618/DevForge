@@ -4,17 +4,14 @@ import { AppShell } from "../components/AppShell.js";
 import { Card } from "../components/Card.js";
 import { ErrorState, LoadingState } from "../components/StateViews.js";
 import { RequirementsSection } from "../components/RequirementsSection.js";
+import { PrdSection } from "../components/PrdSection.js";
 import { ApiError } from "../services/apiClient.js";
 import { getProjectRequest } from "../services/projectsApi.js";
 import type { Project } from "../types/project.js";
 
-// Requirements is implemented (Phase 2) and rendered above this grid, not
-// listed here anymore.
+// Requirements (Phase 2) and PRD (Phase 3) are implemented and rendered
+// above this grid, not listed here anymore.
 const upcomingCapabilities = [
-  {
-    title: "PRD",
-    description: "Structured PRD generation, editing, versioning and regeneration.",
-  },
   {
     title: "Architecture",
     description: "Frontend/backend/database/auth/integration planning with trade-offs.",
@@ -101,6 +98,11 @@ export function ProjectOverview() {
           <h2 className="mt-10 text-sm font-medium text-text-muted">Requirements</h2>
           <div className="mt-3">
             <RequirementsSection projectId={state.project.id} />
+          </div>
+
+          <h2 className="mt-10 text-sm font-medium text-text-muted">PRD</h2>
+          <div className="mt-3">
+            <PrdSection projectId={state.project.id} />
           </div>
 
           <h2 className="mt-10 text-sm font-medium text-text-muted">

@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Prisma schema and migration
 - [x] 3. AI-service PRD contract/provider
 - [x] 4. API endpoints (Node)
-- [ ] 5. Frontend PRD flow
+- [x] 5. Frontend PRD flow
 - [ ] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
@@ -186,7 +186,60 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `9cfc0a6` — "feat(api): add PRD generation, versioning, and comparison endpoints".
 
 ### 5. Frontend PRD flow
-(pending)
+- Files: `frontend/src/types/prd.ts` (new — `PrdContent`, `PrdVersion`, `PrdDiff` mirroring the
+  backend Zod/Pydantic shapes), `frontend/src/services/prdApi.ts` (new — one function per
+  endpoint, mirroring `requirementsApi.ts`), `frontend/src/components/PrdSection.tsx` (new —
+  structurally parallel to `RequirementsSection.tsx`, including the `VersionDetail`
+  `key={version.id}`-remount pattern), `frontend/src/pages/ProjectOverview.tsx` (renders
+  `<PrdSection>` below `<RequirementsSection>`; removed "PRD" from the "Not yet implemented"
+  grid), `frontend/src/pages/ProjectOverview.test.tsx` (mocks `prdApi`, updated the
+  "Not yet implemented" count from 6 to 5 now that PRD is implemented, and added an assertion
+  for the blocked-state message — this is an existing Phase 1/2 test file, not the dedicated
+  `PrdSection.test.tsx`, which is written in Milestone 6).
+- `PrdSection` fetches the requirements list and the PRD list independently on mount (no new
+  coupling to `RequirementsSection`) and derives exactly three states from them, per the plan:
+  **blocked** (no active requirements — a dependency message only, no Generate control ever
+  rendered, so there is no enabled button that could fail on click), **empty** (active
+  requirements exist, no PRD yet — a single "Generate PRD from Requirements v{N}" button, no
+  text input since generation always uses whichever requirements version is currently active),
+  and **populated** (version list with an active badge, full per-field editing for all twelve
+  `PrdContent` fields, "Save changes", "Make active" for non-active versions, "Regenerate from
+  v{N}").
+- Commands run and results:
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean (one pre-existing, unrelated warning in `useAuth.tsx`).
+  - `pnpm exec vitest run` → `23 passed (23)` (the one test that needed updating —
+    `ProjectOverview.test.tsx`'s not-yet-implemented count — was a legitimate consequence of
+    PRD becoming implemented, not a regression; the fix was verified against the real rendered
+    DOM, not just adjusted to make the assertion pass).
+- Manual browser verification (real Postgres, real api on :4000, real ai-service on :8001 with
+  `ANTHROPIC_API_KEY` unset, real Vite dev server on :5173 — all three started fresh after
+  confirming no stale processes, per the established hygiene routine), driven with Playwright
+  via a cached `npx` install against a real registered user and real project:
+  - No requirements yet → PRD section shows the **blocked** state ("Requirements needed
+    first…"), no Generate button present anywhere in the DOM.
+  - Seeded one active `RequirementsVersion` directly via Prisma, reloaded → PRD section shows
+    the **empty** state with "Generate PRD from Requirements v1".
+  - Clicked Generate with no LLM provider configured → the real
+    `503 AI_PROVIDER_UNAVAILABLE` message ("No LLM provider is configured. Set
+    ANTHROPIC_API_KEY in the ai-service environment to enable PRD generation.") rendered
+    in the UI, propagated end-to-end from ai-service through Node with no fabricated success.
+  - Seeded two `PrdVersion` rows directly via Prisma (v1 inactive, v2 active) → **populated**
+    state: both versions listed, all twelve content fields rendered and editable, active badge
+    on v2.
+  - Selected the inactive version and clicked "Make active" → the active badge moved
+    correctly and the previously-active version's badge disappeared, confirming the
+    single-active-version invariant holds visually, not just via the API.
+  - Edited the `overview` field and clicked "Save changes" → change persisted (confirmed by
+    reading the field back after the save completed).
+  - Screenshots captured for each state and reviewed directly (not just asserted to exist).
+  - Cleanup: deleted the test user (cascaded to project/requirements/PRD versions via existing
+    FK cascade rules), confirmed via `ps aux` only the three manually-started DevForge
+    processes existed (the VoxMind `uvicorn` process on port 8000 confirmed untouched
+    throughout), found and killed one orphaned `tsx watch` child process still bound to port
+    4000 after killing its parent (same recurring pattern as Milestone 4), confirmed ports
+    4000/8001/5173 all free afterward.
+- Commit: `<pending>` — "feat(frontend): add PRD section with dependency, generate, and version flows".
 
 ### 6. Tests
 (pending)
