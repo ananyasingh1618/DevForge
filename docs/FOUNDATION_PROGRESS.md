@@ -16,7 +16,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 4. Add users, sessions and projects tables
 - [x] 5. Implement register, login, logout and /auth/me
 - [x] 6. Implement project creation, listing and detail retrieval
-- [ ] 7. Add authentication and project ownership tests
+- [x] 7. Add authentication and project ownership tests
 - [ ] 8. Scaffold the React frontend and design tokens
 - [ ] 9. Wire register and login pages to the real API
 - [ ] 10. Wire project list, create project and project overview pages
@@ -197,7 +197,23 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `bb0b869` — "feat(api): implement project creation, listing and detail retrieval".
 
 ### 7. Add authentication and project ownership tests
-(pending)
+- Files: `api/src/routes/projects.ownership.test.ts`.
+- This milestone added dedicated automated coverage for two things that Milestones 5-6 had
+  only exercised manually or partially: true two-user cross-ownership (not just "no session
+  at all"), and session-token expiry.
+- Commands run and results:
+  - `pnpm --filter @devforge/api typecheck` → clean.
+  - `pnpm --filter @devforge/api lint` → clean.
+  - `pnpm --filter @devforge/api test` → `26 passed (26)` across 4 files, including: user B
+    gets 404 (not 403, no `data` key) for user A's project; `GET /projects` never mixes two
+    users' projects even when both have some; a well-formed-but-nonexistent id is 404 for any
+    authenticated user; a session whose `expiresAt` is forced into the past via Prisma is
+    rejected by `requireAuth` (401) even though its token hash still matches a row.
+  - Manual: ran the dev server, registered a user, confirmed `/auth/me` is 200, then used
+    `psql` to `UPDATE sessions SET expires_at = now() - interval '1 hour'` for that user and
+    confirmed `/auth/me` became 401 `UNAUTHENTICATED` — the expiry check holds outside the
+    test harness too. Test user deleted afterward.
+- Commit: `e5ee64f` — "test(api): add dedicated ownership and session-expiry tests".
 
 ### 8. Scaffold the React frontend and design tokens
 (pending)
