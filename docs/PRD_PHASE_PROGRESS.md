@@ -9,7 +9,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 ## Milestones
 
 - [x] 1. Inspect and plan
-- [ ] 2. Prisma schema and migration
+- [x] 2. Prisma schema and migration
 - [ ] 3. AI-service PRD contract/provider
 - [ ] 4. API endpoints (Node)
 - [ ] 5. Frontend PRD flow
@@ -43,10 +43,40 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   the existing provider abstraction where practical" in `docs/PRD_PHASE_PLAN.md`.
 - Wrote `docs/PRD_PHASE_PLAN.md` and this progress file; added a pointer from
   `docs/REQUIREMENTS_PHASE_PROGRESS.md` to both.
-- Commit: recorded below once made.
+- Commit: `3d2407e` — "docs: Phase 3 (PRD Generation) plan and progress tracker".
 
 ### 2. Prisma schema and migration
-(pending)
+- Files: `api/prisma/schema.prisma` (new `PrdVersion` model + `Project.prdVersions` +
+  `RequirementsVersion.prdVersions` relations),
+  `api/prisma/migrations/20260911223705_add_prd_versions/migration.sql`.
+- One correction to the plan doc's phrasing: Prisma's actual generated behavior for the
+  `sourceRequirementsVersionId` relation (no `onDelete` specified) is `ON DELETE RESTRICT`,
+  not Postgres's bare `NO ACTION` as the plan speculated — functionally the same guarantee
+  (deleting a referenced requirements version is blocked), confirmed by directly testing it
+  below, not just reading the generated SQL.
+- Commands run and results:
+  - `pnpm exec prisma format` → clean.
+  - `pnpm exec prisma migrate dev --name add_prd_versions` → migration created and applied.
+  - Inspected the generated SQL: `prd_versions` as `JSONB` content, `ON DELETE CASCADE` to
+    `projects`, `ON DELETE RESTRICT` to `requirements_versions`, unique on
+    `(project_id, version)` — exactly as designed.
+  - `DATABASE_URL=...devforge_test pnpm exec prisma migrate deploy` → applied to the test
+    database too.
+  - `pnpm exec prisma generate` → client regenerated.
+  - `psql \d prd_versions` → columns, PK, both FK constraints (with their correct ON DELETE
+    behaviors), and both indexes all match.
+  - A throwaway `tsx` script: created a user/project/requirements-version, created a PRD
+    version referencing it, confirmed the source-tracking FK actually resolves to the right
+    id, confirmed a duplicate `(projectId, version)` insert is rejected, confirmed **directly
+    attempting to delete the referenced requirements version while the PRD version still
+    exists is blocked** (the RESTRICT constraint firing for real, not just present in the
+    schema), then deleted the user and confirmed both the PRD version and requirements
+    version were cascade-deleted via the project relation (0 remaining each).
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `43 passed (43)` — all pre-existing tests (Foundation + Phase 2)
+    still pass unchanged.
+- Commit: recorded below once made.
 
 ### 3. AI-service PRD contract/provider
 (pending)
