@@ -122,7 +122,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     requirements/PRD cases, unaffected).
   - Killed the manually-started uvicorn process by exact PID; confirmed port 8001 free
     afterward.
-- Commit: `<pending>` — "feat(ai-service): add architecture-generation endpoint and provider abstraction".
+- Commit: `38c0561` — "feat(ai-service): add architecture-generation endpoint and provider abstraction".
 
 ### 4. API endpoints (Node)
 (pending)
