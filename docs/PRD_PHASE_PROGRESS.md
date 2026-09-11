@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration
 - [x] 3. AI-service PRD contract/provider
-- [ ] 4. API endpoints (Node)
+- [x] 4. API endpoints (Node)
 - [ ] 5. Frontend PRD flow
 - [ ] 6. Tests
 - [ ] 7. Docker verification
@@ -118,10 +118,72 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     real 503 not-configured case with the PRD-specific message; a `FakePrdProvider` success
     case via monkeypatch; that double raising `AIResponseInvalidError` → 502; raising
     `ProviderRequestError` → 502 — plus the 7 pre-existing requirements cases, unaffected).
-- Commit: recorded below once made.
+- Commit: `cc9c42c` — "feat(ai-service): add PRD-generation endpoint and provider abstraction".
 
 ### 4. API endpoints (Node)
-(pending)
+- Files: `api/src/schemas/prd.ts` (new — `prdContentSchema`, param/query schemas including a
+  `compareQuerySchema` refinement rejecting `a === b`), `api/src/lib/aiServiceClient.ts`
+  (rewritten — added the outbound `mapRequirementsContentToSnakeCase` direction and the inbound
+  `mapAiPrdContentToCamelCase` direction, extracted a shared `postToAiService(path, body)`
+  helper used by both the existing requirements call and the new
+  `generatePrdViaAiService`, renamed `mapAiContentToCamelCase` →
+  `mapAiRequirementsContentToCamelCase` for clarity now that two content types exist),
+  `api/src/services/prd.ts` (new — mirrors `services/requirements.ts`: ownership guard,
+  `generatePrdFromActiveRequirements`, `listVersions`, `getVersion`, `updateVersion`,
+  `activateVersion`, `diffPrdContent`/`compareVersions`), `api/src/controllers/prd.ts` (new),
+  `api/src/routes/prd.ts` (new — `/compare` registered before `/:versionId` to avoid Express
+  matching "compare" as a version id), `api/src/app.ts` (wires `prdRouter`).
+- Before adding any new file, verified the `aiServiceClient.ts` rewrite was behavior-preserving
+  on its own: `pnpm exec tsc --noEmit` clean and `pnpm exec vitest run` → `43 passed (43)`
+  with only the refactor applied and no new code yet.
+- The active-requirements dependency is enforced in `generatePrdFromActiveRequirements`: a
+  missing active `RequirementsVersion` throws `400 NO_ACTIVE_REQUIREMENTS` before the AI
+  service is ever called. The AI-service call happens before any database write, so a
+  provider failure leaves nothing partially persisted.
+- Commands run and results (after implementation):
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `43 passed (43)` (unchanged — the automated Supertest file for
+    the new PRD routes is written in Milestone 6, per the stated implementation order).
+- Manual end-to-end verification (real Postgres via Docker, real api dev server on :4000, real
+  ai-service on :8001 with `ANTHROPIC_API_KEY` genuinely unset — killed and confirmed-clean
+  stale processes on both ports before starting, per the established process-hygiene routine):
+  - Registered `prd-manual@example.com`, created project "PRD Test Project".
+  - `POST /projects/:id/prd/generate` with no requirements yet → real `400
+    NO_ACTIVE_REQUIREMENTS` ("Generate and activate a requirements version before generating a
+    PRD.").
+  - Seeded one active `RequirementsVersion` directly via Prisma, then re-ran generate → real
+    `503 AI_PROVIDER_UNAVAILABLE` ("...to enable PRD generation.") propagated end-to-end
+    through Node → ai-service, and confirmed no `PrdVersion` row was created.
+  - Seeded two `PrdVersion` rows directly via Prisma (v1 inactive, v2 active, both pointing at
+    the same source requirements version) to exercise the read/update/activate/compare
+    endpoints without a configured LLM provider.
+  - `GET /projects/:id/prd` → both versions returned, newest-first, correct `isActive` flags,
+    correct `sourceRequirementsVersionId` on both.
+  - `POST /projects/:id/prd/:v1/activate` → v1 becomes active; `GET .../prd/:v2` immediately
+    after confirms v2's `isActive` flipped to `false` in the same request cycle — the
+    single-active-version invariant holds transactionally, mirroring the Phase 2 requirements
+    behavior.
+  - `GET /projects/:id/prd/compare?a=:v1&b=:v2` → correct diff, `goals: { added: ["Support
+    weekly stats view"], removed: [] }` (the only field seeded to differ between the two
+    versions), all other fields empty diffs.
+  - `GET /projects/:id/prd/compare?a=:v1&b=:v1` → real `400` (same-id rejected by
+    `compareQuerySchema`'s refinement).
+  - `PATCH /projects/:id/prd/:v1` with a full valid body → `200`, content persisted and
+    echoed back correctly.
+  - `PATCH /projects/:id/prd/:v1` with a body missing required fields → real `400` (Zod
+    validation).
+  - Unauthenticated `GET /projects/:id/prd` (no session cookie) → real `401`.
+  - Registered a second user `prd-manual-2@example.com` and confirmed `GET
+    /projects/:id/prd` with that user's session against the first user's project → real `404`
+    (ownership enforced, no distinction leaked between "doesn't exist" and "not yours").
+  - Cleanup: deleted both manually-created users (`prisma.user.deleteMany`), which cascaded to
+    their projects, requirements versions, and PRD versions; confirmed via `ps aux` that only
+    the two manually-started processes existed (both under `/Users/ananyasingh/DevForge`, one
+    additional orphaned `tsx watch` child process was found still bound to port 4000 after
+    killing the parent watcher and was killed by its own PID); confirmed ports 4000 and 8001
+    both free afterward; removed the temporary session-cookie files.
+- Commit: `<pending>` — "feat(api): add PRD generation, versioning, and comparison endpoints".
 
 ### 5. Frontend PRD flow
 (pending)
