@@ -383,3 +383,8 @@ integration, AST parsing, retrieval, codebase Q&A, code review, evaluation pipel
 implemented, scaffolded with fake behavior, or claimed as working anywhere in this phase — see
 the root README's "Known limitations" and "Future work" sections, which remain the
 authoritative statement of what's left.
+
+**Phase 4 (Architecture Generation) progress is tracked separately** in
+[docs/ARCHITECTURE_PHASE_PLAN.md](ARCHITECTURE_PHASE_PLAN.md) and
+[docs/ARCHITECTURE_PHASE_PROGRESS.md](ARCHITECTURE_PHASE_PROGRESS.md) — this file remains the
+historical record of Phase 3 only and is not updated further.
