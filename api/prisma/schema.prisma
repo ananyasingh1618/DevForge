@@ -1,7 +1,10 @@
 // DevForge — Prisma schema
-// Foundation phase: no models yet. Models (users, sessions, projects) are added
-// in Milestone 4. This file exists now to verify Prisma is wired up and can
-// connect to PostgreSQL before any schema is defined.
+// Foundation phase models: users, sessions, projects only. Future entities
+// (prd_versions, architecture_versions, epics, tasks, repositories,
+// code_chunks, conversations, reviews, review_findings, feedback) are
+// intentionally not modeled yet — see docs/FOUNDATION_PROGRESS.md and the
+// Foundation Implementation Plan for how they will attach to `projects` /
+// `repositories` once those phases start.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +12,55 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  sessions Session[]
+  projects Project[]
+
+  @@map("users")
+}
+
+// Opaque server-side sessions: the raw token is never stored, only a SHA-256
+// hash of it (see api/src/services/auth.ts, added in Milestone 5). The raw
+// token lives only in the httpOnly session cookie on the client.
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+enum ProjectStatus {
+  planning
+  active
+  archived
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  ownerId     String        @map("owner_id")
+  name        String
+  description String?
+  status      ProjectStatus @default(planning)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@map("projects")
 }
