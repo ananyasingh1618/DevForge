@@ -21,7 +21,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 9. Wire register and login pages to the real API
 - [x] 10. Wire project list, create project and project overview pages
 - [x] 11. Add the integration test for register → login → create project → list project
-- [ ] 12. Add Docker Compose verification and update the README
+- [x] 12. Add Docker Compose verification and update the README
 
 ## Approved technology decisions (locked for this phase)
 
@@ -349,4 +349,70 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `efb88f0` — "test: add real-HTTP integration test for register->login->create->list".
 
 ### 12. Add Docker Compose verification and update the README
-(pending)
+- Files: `ai-service/{main.py,requirements.txt,Dockerfile,.dockerignore,README.md,
+  app/{__init__,agents/__init__,retrieval/__init__,parsing/__init__,review/__init__}.py}`,
+  `api/Dockerfile`, `api/README.md`, `frontend/Dockerfile`, root `.dockerignore`,
+  `docker-compose.yml` (api/frontend/ai-service services added), `package.json` (pinned
+  `packageManager`, expanded `onlyBuiltDependencies`), `.env.example` (ai-service note),
+  `scripts/setup-test-db.sh`, updated `scripts/README.md`, and a full rewrite of the root
+  `README.md`.
+- The ai-service scaffold (referenced by the original Foundation plan's section 6 but not
+  built in any earlier milestone) was created now: `GET /health` only, documented empty
+  `agents/retrieval/parsing/review` subpackages, no AI logic, not called by the Node API.
+- Three real issues found by actually building/running the images, not assumed from docs:
+  1. `corepack enable` inside the container fetched a newer pnpm than local (10.16.1) that
+     enforces a stricter "minimum release age" supply-chain policy, rejecting the lockfile's
+     same-day package versions (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`). Fixed by pinning
+     `"packageManager": "pnpm@10.16.1"` in `package.json` — also a reproducible-builds best
+     practice independent of this bug.
+  2. pnpm's build-script allowlist skipped `bcrypt`'s native-binding build inside the
+     container (would have broken at runtime on the container's Debian/glibc target, since a
+     native module built on macOS/arm64 can't just be copied over). Added `bcrypt` and
+     `@prisma/engines` to `onlyBuiltDependencies`.
+  3. Prisma's `generate` step warned it couldn't detect OpenSSL on `node:20-slim` and
+     defaulted to a guess. Fixed per Prisma's own suggested remedy: `apt-get install
+     openssl` in `api/Dockerfile`'s base stage; the warning is gone on rebuild.
+  4. `docker compose down -v` (used to test a fully clean environment) wiped the
+     manually-created `devforge_test` database from Milestone 5, breaking the api unit
+     suite afterward. Rather than just recreating it by hand, wrote
+     `scripts/setup-test-db.sh` (idempotent — creates the DB if missing, applies migrations)
+     and documented the step in the README, closing a real reproducibility gap instead of
+     leaving it as tribal knowledge.
+- Commands run and results:
+  - `docker compose build api` → failed with the pnpm minimum-release-age violation on first
+    attempt; passed after the `packageManager` pin.
+  - Rebuild → succeeded but warned about skipped `bcrypt`/`@prisma/engines` build scripts and
+    the OpenSSL detection issue; both fixed, rebuilt clean with neither warning.
+  - `docker compose build frontend ai-service` → both built clean.
+  - `docker compose down -v && docker compose up -d` → all four containers reached `healthy`
+    (confirmed via `docker compose ps`), in the correct dependency order (postgres healthy →
+    api healthy → frontend started).
+  - `curl http://localhost:4000/health` → `{"data":{"status":"ok"}}`; `curl
+    http://localhost:8001/health` → `{"status":"ok"}`; `curl -o /dev/null -w '%{http_code}'
+    http://localhost:4173/` → `200`.
+  - `psql \dt` against the freshly-created volume → `users`, `sessions`, `projects`,
+    `_prisma_migrations` all present, confirming `prisma migrate deploy` ran automatically on
+    api container startup.
+  - `pnpm test` (tests/ package) against `API_URL=http://localhost:4000
+    DATABASE_URL=...5433/devforge` (the Dockerized stack) → `2 passed (2)`.
+  - Manual: a throwaway Playwright script drove the Dockerized frontend
+    (`http://localhost:4173`, a real static production build) through registration against
+    the Dockerized API — succeeded, zero console errors. Test user deleted afterward.
+  - After discovering the wiped `devforge_test` database: wrote and ran
+    `scripts/setup-test-db.sh` → created the database and applied the migration;
+    `pnpm test` (api) → back to `26 passed (26)`.
+  - Root-level `pnpm typecheck` and `pnpm lint` → both clean (api, frontend, tests; one
+    pre-existing react-refresh warning, unrelated).
+  - `docker compose down` (volumes preserved) → left the stack in a normal stopped state.
+- Commit: `4967797` — "feat: add ai-service stub, full Docker Compose stack, and final
+  README".
+
+## Foundation phase: complete
+
+All 12 milestones are done and independently verified (see each entry above for exact
+commands and results). Every table in the Master Completion Checklist row for "DevForge —
+authentication + project workspace" is now genuinely implemented, tested, and demonstrable —
+not just scaffolded. Everything else in the full DevForge specification (requirements/PRD/
+architecture generation, GitHub integration, AST indexing, hybrid retrieval, codebase Q&A,
+AI code review) remains NOT STARTED, as documented in the root README's "Known limitations"
+and "Future work" sections.
