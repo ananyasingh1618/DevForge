@@ -14,7 +14,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Create the API and implement GET /health
 - [x] 3. Add PostgreSQL and Prisma
 - [x] 4. Add users, sessions and projects tables
-- [ ] 5. Implement register, login, logout and /auth/me
+- [x] 5. Implement register, login, logout and /auth/me
 - [ ] 6. Implement project creation, listing and detail retrieval
 - [ ] 7. Add authentication and project ownership tests
 - [ ] 8. Scaffold the React frontend and design tokens
@@ -139,7 +139,40 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `24081f9` — "feat(api): add users, sessions and projects tables".
 
 ### 5. Implement register, login, logout and /auth/me
-(pending)
+- Files: `api/src/lib/password.ts` (bcrypt cost 12), `api/src/lib/sessionToken.ts` (random
+  32-byte token + SHA-256 hashing), `api/src/lib/cookies.ts` (httpOnly/SameSite=Lax cookie,
+  Secure in production only), `api/src/lib/validate.ts` (Zod parse helper → structured 400),
+  `api/src/schemas/auth.ts`, `api/src/services/auth.ts`, `api/src/middleware/requireAuth.ts`,
+  `api/src/types/express.d.ts` (Request.user augmentation), `api/src/controllers/auth.ts`,
+  `api/src/routes/auth.ts`, `api/src/routes/auth.test.ts`; wired `cookie-parser` and `cors`
+  (credentialed, locked to FRONTEND_ORIGIN) plus the auth router into `api/src/app.ts`.
+- Dependencies installed: `bcrypt`, `cookie-parser`, `cors` (runtime); `@types/bcrypt`,
+  `@types/cookie-parser`, `@types/cors` (dev).
+- Also created the dedicated `devforge_test` Postgres database and applied the Milestone 4
+  migration to it (`prisma migrate deploy` with `DATABASE_URL` pointed at it), since the
+  auth tests exercise the real database rather than mocks.
+- Bug caught by the tests, not written intentionally: login failures were first coded to
+  reuse `AppError.unauthenticated()`, which returns code `UNAUTHENTICATED` — the same code
+  `requireAuth` uses for "no/invalid session". The "wrong password" and "unknown email" test
+  cases failed, expecting a distinct `INVALID_CREDENTIALS` code. Fixed in
+  `services/auth.ts` by constructing that error directly with its own code, re-ran, confirmed
+  green.
+- Commands run and results:
+  - `pnpm --filter @devforge/api typecheck` → clean (after also fixing a strict-mode
+    `string[] | undefined` typing issue in the test file's cookie handling).
+  - `pnpm --filter @devforge/api lint` → clean.
+  - `pnpm --filter @devforge/api test` → `12 passed (12)` across register (success, 409
+    duplicate email, 400 short password), login (success, 401 wrong password, 401 unknown
+    email — same code as wrong password), `/auth/me` (401 no cookie, 200 valid cookie), and
+    logout (clears session so a later `/auth/me` is 401; 401 if called with no session).
+  - Manual: ran the dev server and drove the real HTTP flow with `curl` — register (201, cookie
+    set with `HttpOnly; SameSite=Lax`, no `Secure` in dev), `/auth/me` (200), logout (204,
+    cookie cleared), `/auth/me` again (401 `UNAUTHENTICATED`), login with wrong password (401
+    `INVALID_CREDENTIALS`).
+  - `psql`: confirmed `sessions.token_hash` holds only a hex SHA-256 hash (never the raw
+    cookie token) and `users.password_hash` holds a `$2b$12$...` bcrypt hash (never
+    plaintext); manual test user deleted afterward to keep the dev DB clean.
+- Commit: `83f99b0` — "feat(api): implement register, login, logout and /auth/me".
 
 ### 6. Implement project creation, listing and detail retrieval
 (pending)
