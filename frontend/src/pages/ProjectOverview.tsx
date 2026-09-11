@@ -3,15 +3,14 @@ import { Link, useParams } from "react-router-dom";
 import { AppShell } from "../components/AppShell.js";
 import { Card } from "../components/Card.js";
 import { ErrorState, LoadingState } from "../components/StateViews.js";
+import { RequirementsSection } from "../components/RequirementsSection.js";
 import { ApiError } from "../services/apiClient.js";
 import { getProjectRequest } from "../services/projectsApi.js";
 import type { Project } from "../types/project.js";
 
+// Requirements is implemented (Phase 2) and rendered above this grid, not
+// listed here anymore.
 const upcomingCapabilities = [
-  {
-    title: "Requirements",
-    description: "AI requirements analysis, separating what you stated from what was inferred.",
-  },
   {
     title: "PRD",
     description: "Structured PRD generation, editing, versioning and regeneration.",
@@ -97,6 +96,11 @@ export function ProjectOverview() {
             <span className="shrink-0 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-muted">
               {state.project.status}
             </span>
+          </div>
+
+          <h2 className="mt-10 text-sm font-medium text-text-muted">Requirements</h2>
+          <div className="mt-3">
+            <RequirementsSection projectId={state.project.id} />
           </div>
 
           <h2 className="mt-10 text-sm font-medium text-text-muted">

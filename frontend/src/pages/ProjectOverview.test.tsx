@@ -6,12 +6,15 @@ import { AuthProvider } from "../hooks/useAuth.js";
 import { ApiError } from "../services/apiClient.js";
 import * as authApi from "../services/authApi.js";
 import * as projectsApi from "../services/projectsApi.js";
+import * as requirementsApi from "../services/requirementsApi.js";
 
 vi.mock("../services/authApi.js");
 vi.mock("../services/projectsApi.js");
+vi.mock("../services/requirementsApi.js");
 
 const mockedAuthApi = vi.mocked(authApi);
 const mockedProjectsApi = vi.mocked(projectsApi);
+const mockedRequirementsApi = vi.mocked(requirementsApi);
 
 function renderOverview(id: string) {
   return render(
@@ -30,6 +33,7 @@ beforeEach(() => {
   mockedAuthApi.meRequest.mockResolvedValue({
     user: { id: "1", email: "me@example.com", name: null, createdAt: new Date().toISOString() },
   });
+  mockedRequirementsApi.listRequirementsVersionsRequest.mockResolvedValue({ versions: [] });
 });
 
 describe("ProjectOverview page", () => {
@@ -49,9 +53,10 @@ describe("ProjectOverview page", () => {
 
     expect(await screen.findByText("DevForge")).toBeInTheDocument();
     expect(screen.getByText("AI software engineering platform")).toBeInTheDocument();
-    // Every listed capability must be explicitly marked not implemented -
-    // this page must never imply an unbuilt feature is working.
-    expect(screen.getAllByText("Not yet implemented").length).toBeGreaterThanOrEqual(7);
+    // Requirements is implemented (Phase 2) and must not appear in the
+    // "Not yet implemented" grid alongside genuinely unbuilt capabilities.
+    expect(await screen.findByText("No requirements yet")).toBeInTheDocument();
+    expect(screen.getAllByText("Not yet implemented")).toHaveLength(6);
     expect(screen.getByText("Codebase Q&A")).toBeInTheDocument();
   });
 

@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Data model and migration
 - [x] 3. AI-service contract and provider abstraction
 - [x] 4. API endpoints (Node)
-- [ ] 5. Frontend requirements flow
+- [x] 5. Frontend requirements flow
 - [ ] 6. Tests
 - [ ] 7. Docker and documentation
 
@@ -147,10 +147,48 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     project returns a real `404` (cross-owner, not a 403, no leaked data).
   - Confirmed a fully unauthenticated request → real `401`.
   - Test users and their data deleted afterward; both server processes stopped.
-- Commit: recorded below once made.
+- Commit: `5fba1e9` — "feat(api): add requirements endpoints
+  (analyze/list/get/update/activate/compare)".
 
 ### 5. Frontend requirements flow
-(pending)
+- Files: `frontend/src/types/requirements.ts`, `frontend/src/services/requirementsApi.ts`,
+  `frontend/src/components/RequirementsSection.tsx` (+ test), `frontend/src/pages/
+  ProjectOverview.tsx` (Requirements removed from the "Not yet implemented" grid, real
+  section rendered above it) and its test updated to match.
+- Real lint-caught bug, same class as the Foundation phase's `Projects.tsx` fix: resetting an
+  editable `draft` copy via `useEffect(() => setDraft(...), [selectedVersion])` tripped
+  `eslint-plugin-react-hooks`'s synchronous-setState-in-effect rule. Fixed the React-idiomatic
+  way this time — extracted the editable panel into its own `VersionDetail` component
+  rendered with `key={selectedVersion.id}`, so switching versions remounts it with fresh
+  local state instead of syncing state via an effect. No effect needed at all afterward.
+- Commands run and results:
+  - `pnpm exec tsc -b` (frontend) → clean.
+  - `pnpm exec eslint .` (frontend) → clean (one pre-existing unrelated warning).
+  - `pnpm exec vitest run` (frontend) → `23 passed (23)` across 7 files — empty state +
+    Analyze-button-disabled-until-10-chars + a provider-unavailable analyze failure that
+    leaves the empty state intact (no fabricated content rendered); populated state shows the
+    active version's content and version list; switching to a non-active version and
+    activating it calls the API with the right ids; editing the summary and saving PATCHes
+    the right payload and surfaces a real server error on failure; a list-load failure shows
+    the error state with retry. `ProjectOverview.test.tsx` updated: now asserts exactly 6
+    "Not yet implemented" cards (Requirements removed) and that the Requirements section's own
+    empty state renders.
+  - Manual, full real stack (Postgres + api + ai-service with no key + frontend, all
+    genuinely running): drove a real browser with Playwright — registered, created a project,
+    saw the real empty state, submitted a real idea, and got the real, honest
+    `AI_PROVIDER_UNAVAILABLE` error message in the UI (idea text preserved for retry) — zero
+    console errors, and confirmed the page never rendered fabricated requirement content
+    (`FR-1` absent from the DOM). Seeded a full version directly via Prisma and reloaded in a
+    fresh browser session (had to log in again, confirming session cookies work correctly
+    across a new context) — the populated UI correctly showed the version sidebar, editable
+    summary/lists, and both functional/non-functional requirement cards with priority and
+    source badges. Screenshots sent to the user in-session.
+  - Process hygiene: after stopping all three servers, `ps aux` again showed two orphaned
+    `tsx watch` processes for this project (the same class of issue as Milestone 4) — killed
+    them by exact PID this time, and left an unrelated VoxMind `uvicorn` process on port 8000
+    completely untouched (confirmed by name/path before killing anything).
+  - Test user and project data deleted afterward.
+- Commit: recorded below once made.
 
 ### 6. Tests
 (pending)
