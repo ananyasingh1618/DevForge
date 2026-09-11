@@ -14,5 +14,8 @@
     "test:integration": "pnpm --filter @devforge/api test:integration",
     "lint": "pnpm --filter @devforge/api lint && pnpm --filter @devforge/frontend lint",
     "typecheck": "pnpm --filter @devforge/api typecheck && pnpm --filter @devforge/frontend typecheck"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   }
 }
