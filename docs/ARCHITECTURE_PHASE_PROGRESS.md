@@ -47,7 +47,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Wrote `docs/ARCHITECTURE_PHASE_PLAN.md` and this progress file; added a pointer from
   `docs/PRD_PHASE_PROGRESS.md` to both, mirroring the pointer Phase 3 added to
   `docs/REQUIREMENTS_PHASE_PROGRESS.md`.
-- Commit: `<pending>` — "docs: Phase 4 (Architecture Generation) plan and progress tracker".
+- Commit: `40b4ea4` — "docs: Phase 4 (Architecture Generation) plan and progress tracker".
 
 ### 2. Prisma schema and migration
 (pending)
