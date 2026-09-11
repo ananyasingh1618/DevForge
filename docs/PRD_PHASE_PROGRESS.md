@@ -239,7 +239,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     throughout), found and killed one orphaned `tsx watch` child process still bound to port
     4000 after killing its parent (same recurring pattern as Milestone 4), confirmed ports
     4000/8001/5173 all free afterward.
-- Commit: `<pending>` — "feat(frontend): add PRD section with dependency, generate, and version flows".
+- Commit: `0391502` — "feat(frontend): add PRD section with dependency, generate, and version flows".
 
 ### 6. Tests
 (pending)
