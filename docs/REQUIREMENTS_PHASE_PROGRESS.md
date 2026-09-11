@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Inspect and plan
 - [x] 2. Data model and migration
 - [x] 3. AI-service contract and provider abstraction
-- [ ] 4. API endpoints (Node)
+- [x] 4. API endpoints (Node)
 - [ ] 5. Frontend requirements flow
 - [ ] 6. Tests
 - [ ] 7. Docker and documentation
@@ -98,10 +98,56 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     monkeypatch; that same double raising `AIResponseInvalidError` → 502; raising
     `ProviderRequestError` → 502) — all in well under a second, confirming none of them made
     a real network call.
-- Commit: recorded below once made.
+- Commit: `9fc6344` — "feat(ai-service): add requirements-analysis endpoint and provider
+  abstraction".
 
 ### 4. API endpoints (Node)
-(pending)
+- Files: `api/src/schemas/requirements.ts`, `api/src/lib/aiServiceClient.ts` (calls ai-service,
+  maps its snake_case response to camelCase, re-validates with Zod before returning), 
+  `api/src/services/requirements.ts` (CRUD + the transactional single-active-version
+  invariant + the structural diff), `api/src/controllers/requirements.ts`,
+  `api/src/routes/requirements.ts` (mounted in `api/src/app.ts`), `api/src/env.ts`
+  (`AI_SERVICE_URL` added).
+- Route ordering note (not a bug, a deliberate precaution): `GET
+  /projects/:projectId/requirements/compare` is registered before `GET
+  /projects/:projectId/requirements/:versionId`, since Express matches route patterns in
+  registration order and "compare" would otherwise be swallowed as a `:versionId` value.
+- Real process-hygiene issue hit and fixed while manually verifying: after starting a fresh
+  dev server, every new endpoint returned 404 `Route not found`, including the simplest one
+  (`GET .../requirements`). `ps aux` revealed roughly a dozen orphaned `tsx watch` processes
+  accumulated across this entire session (both phases) — killing "the" server by port only
+  ever frees whichever process currently holds the port, and earlier stale wrapper processes
+  survived un-killed. Port 4000 turned out to still be bound by a leftover process running
+  code from before Milestone 4's files existed. Fixed by killing every matching `tsx`/loader
+  process for this project and starting exactly one fresh instance; the same routes then
+  worked immediately (also independently confirmed via an in-process Supertest check before
+  touching any server process, which returned 401 as expected, proving the route logic itself
+  was correct all along and the 404 was purely a stale-process artifact).
+- Commands run and results, all against the real running API (+ ai-service where relevant),
+  never mocked at this layer:
+  - `pnpm exec tsc --noEmit` → clean. `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `26 passed (26)`, unchanged (requirements tests are Milestone 6).
+  - Registered a user, created a project. `POST .../analyze` with ai-service **not running** →
+    real `502 AI_SERVICE_UNREACHABLE`.
+  - Started ai-service for real (still no `ANTHROPIC_API_KEY`). `POST .../analyze` with a
+    valid idea → real `503 AI_PROVIDER_UNAVAILABLE`, message passed through from ai-service's
+    own real 503.
+  - `POST .../analyze` with `"idea":"short"` → real `400 VALIDATION_ERROR` at the Node layer,
+    before any call to ai-service.
+  - Confirmed via `GET .../requirements` that all three failed attempts above persisted
+    nothing (empty list) — no partial/garbage rows.
+  - Seeded two requirements versions directly via a Prisma script (clearly test data, not a
+    claimed LLM result) to exercise the rest of the surface: `GET .../requirements` → both
+    versions, newest first, correct `isActive` flags; `GET .../requirements/:id` → full
+    content; `POST .../requirements/:id/activate` on v1 → `200`, and a follow-up `GET` on v2
+    confirmed it was atomically deactivated; `GET .../requirements/compare?a=&b=` → correct
+    diff (`FR-2` reported as `added` between v1 and v2); the same id twice → real `400`;
+    `PATCH .../requirements/:id` → content updated and echoed back.
+  - Registered a second user and confirmed `GET .../requirements` for the first user's
+    project returns a real `404` (cross-owner, not a 403, no leaked data).
+  - Confirmed a fully unauthenticated request → real `401`.
+  - Test users and their data deleted afterward; both server processes stopped.
+- Commit: recorded below once made.
 
 ### 5. Frontend requirements flow
 (pending)

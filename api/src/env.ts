@@ -10,6 +10,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   FRONTEND_ORIGIN: z.string().url().default("http://localhost:5173"),
+  AI_SERVICE_URL: z.string().url().default("http://localhost:8001"),
 });
 
 export type Env = z.infer<typeof envSchema>;

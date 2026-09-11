@@ -4,6 +4,7 @@ import cors from "cors";
 import { healthRouter } from "./routes/health.js";
 import { authRouter } from "./routes/auth.js";
 import { projectsRouter } from "./routes/projects.js";
+import { requirementsRouter } from "./routes/requirements.js";
 import { AppError } from "./lib/errors.js";
 import { env } from "./env.js";
 
@@ -22,6 +23,7 @@ export function createApp() {
   app.use(healthRouter);
   app.use(authRouter);
   app.use(projectsRouter);
+  app.use(requirementsRouter);
 
   // Unmatched routes become a structured 404 rather than Express's default HTML page.
   app.use((_req, _res, next) => {
