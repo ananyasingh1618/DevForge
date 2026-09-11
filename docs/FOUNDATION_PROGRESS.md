@@ -10,7 +10,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 ## Milestones
 
-- [ ] 1. Initialize Git and scaffold the repository
+- [x] 1. Initialize Git and scaffold the repository
 - [ ] 2. Create the API and implement GET /health
 - [ ] 3. Add PostgreSQL and Prisma
 - [ ] 4. Add users, sessions and projects tables
@@ -44,7 +44,14 @@ Each entry below is filled in as the milestone completes: files touched, command
 their actual results, manual verification performed, and the commit hash.
 
 ### 1. Initialize Git and scaffold the repository
-(pending)
+- Files: `.gitignore`, `.env.example`, `README.md`, `package.json`, `pnpm-workspace.yaml`,
+  `docs/FOUNDATION_PROGRESS.md`, `evaluation/README.md`, `scripts/README.md`,
+  `tests/README.md`, empty `frontend/`, `api/`, `ai-service/` directories.
+- Commands run: `git init`; `git add ...`; `git commit ...`.
+- Result: root commit `6eedbee` — "chore: scaffold DevForge repository structure".
+- Manual verification: `git log --oneline` shows the single root commit; `git status` clean
+  aside from the not-yet-populated `frontend/`, `api/`, `ai-service/` dirs (git doesn't track
+  empty directories, so they'll appear in their own milestone commits).
 
 ### 2. Create the API and implement GET /health
 (pending)
