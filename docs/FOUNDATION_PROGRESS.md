@@ -20,7 +20,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 8. Scaffold the React frontend and design tokens
 - [x] 9. Wire register and login pages to the real API
 - [x] 10. Wire project list, create project and project overview pages
-- [ ] 11. Add the integration test for register → login → create project → list project
+- [x] 11. Add the integration test for register → login → create project → list project
 - [ ] 12. Add Docker Compose verification and update the README
 
 ## Approved technology decisions (locked for this phase)
@@ -314,7 +314,39 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `a1cc85c` — "feat(frontend): wire project list, create and overview pages".
 
 ### 11. Add the integration test for register → login → create project → list project
-(pending)
+- Files: `tests/package.json`, `tests/tsconfig.json`, `tests/vitest.config.ts`,
+  `tests/register-login-project.test.ts`, updated `tests/README.md`;
+  `pnpm-workspace.yaml` gained `tests`; root `package.json`'s `test:integration` script fixed
+  to point at the new package (it had pointed at an `@devforge/api` script removed back in
+  Milestone 2, and would have failed if anyone had actually run it).
+- This test hits a genuinely running API process over real HTTP (`fetch` against
+  `http://localhost:4000`), not an in-process Supertest app instance like the tests in
+  `api/src/`. It polls `GET /health` before starting so a down server fails clearly.
+- Two robustness bugs found and fixed via deliberately breaking things, not just the happy
+  path:
+  1. Killed the API mid-work to confirm the "server not up" case fails loudly. It first
+     revealed that `afterAll` unconditionally used the Postgres client even when `beforeAll`
+     had thrown before `dbClient.connect()` ran — it hung for the full 20s `hookTimeout`
+     instead of surfacing the real "API not healthy" error. Fixed with a `dbConnected` guard;
+     reran and confirmed the failure is now fast (~15s, the actual health-check timeout) with
+     an actionable message.
+  2. `pkill -f "tsx watch src/server.ts"` (used earlier to stop the API) turned out to only
+     kill tsx's wrapper process, leaving its forked child still bound to port 4000 — so the
+     "server down" scenario initially couldn't be reproduced at all. Diagnosed via `lsof
+     -ti:4000` still showing a listener after the pkill, fixed by killing by port instead.
+- Commands run and results:
+  - `pnpm exec tsc --noEmit` (tests package) → clean.
+  - With Postgres + API both up: `pnpm test` (tests package) → `2 passed (2)` — the full
+    register→login→create→list flow, and the direct-Postgres check that only a
+    `$2[aby]$`-prefixed bcrypt hash and 64-char hex SHA-256 token hashes are stored.
+  - `psql`: confirmed 0 leftover rows matching the test's email pattern after each run
+    (the test's own `afterAll` cleanup working).
+  - With the API killed: `pnpm test` → failed in ~15s with "API at http://localhost:4000 did
+    not become healthy within 15000ms. Is it running? (cd api && pnpm dev)" — clear and fast,
+    not a hang or a cryptic connection-refused stack trace.
+  - Root-level `pnpm typecheck` and `pnpm test` (api + frontend) re-run afterward → all still
+    clean/passing (26 + 16 tests).
+- Commit: `efb88f0` — "test: add real-HTTP integration test for register->login->create->list".
 
 ### 12. Add Docker Compose verification and update the README
 (pending)
