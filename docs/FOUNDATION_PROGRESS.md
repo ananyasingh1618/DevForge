@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 ## Milestones
 
 - [x] 1. Initialize Git and scaffold the repository
-- [ ] 2. Create the API and implement GET /health
+- [x] 2. Create the API and implement GET /health
 - [ ] 3. Add PostgreSQL and Prisma
 - [ ] 4. Add users, sessions and projects tables
 - [ ] 5. Implement register, login, logout and /auth/me
@@ -54,7 +54,22 @@ their actual results, manual verification performed, and the commit hash.
   empty directories, so they'll appear in their own milestone commits).
 
 ### 2. Create the API and implement GET /health
-(pending)
+- Files: `api/package.json`, `api/tsconfig.json`, `api/tsconfig.build.json`,
+  `api/eslint.config.js`, `api/vitest.config.ts`, `api/src/env.ts`, `api/src/lib/errors.ts`,
+  `api/src/app.ts`, `api/src/server.ts`, `api/src/routes/health.ts`,
+  `api/src/routes/health.test.ts`.
+- Dependencies installed: `express`, `dotenv`, `zod` (runtime); `typescript@5.9.3` (pinned
+  down from an auto-resolved 7.0.2 to stay compatible with typescript-eslint), `tsx`,
+  `@types/express`, `@types/node`, `vitest`, `supertest`, `@types/supertest`, `eslint`,
+  `typescript-eslint`, `@eslint/js` (dev).
+- Commands run and results:
+  - `pnpm --filter @devforge/api typecheck` → passed, no output (clean).
+  - `pnpm --filter @devforge/api lint` → passed, no output (clean).
+  - `pnpm --filter @devforge/api test` → `2 passed (2)`.
+  - Manual: started `pnpm dev` in the background, `curl -i http://localhost:4000/health` →
+    `200 {"data":{"status":"ok"}}`; `curl -i http://localhost:4000/nope` →
+    `404 {"error":{"code":"NOT_FOUND","message":"Route not found"}}`; server then stopped.
+- Commit: `16769b0` — "feat(api): scaffold Express app with GET /health".
 
 ### 3. Add PostgreSQL and Prisma
 (pending)
