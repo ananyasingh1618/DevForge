@@ -303,3 +303,8 @@ GitHub integration, AST parsing, retrieval, codebase Q&A, code review) was imple
 scaffolded with fake behavior, or claimed as working anywhere in this phase — see the root
 README's "Known limitations" and "Future work" sections, which remain the authoritative
 statement of what's left.
+
+**Phase 3 (PRD Generation) progress is tracked separately** in
+[docs/PRD_PHASE_PLAN.md](PRD_PHASE_PLAN.md) and
+[docs/PRD_PHASE_PROGRESS.md](PRD_PHASE_PROGRESS.md) — this file remains the historical record
+of Phase 2 only and is not updated further.
