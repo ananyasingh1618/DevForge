@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Initialize Git and scaffold the repository
 - [x] 2. Create the API and implement GET /health
 - [x] 3. Add PostgreSQL and Prisma
-- [ ] 4. Add users, sessions and projects tables
+- [x] 4. Add users, sessions and projects tables
 - [ ] 5. Implement register, login, logout and /auth/me
 - [ ] 6. Implement project creation, listing and detail retrieval
 - [ ] 7. Add authentication and project ownership tests
@@ -117,7 +117,26 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `bb2cdc2` — "feat(api): wire up PostgreSQL and Prisma".
 
 ### 4. Add users, sessions and projects tables
-(pending)
+- Files: `api/prisma/schema.prisma` (User, Session, Project models + ProjectStatus enum),
+  `api/prisma/migrations/20260911204644_init_users_sessions_projects/migration.sql`,
+  `api/prisma/migrations/migration_lock.toml`.
+- Commands run and results:
+  - `pnpm exec prisma migrate dev --name init_users_sessions_projects` → migration created
+    and applied, "Your database is now in sync with your schema."
+  - `psql \dt` → `users`, `sessions`, `projects`, `_prisma_migrations` all present.
+  - `psql \d users` / `\d sessions` / `\d projects` → columns, primary keys, the
+    `users_email_key` and `sessions_token_hash_key` unique indexes, the `sessions_user_id_idx`
+    and `projects_owner_id_idx` indexes, and both `ON DELETE CASCADE` foreign keys all match
+    the design.
+  - `pnpm exec prisma generate` → client regenerated with the new models.
+  - A throwaway `tsx` script (`_model_check.ts`, deleted after running) created a user, a
+    session, and a project via the typed Prisma Client, listed the user's projects (1), then
+    deleted the user and confirmed both the session and project were cascade-deleted (0
+    remaining each).
+  - `pnpm --filter @devforge/api typecheck` → clean.
+  - `pnpm --filter @devforge/api lint` → clean.
+  - `pnpm --filter @devforge/api test` → `2 passed (2)`.
+- Commit: `24081f9` — "feat(api): add users, sessions and projects tables".
 
 ### 5. Implement register, login, logout and /auth/me
 (pending)
