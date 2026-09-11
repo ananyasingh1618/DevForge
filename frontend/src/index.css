@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/*
+ * DevForge design tokens. Dark-first (a mature developer tool, not a
+ * generic light dashboard), with a light-mode override driven by the
+ * user's OS preference. Tailwind v4 turns each --color-* variable below
+ * into utility classes automatically (e.g. --color-accent -> bg-accent,
+ * text-accent, border-accent).
+ */
+@theme {
+  --color-bg: #0a0a0f;
+  --color-surface: #131318;
+  --color-surface-2: #1c1c24;
+  --color-border: #27272f;
+  --color-text: #e8e8ec;
+  --color-text-muted: #9494a3;
+  --color-accent: #6366f1;
+  --color-accent-hover: #7779f5;
+  --color-accent-fg: #ffffff;
+  --color-danger: #f87171;
+  --color-success: #4ade80;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg: #fafafa;
+    --color-surface: #ffffff;
+    --color-surface-2: #f2f2f5;
+    --color-border: #e2e2e8;
+    --color-text: #16161d;
+    --color-text-muted: #6b6b7a;
+    --color-accent: #4f46e5;
+    --color-accent-hover: #4338ca;
+    color-scheme: light;
+  }
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Consistent, visible focus ring for keyboard navigation across all
+   interactive elements, instead of relying on (or suppressing) the
+   browser default. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
