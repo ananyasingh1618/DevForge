@@ -19,7 +19,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 7. Add authentication and project ownership tests
 - [x] 8. Scaffold the React frontend and design tokens
 - [x] 9. Wire register and login pages to the real API
-- [ ] 10. Wire project list, create project and project overview pages
+- [x] 10. Wire project list, create project and project overview pages
 - [ ] 11. Add the integration test for register → login → create project → list project
 - [ ] 12. Add Docker Compose verification and update the README
 
@@ -278,7 +278,40 @@ their actual results, manual verification performed, and the commit hash.
 - Commit: `b5ecf37` — "feat(frontend): wire register and login pages to the real API".
 
 ### 10. Wire project list, create project and project overview pages
-(pending)
+- Files: `frontend/src/components/AppShell.tsx`, `frontend/src/services/projectsApi.ts`,
+  `frontend/src/types/project.ts`, `frontend/src/pages/{Projects,ProjectNew,
+  ProjectOverview}.tsx` + their `.test.tsx` files, `frontend/src/App.tsx` (real routes);
+  removed `frontend/src/pages/ProjectsPlaceholder.tsx` (superseded by the real `Projects`
+  page).
+- Bug caught and fixed by lint (not by running anything): `eslint-plugin-react-hooks`'s
+  `set-state-in-effect` rule flagged both `Projects` and `ProjectOverview` for calling
+  `setState({status:"loading"})` synchronously as the first statement inside their mount
+  effects. Restructured both into a `fetch*` function whose only `setState` calls live inside
+  `.then`/`.catch`, plus a separate `retry()` click handler (not constrained by the rule) that
+  resets to loading before re-fetching.
+- Commands run and results:
+  - `pnpm exec tsc -b` (frontend) → clean.
+  - `pnpm exec eslint .` (frontend) → 1 pre-existing warning (same as Milestone 9, unrelated),
+    0 errors.
+  - `pnpm exec vitest run` (frontend) → `16 passed (16)` across all pages: list
+    loading/empty/populated/error states; create-form required-name validation and
+    server-error surfacing; overview rendering the real project plus 7 "Not yet implemented"
+    labels, and a 404 "Project not found" message for a missing/foreign project.
+  - Manual: ran both dev servers, drove the complete flow with Playwright — register → empty
+    list → create a project via the real form → land on its overview (real name/description/
+    status, every planned capability explicitly marked "Not yet implemented") → back to the
+    list, now showing the project as a card.
+  - Investigated what first looked like a broken "back to Projects" navigation across ~6
+    diagnostic script runs: confirmed via instrumented timing (URL vs. DOM content at 0/200/
+    500/1000/2000ms) that this was a ~200ms client-side-routing render race in the *test
+    script's* wait condition (it matched "DevForge Foundation" text present on both the old
+    and new page), not an application defect — `history.pushState` updates the URL before
+    React finishes unmounting the old route and mounting the new one, which is normal SPA
+    behavior. Fixed the script to wait on the list page's own `<h1>` and re-verified clean;
+    documented in detail so this doesn't get mistaken for a real bug later.
+  - Test users deleted from the database (`DELETE FROM users WHERE email LIKE 'e2e-%'` →
+    13 rows) after all manual/diagnostic runs.
+- Commit: `a1cc85c` — "feat(frontend): wire project list, create and overview pages".
 
 ### 11. Add the integration test for register → login → create project → list project
 (pending)
