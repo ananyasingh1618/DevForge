@@ -77,7 +77,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - `pnpm exec eslint .` → clean.
   - `pnpm exec vitest run` → `60 passed (60)` — all pre-existing tests (Foundation + Phase 2 +
     Phase 3) still pass unchanged.
-- Commit: `<pending>` — "feat(api): add architecture_versions data model and migration".
+- Commit: `6548f2f` — "feat(api): add architecture_versions data model and migration".
 
 ### 3. ai-service architecture contract/provider
 (pending)
