@@ -1,13 +1,25 @@
 import express, { type NextFunction, type Request, type Response } from "express";
+import cookieParser from "cookie-parser";
+import cors from "cors";
 import { healthRouter } from "./routes/health.js";
+import { authRouter } from "./routes/auth.js";
 import { AppError } from "./lib/errors.js";
+import { env } from "./env.js";
 
 export function createApp() {
   const app = express();
 
+  app.use(
+    cors({
+      origin: env.FRONTEND_ORIGIN,
+      credentials: true,
+    }),
+  );
   app.use(express.json());
+  app.use(cookieParser());
 
   app.use(healthRouter);
+  app.use(authRouter);
 
   // Unmatched routes become a structured 404 rather than Express's default HTML page.
   app.use((_req, _res, next) => {
