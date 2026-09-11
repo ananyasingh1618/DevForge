@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. AI-service contract and provider abstraction
 - [x] 4. API endpoints (Node)
 - [x] 5. Frontend requirements flow
-- [ ] 6. Tests
+- [x] 6. Tests
 - [ ] 7. Docker and documentation
 
 ## Per-milestone log
@@ -188,10 +188,59 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     them by exact PID this time, and left an unrelated VoxMind `uvicorn` process on port 8000
     completely untouched (confirmed by name/path before killing anything).
   - Test user and project data deleted afterward.
-- Commit: recorded below once made.
+- Commit: `afda276` — "feat(frontend): add Requirements section to project overview".
 
 ### 6. Tests
-(pending)
+- Files: `api/src/routes/requirements.test.ts` (17 Supertest cases), new
+  `tests/requirements.test.ts` (real-HTTP integration, extends the Foundation phase's
+  `tests/` package). Milestones 3 and 5 already added `ai-service/tests/test_requirements.py`
+  (7 pytest cases) and `frontend/src/components/RequirementsSection.test.tsx` (part of the
+  frontend's 23), so this milestone closes the one remaining gap: automated API-layer tests
+  for the new endpoints (Milestone 4 verified them thoroughly but only manually).
+- `requirements.test.ts` (api) mocks the outbound `fetch()` call to ai-service via
+  `vi.stubGlobal`/`vi.unstubAllGlobals` — a clearly-commented test double for that one HTTP
+  boundary, never presented as a real LLM call — while everything else (auth, Postgres via
+  Prisma, ownership) runs for real, matching how `auth.test.ts`/`projects.test.ts` already
+  work. Covers: 401 unauthenticated and 404 cross-owner on every endpoint; 400 for a
+  too-short idea *without calling ai-service at all* (asserted via the mock's call count);
+  version 1 created active from a mocked successful ai-service response, including the
+  snake_case→camelCase mapping; a mocked real ai-service 503 `PROVIDER_NOT_CONFIGURED`
+  correctly becomes the Node API's 503 `AI_PROVIDER_UNAVAILABLE` with nothing persisted; a
+  network failure becomes 502 `AI_SERVICE_UNREACHABLE`; list ordering and `isActive` flags;
+  get 400 (malformed id) / 404 (missing); PATCH updates in place without creating a new
+  version, and rejects an invalid content shape; activate atomically deactivates the
+  previous version; compare returns the correct structural diff, rejects `a === b` with 400,
+  and 404s on a foreign/missing id.
+- Bug caught by the tests themselves while writing them: the compare test's second `analyze`
+  call originally sent `{"idea": "v2"}` — 2 characters, failing the API's own 10-character
+  minimum before the mocked ai-service was ever reached, so `res.body.data` was `undefined`.
+  Fixed by using a real ≥10-character idea string; not a product bug, a test-authoring
+  mistake caught immediately by running it.
+- `tests/requirements.test.ts` runs against the genuinely running API + ai-service (both
+  started for real, Postgres included) with no mocking anywhere. It first confirms directly
+  against ai-service's own `/requirements/analyze` that this environment truly has no
+  provider configured (real 503 `PROVIDER_NOT_CONFIGURED`), then makes the same request
+  through the Node API a user's browser would use and asserts the real 503
+  `AI_PROVIDER_UNAVAILABLE`, then confirms nothing was persisted. No test in this phase
+  claims a real LLM call succeeded, consistent with the plan.
+- Commands run and results:
+  - `pnpm exec tsc --noEmit` (api) → clean.
+  - `pnpm exec vitest run` (api) → `43 passed (43)` (26 pre-existing + 17 new), after fixing
+    the idea-length test bug above.
+  - `pnpm exec eslint .` (api) → clean.
+  - Root `pnpm typecheck` / `pnpm lint` / `pnpm test` → all clean across api, frontend, and
+    the integration-tests package.
+  - `.venv/bin/python -m pytest tests/ -v` (ai-service) → `7 passed` (re-run for completeness,
+    unchanged from Milestone 3).
+  - Started Postgres + a real api instance + a real ai-service instance (no
+    `ANTHROPIC_API_KEY`); `cd tests && pnpm test` → `2 test files, 3 passed` (the Foundation
+    phase's original register→login→create→list test plus the new requirements one).
+  - `psql`: confirmed 0 leftover rows for both integration tests' email patterns after the
+    run.
+  - Process hygiene: after stopping both servers, one more orphaned `tsx watch` process was
+    found and killed by exact PID (same recurring class of issue, now routinely checked for
+    after every manual server session in this phase).
+- Commit: recorded below once made.
 
 ### 7. Docker and documentation
 (pending)
