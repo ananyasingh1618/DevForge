@@ -299,7 +299,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     `afterAll` deleted its seeded user).
   - Killed both manually-started processes by exact PID; confirmed ports 4000/8001 free
     afterward with no orphaned children this time.
-- Commit: `<pending>` — "test(api,frontend,tests): add PRD generation, versioning, and comparison coverage".
+- Commit: `4b3589e` — "test(api,frontend,tests): add PRD generation, versioning, and comparison coverage".
 
 ### 7. Docker verification
 (pending)
