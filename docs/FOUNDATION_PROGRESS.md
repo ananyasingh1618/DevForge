@@ -416,3 +416,8 @@ not just scaffolded. Everything else in the full DevForge specification (require
 architecture generation, GitHub integration, AST indexing, hybrid retrieval, codebase Q&A,
 AI code review) remains NOT STARTED, as documented in the root README's "Known limitations"
 and "Future work" sections.
+
+**Phase 2 (Requirements Analysis) progress is tracked separately** in
+[docs/REQUIREMENTS_PHASE_PLAN.md](REQUIREMENTS_PHASE_PLAN.md) and
+[docs/REQUIREMENTS_PHASE_PROGRESS.md](REQUIREMENTS_PHASE_PROGRESS.md) — this file remains the
+historical record of the Foundation phase only and is not updated further.
