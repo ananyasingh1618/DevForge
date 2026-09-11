@@ -11,9 +11,9 @@
     "dev:frontend": "pnpm --filter @devforge/frontend dev",
     "build": "pnpm --filter @devforge/api build && pnpm --filter @devforge/frontend build",
     "test": "pnpm --filter @devforge/api test && pnpm --filter @devforge/frontend test",
-    "test:integration": "pnpm --filter @devforge/api test:integration",
+    "test:integration": "pnpm --filter @devforge/integration-tests test",
     "lint": "pnpm --filter @devforge/api lint && pnpm --filter @devforge/frontend lint",
-    "typecheck": "pnpm --filter @devforge/api typecheck && pnpm --filter @devforge/frontend typecheck"
+    "typecheck": "pnpm --filter @devforge/api typecheck && pnpm --filter @devforge/frontend typecheck && pnpm --filter @devforge/integration-tests typecheck"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["esbuild", "prisma"]
