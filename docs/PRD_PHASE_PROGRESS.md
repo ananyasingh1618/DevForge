@@ -363,7 +363,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     README files).
   - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
     suite was already green as of Milestone 7's final workspace-wide check.
-- Commit: `<pending>` — "docs: update README and ai-service README for Phase 3 (PRD Generation)".
+- Commit: `dd66312` — "docs: update README and ai-service README for Phase 3 (PRD Generation)".
 
 ## Phase 3 (PRD Generation): complete
 
