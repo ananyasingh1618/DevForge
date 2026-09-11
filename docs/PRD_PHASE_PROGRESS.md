@@ -183,7 +183,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     additional orphaned `tsx watch` child process was found still bound to port 4000 after
     killing the parent watcher and was killed by its own PID); confirmed ports 4000 and 8001
     both free afterward; removed the temporary session-cookie files.
-- Commit: `<pending>` — "feat(api): add PRD generation, versioning, and comparison endpoints".
+- Commit: `9cfc0a6` — "feat(api): add PRD generation, versioning, and comparison endpoints".
 
 ### 5. Frontend PRD flow
 (pending)
