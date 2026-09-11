@@ -28,6 +28,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ai-service:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 4000
@@ -36,6 +38,8 @@ services:
       DATABASE_URL: postgresql://devforge:devforge@postgres:5432/devforge
       SESSION_SECRET: docker-compose-local-verification-secret-not-for-prod-0000
       FRONTEND_ORIGIN: http://localhost:4173
+      # Docker-internal hostname for ai-service, analogous to postgres above.
+      AI_SERVICE_URL: http://ai-service:8001
     ports:
       - "4000:4000"
     healthcheck:
@@ -70,6 +74,14 @@ services:
     build:
       context: ai-service
     restart: unless-stopped
+    environment:
+      # Optional: passed through from the host shell's own environment if
+      # set (e.g. `ANTHROPIC_API_KEY=sk-... docker compose up`). If unset,
+      # this resolves to an empty string and ai-service correctly serves
+      # /health while returning 503 PROVIDER_NOT_CONFIGURED for analyze
+      # requests — the same honest "not configured" behavior as local dev,
+      # never a fabricated result.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8001:8001"
     healthcheck:

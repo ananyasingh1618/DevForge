@@ -14,7 +14,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 4. API endpoints (Node)
 - [x] 5. Frontend requirements flow
 - [x] 6. Tests
-- [ ] 7. Docker and documentation
+- [x] 7. Docker and documentation
 
 ## Per-milestone log
 
@@ -240,7 +240,65 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - Process hygiene: after stopping both servers, one more orphaned `tsx watch` process was
     found and killed by exact PID (same recurring class of issue, now routinely checked for
     after every manual server session in this phase).
-- Commit: recorded below once made.
+- Commit: `fa4e9f9` — "test(api): add Supertest coverage for requirements endpoints +
+  real-HTTP integration test".
 
 ### 7. Docker and documentation
-(pending)
+- Files: `docker-compose.yml` (api gains `AI_SERVICE_URL=http://ai-service:8001` and a
+  `depends_on: ai-service: condition: service_healthy`; ai-service gains an optional
+  `ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}` pass-through from the host shell), root
+  `README.md` (full rewrite of the status banner, "What works today", architecture diagram,
+  tech stack, env var table, setup instructions, API summary, database schema, known
+  limitations, and future work to reflect Phase 2), `ai-service/README.md` (corrected — it
+  previously said the service was "intentionally inert", no longer true),
+  `frontend/README.md` (removed a stale "Milestone 12" reference).
+- Only the two changes above were made to `docker-compose.yml` — everything else (postgres,
+  frontend, the healthcheck pattern, the port-5433 rationale) is untouched, per "update Docker
+  Compose only as required."
+- Commands run and results (all against a genuinely rebuilt, volume-wiped stack):
+  - `docker compose down -v` → removed the postgres volume (including the Foundation phase's
+    `devforge_test` database, recreated afterward — see below).
+  - `docker compose build` → all three custom images (api, frontend, ai-service) built clean,
+    ai-service's build now includes `pydantic`/`anthropic`.
+  - `docker compose up -d` → all four containers reached `healthy`, in the now-updated
+    dependency order (postgres + ai-service healthy in parallel → api healthy → frontend
+    started), confirmed via `docker compose ps`.
+  - `psql \dt` → `requirements_versions` present alongside the Foundation-phase tables,
+    confirming both migrations ran automatically on the api container's startup.
+  - `curl` against `http://localhost:4000/health` and `http://localhost:8001/health` → both
+    real 200s.
+  - Registered a user, created a project, and called `POST .../requirements/analyze` through
+    the **containerized** API — it correctly reached the **containerized** ai-service over the
+    Docker-internal hostname (`http://ai-service:8001`) and got back the real
+    `503 AI_PROVIDER_UNAVAILABLE` (no key was passed to this run) — proving the new
+    `AI_SERVICE_URL` wiring actually works inside the Docker network, not just on the host.
+  - A throwaway Playwright script drove the **Dockerized frontend** (port 4173, a real static
+    production build) through register → create project → submit an idea → the real, honest
+    error rendered in the browser, zero console errors.
+  - `cd tests && API_URL=... AI_SERVICE_URL=... DATABASE_URL=... pnpm test` (against the
+    Dockerized stack) → `2 files, 3 passed`.
+  - `docker compose down` (volumes preserved) → normal stopped state.
+  - Restarted `postgres` alone for local dev; re-ran `./scripts/setup-test-db.sh` to recreate
+    `devforge_test` (wiped by the earlier `down -v`) — output confirmed both migrations
+    applied to it.
+  - Final full-workspace check: root `pnpm typecheck` → clean (api, frontend, tests). Root
+    `pnpm lint` → clean (one pre-existing unrelated warning). Root `pnpm test` → `43 passed`
+    (api) + `23 passed` (frontend) = 66; combined with the 7 ai-service pytest cases and 3
+    real-HTTP integration tests already re-verified in Milestone 6, every test this phase
+    added is green together, not just individually.
+  - Test users/projects from the Docker verification deleted afterward.
+- Commit: recorded below once made.
+
+## Phase 2 (Requirements Analysis): complete
+
+All 7 milestones are done and independently verified (see each entry above for exact
+commands and results). Requirements analysis — idea → structured, versioned, editable
+requirements with an active version and a structural compare — is genuinely implemented,
+tested (76 automated tests across Vitest/Supertest, pytest, and real-HTTP integration, plus
+extensive manual verification including real browser sessions and a from-scratch Docker
+rebuild), and demonstrable, with an honest "not configured" path throughout since this
+environment has no `ANTHROPIC_API_KEY`. No later DevForge feature (PRD, architecture, tasks,
+GitHub integration, AST parsing, retrieval, codebase Q&A, code review) was implemented,
+scaffolded with fake behavior, or claimed as working anywhere in this phase — see the root
+README's "Known limitations" and "Future work" sections, which remain the authoritative
+statement of what's left.

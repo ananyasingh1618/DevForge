@@ -1,12 +1,17 @@
 # DevForge AI service
 
-Python/FastAPI. **Intentionally inert in the Foundation phase** — only `GET /health` exists.
-No requirements/PRD generation, retrieval, or code review logic lives here yet, and the Node
-API does not call this service yet. See the root [README.md](../README.md) for why this
-service exists as its own process already, before there's AI logic to put in it.
+Python/FastAPI. Implements **requirements analysis only** (`POST /requirements/analyze`),
+via Anthropic Claude (`claude-opus-5`) — see `app/agents/requirements/`. PRD generation,
+retrieval, and code review are not implemented; nothing here fakes them. `GET /health` always
+works, even with no `ANTHROPIC_API_KEY` set — analyze requests fail with a clear 503 in that
+case instead. See the root [README.md](../README.md) for the full picture.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements-dev.txt   # includes pytest, httpx for tests
+export ANTHROPIC_API_KEY=sk-ant-...             # optional — omit to see the "not configured" path
 .venv/bin/uvicorn main:app --port 8001
+
+# tests
+.venv/bin/python -m pytest tests/ -v
 ```
