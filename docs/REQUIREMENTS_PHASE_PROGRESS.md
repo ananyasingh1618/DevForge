@@ -10,7 +10,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Inspect and plan
 - [x] 2. Data model and migration
-- [ ] 3. AI-service contract and provider abstraction
+- [x] 3. AI-service contract and provider abstraction
 - [ ] 4. API endpoints (Node)
 - [ ] 5. Frontend requirements flow
 - [ ] 6. Tests
@@ -60,10 +60,45 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - `pnpm exec eslint .` → clean.
   - `pnpm exec vitest run` → `26 passed (26)` — all pre-existing Foundation-phase tests still
     pass unchanged.
-- Commit: recorded below once made.
+- Commit: `a07a361` — "feat(api): add requirements_versions data model and migration".
 
 ### 3. AI-service contract and provider abstraction
-(pending)
+- Files: `ai-service/app/schemas.py` (Pydantic `RequirementItem`/`RequirementsContent`/
+  request/response models, shared between FastAPI validation and the Anthropic structured-
+  output schema), `ai-service/app/errors.py` (`AppError` + subclasses, exception handlers
+  producing the same `{"error": {"code","message"}}` envelope the Node API uses),
+  `ai-service/app/agents/requirements/{__init__,provider,router}.py`, `ai-service/main.py`
+  (wires the router + handlers), `ai-service/app/agents/__init__.py` (docstring updated —
+  requirements is no longer "not implemented"), `ai-service/requirements.txt` (added
+  `pydantic`, `anthropic`), new `ai-service/requirements-dev.txt` (`pytest`, `httpx`, kept out
+  of the production image), `ai-service/tests/test_requirements.py`.
+- Consulted the `claude-api` skill's Python docs for the exact `client.messages.parse(...,
+  output_format=PydanticModel)` structured-output pattern and the typed-exception chain
+  (`BadRequestError` → `AuthenticationError` → `PermissionDeniedError` → `NotFoundError` →
+  `RateLimitError` → `APIStatusError` → `APIConnectionError`), used as-is in `provider.py`.
+  Model is `claude-opus-5` per the skill's default (no model was named).
+- Real bug found and fixed by testing, not assumed: with `provider: RequirementsProvider =
+  Depends(get_provider)` as a route parameter, FastAPI resolved that parameter-less
+  dependency *before* validating the request body — a too-short or missing `idea` returned
+  503 `PROVIDER_NOT_CONFIGURED` instead of 400 `VALIDATION_ERROR`, confirmed by curling both
+  cases against a live instance. Fixed by calling `get_provider()` explicitly inside the
+  handler, after FastAPI has already validated `body: AnalyzeRequirementsRequest` as a normal
+  parameter — tests override it via `monkeypatch.setattr(provider_module, "get_provider",
+  ...)` instead of `app.dependency_overrides`, documented in a code comment so it isn't
+  "fixed" back to the broken version later.
+- Commands run and results:
+  - `.venv/bin/pip install -r requirements-dev.txt` → clean install.
+  - Manual (real, unmocked): started uvicorn with `ANTHROPIC_API_KEY` genuinely unset —
+    `GET /health` → `{"status":"ok"}`; `POST /requirements/analyze` with a valid idea → real
+    `503 {"error":{"code":"PROVIDER_NOT_CONFIGURED",...}}`; with `"idea":"short"` → real
+    `400 VALIDATION_ERROR` with Pydantic's field-level detail; with `{}` → real `400` "Field
+    required". All three curled directly against a running instance, not just unit-tested.
+  - `.venv/bin/python -m pytest tests/ -v` → `7 passed` (health; 400 short idea; 400 missing
+    field; the real 503-not-configured case; a `FakeRequirementsProvider` success case via
+    monkeypatch; that same double raising `AIResponseInvalidError` → 502; raising
+    `ProviderRequestError` → 502) — all in well under a second, confirming none of them made
+    a real network call.
+- Commit: recorded below once made.
 
 ### 4. API endpoints (Node)
 (pending)

@@ -1,1 +1,1 @@
-"""Requirements/PRD/architecture generation agents. Not implemented yet."""
+"""Agents. requirements/ is implemented (Phase 2). PRD/architecture generation are not."""
