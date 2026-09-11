@@ -10,7 +10,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration
-- [ ] 3. AI-service PRD contract/provider
+- [x] 3. AI-service PRD contract/provider
 - [ ] 4. API endpoints (Node)
 - [ ] 5. Frontend PRD flow
 - [ ] 6. Tests
@@ -76,10 +76,49 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - `pnpm exec eslint .` → clean.
   - `pnpm exec vitest run` → `43 passed (43)` — all pre-existing tests (Foundation + Phase 2)
     still pass unchanged.
-- Commit: recorded below once made.
+- Commit: `893a04f` — "feat(api): add prd_versions data model and migration".
 
 ### 3. AI-service PRD contract/provider
-(pending)
+- Files: `ai-service/app/errors.py` (`ProviderNotConfiguredError` now takes a `feature: str =
+  "requirements analysis"` param, default preserves the exact existing message),
+  `ai-service/app/lib/__init__.py`, `ai-service/app/lib/provider_config.py` (new shared
+  `get_anthropic_api_key(feature)` helper), `ai-service/app/agents/requirements/provider.py`
+  (refactored to call the shared helper instead of duplicating the key-read/raise logic),
+  `ai-service/app/schemas.py` (added `PrdContent`, `GeneratePrdRequest` — reusing the existing
+  `RequirementsContent` as-is for the input — and `GeneratePrdResponse`),
+  `ai-service/app/agents/prd/{__init__,provider,router}.py`, `ai-service/main.py` (wires the
+  new router), `ai-service/tests/test_prd.py`.
+- This is the milestone where "use the existing provider abstraction where practical" was
+  made concrete rather than just architectural: `PrdProvider` is its own ABC (input/output
+  shapes genuinely differ from `RequirementsProvider`, so a shared generic ABC would be
+  premature abstraction for two call sites), but the one piece that actually *was* identical
+  — reading `ANTHROPIC_API_KEY` and raising `ProviderNotConfiguredError` — is now genuinely
+  shared code, not copy-pasted.
+- Commands run and results:
+  - `.venv/bin/python -m pytest tests/ -v` (before adding new PRD tests, right after the
+    refactor) → `7 passed` — confirms the `provider_config` extraction and the
+    `ProviderNotConfiguredError` signature change are fully behavior-preserving for the
+    existing requirements feature.
+  - Manual (real, unmocked): started uvicorn with `ANTHROPIC_API_KEY` genuinely unset —
+    `GET /health` → `{"status":"ok"}`; `POST /prd/generate` with a fully valid requirements
+    body → real `503 {"error":{"code":"PROVIDER_NOT_CONFIGURED","message":"...to enable PRD
+    generation."}}` (the feature-specific message, distinct from requirements' own); `POST
+    /prd/generate` with `{}` → real `400` "Field required"; with
+    `{"requirements":{"project_summary":123}}` (wrong type) → real `400` with the Pydantic
+    field-level detail; re-curled `/requirements/analyze` and confirmed its message is
+    byte-for-byte unchanged after the refactor.
+  - One test-writing correction caught by actually curling before writing the test: a body
+    with only `{"project_summary":"x"}` is *not* invalid — every other `RequirementsContent`
+    field defaults to an empty list, so that's a minimal-but-valid body that correctly reaches
+    the 503 provider check, not a 400. Written into the test suite as
+    `test_generate_accepts_minimal_valid_requirements_and_reaches_the_provider_check` instead
+    of being assumed to be a validation-error case.
+  - `.venv/bin/python -m pytest tests/ -v` (full suite) → `15 passed` (8 new PRD cases: health;
+    400 missing `requirements`; 400 wrong field type; the minimal-valid-body case above; the
+    real 503 not-configured case with the PRD-specific message; a `FakePrdProvider` success
+    case via monkeypatch; that double raising `AIResponseInvalidError` → 502; raising
+    `ProviderRequestError` → 502 — plus the 7 pre-existing requirements cases, unaffected).
+- Commit: recorded below once made.
 
 ### 4. API endpoints (Node)
 (pending)

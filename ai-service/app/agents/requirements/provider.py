@@ -11,16 +11,12 @@ output) raises a typed error instead.
 
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
 
 import anthropic
 
-from app.errors import (
-    AIResponseInvalidError,
-    ProviderNotConfiguredError,
-    ProviderRequestError,
-)
+from app.errors import AIResponseInvalidError, ProviderRequestError
+from app.lib.provider_config import get_anthropic_api_key
 from app.schemas import RequirementsContent
 
 MODEL = "claude-opus-5"
@@ -93,9 +89,5 @@ class AnthropicRequirementsProvider(RequirementsProvider):
 
 
 def get_provider() -> RequirementsProvider:
-    """Reads ANTHROPIC_API_KEY at call time (not import time), so the
-    service still starts and serves /health with no key configured."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ProviderNotConfiguredError()
+    api_key = get_anthropic_api_key("requirements analysis")
     return AnthropicRequirementsProvider(api_key=api_key)

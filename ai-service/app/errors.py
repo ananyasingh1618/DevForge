@@ -20,12 +20,12 @@ class AppError(Exception):
 
 
 class ProviderNotConfiguredError(AppError):
-    def __init__(self) -> None:
+    def __init__(self, feature: str = "requirements analysis") -> None:
         super().__init__(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "PROVIDER_NOT_CONFIGURED",
             "No LLM provider is configured. Set ANTHROPIC_API_KEY in the ai-service "
-            "environment to enable requirements analysis.",
+            f"environment to enable {feature}.",
         )
 
 

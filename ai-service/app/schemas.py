@@ -1,9 +1,9 @@
-"""Pydantic models for the requirements-analysis feature.
+"""Pydantic models shared across ai-service agents (requirements, prd).
 
-These serve double duty: FastAPI uses them to validate the HTTP
-request/response, and the *same* RequirementsContent model is passed as
-the Anthropic `output_format` for structured-output validation (see
-app/agents/requirements/provider.py) — one schema, not two definitions
+These serve double duty for each feature: FastAPI uses them to validate the
+HTTP request/response, and the *same* model (RequirementsContent, PrdContent)
+is passed as the Anthropic `output_format` for structured-output validation
+(see app/agents/*/provider.py) — one schema per feature, not two definitions
 that could drift apart.
 """
 
@@ -43,3 +43,28 @@ class AnalyzeRequirementsRequest(BaseModel):
 
 class AnalyzeRequirementsResponse(BaseModel):
     content: RequirementsContent
+
+
+class PrdContent(BaseModel):
+    overview: str
+    problem_statement: str
+    goals: list[str] = Field(default_factory=list)
+    personas: list[str] = Field(default_factory=list)
+    functional_requirements: list[str] = Field(default_factory=list)
+    non_functional_requirements: list[str] = Field(default_factory=list)
+    user_workflows: list[str] = Field(default_factory=list)
+    edge_cases: list[str] = Field(default_factory=list)
+    success_criteria: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
+class GeneratePrdRequest(BaseModel):
+    # Reuses RequirementsContent as-is: PRD generation's input is exactly
+    # the shape requirements analysis already produces.
+    requirements: RequirementsContent
+
+
+class GeneratePrdResponse(BaseModel):
+    content: PrdContent
