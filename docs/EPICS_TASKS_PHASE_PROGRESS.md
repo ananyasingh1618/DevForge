@@ -202,7 +202,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     manually-started processes existed; found and killed one orphaned `tsx watch` child still
     bound to port 4000 after killing its parent (same recurring pattern as every prior phase);
     confirmed ports 4000/8001 free afterward; removed the temporary session-cookie files.
-- Commit: `<pending>` — "feat(api): add epic and task generation, versioning, and comparison endpoints".
+- Commit: `780fa4b` — "feat(api): add epic and task generation, versioning, and comparison endpoints".
 
 ### 5. Frontend epics/tasks flow
 (pending)
