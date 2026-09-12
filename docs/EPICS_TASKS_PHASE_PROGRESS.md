@@ -90,7 +90,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - `pnpm exec eslint .` → clean.
   - `pnpm exec vitest run` → `77 passed (77)` — all pre-existing tests (Foundation + Phases
     2–4) still pass unchanged.
-- Commit: `<pending>` — "feat(api): add epic_versions and task_versions data models and migration".
+- Commit: `c72853c` — "feat(api): add epic_versions and task_versions data models and migration".
 
 ### 3. ai-service epics/tasks contracts and providers
 (pending)
