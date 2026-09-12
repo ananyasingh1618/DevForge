@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration
 - [x] 3. ai-service architecture contract/provider
-- [ ] 4. API endpoints (Node)
+- [x] 4. API endpoints (Node)
 - [ ] 5. Frontend architecture flow
 - [ ] 6. Tests
 - [ ] 7. Docker verification
@@ -125,7 +125,71 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `38c0561` — "feat(ai-service): add architecture-generation endpoint and provider abstraction".
 
 ### 4. API endpoints (Node)
-(pending)
+- Files: `api/src/schemas/architecture.ts` (new — `architectureContentSchema` plus the same
+  param/query schema shapes `schemas/prd.ts` uses), `api/src/lib/aiServiceClient.ts` (extended
+  — added the outbound `mapPrdContentToSnakeCase` direction, the inbound
+  `mapAiArchitectureContentToCamelCase` direction, and `generateArchitectureViaAiService`,
+  reusing the existing `postToAiService` helper unchanged), `api/src/services/architecture.ts`
+  (new — mirrors `services/prd.ts`: ownership guard, `generateArchitectureFromActivePrd`,
+  `listVersions`/`getVersion`/`updateVersion`/`activateVersion`,
+  `diffArchitectureContent`/`compareVersions`), `api/src/controllers/architecture.ts` (new),
+  `api/src/routes/architecture.ts` (new — `/compare` registered before `/:versionId`),
+  `api/src/app.ts` (wires `architectureRouter`).
+- Before adding any new file, verified the `aiServiceClient.ts` extension was
+  behavior-preserving on its own via `pnpm exec tsc --noEmit` and `pnpm exec vitest run`
+  (both clean/`60 passed` with only the extension applied, no new route files yet) — same
+  discipline as Phase 3 Milestone 4.
+- The active-PRD dependency is enforced in `generateArchitectureFromActivePrd`: a missing
+  active `PrdVersion` throws `400 NO_ACTIVE_PRD` before the AI service is ever called. The
+  AI-service call happens before any database write, so a provider failure leaves nothing
+  partially persisted.
+- **Environment note**: mid-milestone, `pnpm exec vitest run` twice showed spurious timeouts
+  on pre-existing, unrelated tests (`projects.test.ts`'s empty-name-400 case in one run, a
+  not-a-uuid case in another) with multi-hundred-second wall-clock durations for an internal
+  5000ms test timeout — a symptom of severe host scheduling contention (`uptime` showed a load
+  average of 16), not a code defect: `ps aux` confirmed no leftover DevForge processes were
+  contributing, and a clean re-run immediately after (`16.9s`, `60 passed (60)`) confirmed the
+  failures were transient host-load flakiness, not caused by this milestone's changes.
+- Commands run and results (after implementation, on a clean/re-run host):
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `60 passed (60)` (unchanged — the automated Supertest file for
+    the new architecture routes is written in Milestone 6, per the stated implementation
+    order).
+- Manual end-to-end verification (real Postgres via Docker, real api dev server on :4000, real
+  ai-service on :8001 with `ANTHROPIC_API_KEY` genuinely unset — killed and confirmed-clean
+  stale processes on both ports before starting):
+  - Registered `arch-manual@example.com`, created project "Architecture Test Project".
+  - `POST /projects/:id/architecture/generate` with no PRD yet → real `400 NO_ACTIVE_PRD`
+    ("Generate and activate a PRD version before generating an architecture.").
+  - Seeded an active requirements version and an active PRD version directly via Prisma, then
+    re-ran generate → real `503 AI_PROVIDER_UNAVAILABLE` ("...to enable architecture
+    generation.") propagated end-to-end through Node → ai-service; confirmed no
+    `ArchitectureVersion` row was created.
+  - Seeded two `ArchitectureVersion` rows directly via Prisma (v1 inactive, v2 active, both
+    pointing at the same source PRD version).
+  - `GET /projects/:id/architecture` → both versions returned, newest-first, correct
+    `isActive` flags, correct `sourcePrdVersionId` on both.
+  - `GET /projects/:id/architecture/:v1` → correct content returned.
+  - `POST /projects/:id/architecture/:v1/activate` → v1 becomes active; `GET
+    .../architecture/:v2` immediately after confirms v2's `isActive` flipped to `false` — the
+    single-active-version invariant holds transactionally.
+  - `GET /projects/:id/architecture/compare?a=:v1&b=:v2` → correct diff, `technologyStack: {
+    added: ["Redis for caching weekly stats"], removed: [] }` (the only field seeded to
+    differ), all other fields empty diffs.
+  - `PATCH /projects/:id/architecture/:v1` with a full valid body → `200`, content persisted
+    and echoed back correctly.
+  - `PATCH /projects/:id/architecture/:v1` with a body missing required fields → real `400`.
+  - `GET /projects/:id/architecture/compare?a=:v1&b=:v1` → real `400` (same-id rejected).
+  - Unauthenticated `GET /projects/:id/architecture` → real `401`.
+  - Registered a second user and confirmed `GET /projects/:id/architecture` with that user's
+    session against the first user's project → real `404`.
+  - Cleanup: deleted both manually-created users (cascaded to their projects/requirements/
+    PRD/architecture versions); confirmed via `ps aux` that only the two manually-started
+    processes existed; found and killed one orphaned `tsx watch` child still bound to port
+    4000 after killing its parent (same recurring pattern as every prior phase); confirmed
+    ports 4000/8001 free afterward; removed the temporary session-cookie files.
+- Commit: `<pending>` — "feat(api): add architecture generation, versioning, and comparison endpoints".
 
 ### 5. Frontend architecture flow
 (pending)

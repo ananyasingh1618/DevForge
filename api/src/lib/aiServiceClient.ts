@@ -2,6 +2,7 @@ import { env } from "../env.js";
 import { AppError } from "./errors.js";
 import { requirementsContentSchema, type RequirementsContent } from "../schemas/requirements.js";
 import { prdContentSchema, type PrdContent } from "../schemas/prd.js";
+import { architectureContentSchema, type ArchitectureContent } from "../schemas/architecture.js";
 
 type AiErrorBody = { error?: { code?: string; message?: string } };
 
@@ -35,6 +36,22 @@ type AiPrdContent = {
   edge_cases: string[];
   success_criteria: string[];
   constraints: string[];
+  assumptions: string[];
+  open_questions: string[];
+};
+
+type AiArchitectureContent = {
+  overview: string;
+  system_architecture: string;
+  technology_stack: string[];
+  components: string[];
+  data_model: string[];
+  api_design: string[];
+  data_flows: string[];
+  security: string[];
+  scalability: string[];
+  deployment: string[];
+  tradeoffs: string[];
   assumptions: string[];
   open_questions: string[];
 };
@@ -106,6 +123,44 @@ function mapAiPrdContentToCamelCase(raw: AiPrdContent) {
     edgeCases: raw.edge_cases,
     successCriteria: raw.success_criteria,
     constraints: raw.constraints,
+    assumptions: raw.assumptions,
+    openQuestions: raw.open_questions,
+  };
+}
+
+// The reverse direction: architecture generation needs to *send* the
+// project's (camelCase) active PRD content to ai-service, which expects the
+// same snake_case shape it itself returns.
+function mapPrdContentToSnakeCase(content: PrdContent): AiPrdContent {
+  return {
+    overview: content.overview,
+    problem_statement: content.problemStatement,
+    goals: content.goals,
+    personas: content.personas,
+    functional_requirements: content.functionalRequirements,
+    non_functional_requirements: content.nonFunctionalRequirements,
+    user_workflows: content.userWorkflows,
+    edge_cases: content.edgeCases,
+    success_criteria: content.successCriteria,
+    constraints: content.constraints,
+    assumptions: content.assumptions,
+    open_questions: content.openQuestions,
+  };
+}
+
+function mapAiArchitectureContentToCamelCase(raw: AiArchitectureContent) {
+  return {
+    overview: raw.overview,
+    systemArchitecture: raw.system_architecture,
+    technologyStack: raw.technology_stack,
+    components: raw.components,
+    dataModel: raw.data_model,
+    apiDesign: raw.api_design,
+    dataFlows: raw.data_flows,
+    security: raw.security,
+    scalability: raw.scalability,
+    deployment: raw.deployment,
+    tradeoffs: raw.tradeoffs,
     assumptions: raw.assumptions,
     openQuestions: raw.open_questions,
   };
@@ -205,6 +260,37 @@ export async function generatePrdViaAiService(requirements: RequirementsContent)
       502,
       "AI_RESPONSE_INVALID",
       "The AI service's response did not match the expected PRD structure.",
+    );
+  }
+
+  return parsed.data;
+}
+
+/**
+ * Calls the ai-service's architecture-generation endpoint with the project's
+ * active PRD content and returns validated, camelCase ArchitectureContent —
+ * or throws an AppError. Same honesty guarantee as the other two AI-service
+ * calls: no fallback fabricates a result.
+ */
+export async function generateArchitectureViaAiService(
+  prd: PrdContent,
+): Promise<ArchitectureContent> {
+  const body = await postToAiService("/architecture/generate", {
+    prd: mapPrdContentToSnakeCase(prd),
+  });
+
+  if (!body?.content) {
+    throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
+  }
+
+  const parsed = architectureContentSchema.safeParse(
+    mapAiArchitectureContentToCamelCase(body.content as AiArchitectureContent),
+  );
+  if (!parsed.success) {
+    throw new AppError(
+      502,
+      "AI_RESPONSE_INVALID",
+      "The AI service's response did not match the expected architecture structure.",
     );
   }
 

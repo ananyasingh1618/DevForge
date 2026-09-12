@@ -6,6 +6,7 @@ import { authRouter } from "./routes/auth.js";
 import { projectsRouter } from "./routes/projects.js";
 import { requirementsRouter } from "./routes/requirements.js";
 import { prdRouter } from "./routes/prd.js";
+import { architectureRouter } from "./routes/architecture.js";
 import { AppError } from "./lib/errors.js";
 import { env } from "./env.js";
 
@@ -26,6 +27,7 @@ export function createApp() {
   app.use(projectsRouter);
   app.use(requirementsRouter);
   app.use(prdRouter);
+  app.use(architectureRouter);
 
   // Unmatched routes become a structured 404 rather than Express's default HTML page.
   app.use((_req, _res, next) => {
