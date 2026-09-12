@@ -157,7 +157,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     is itself the expected/already-tested `GITHUB_RATE_LIMITED` path — deterministic
     mocked-fetch unit tests for all three new functions are added in Milestone 6, matching how
     every other `githubClient.ts` function is tested.
-- Commit: `<pending>` — "feat(api,ai-service): add GitHub tree/blob retrieval and tree-sitter
+- Commit: `16a511c` — "feat(api,ai-service): add GitHub tree/blob retrieval and tree-sitter
   source parsing".
 
 ### 4. Indexing service and API endpoints
