@@ -1,10 +1,12 @@
-"""Pydantic models shared across ai-service agents (requirements, prd).
+"""Pydantic models shared across ai-service agents (requirements, prd,
+architecture, epics, tasks).
 
 These serve double duty for each feature: FastAPI uses them to validate the
-HTTP request/response, and the *same* model (RequirementsContent, PrdContent)
-is passed as the Anthropic `output_format` for structured-output validation
-(see app/agents/*/provider.py) — one schema per feature, not two definitions
-that could drift apart.
+HTTP request/response, and the *same* model (RequirementsContent, PrdContent,
+ArchitectureContent, EpicContent, TaskContent) is passed as the Anthropic
+`output_format` for structured-output validation (see app/agents/*/
+provider.py) — one schema per feature, not two definitions that could drift
+apart.
 """
 
 from typing import Literal
@@ -94,3 +96,68 @@ class GenerateArchitectureRequest(BaseModel):
 
 class GenerateArchitectureResponse(BaseModel):
     content: ArchitectureContent
+
+
+class EpicItem(BaseModel):
+    id: str = Field(..., description='Stable short id, e.g. "EP-1".')
+    title: str
+    description: str
+    objective: str
+    business_value: str
+    scope: str
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(
+        default_factory=list, description="Other epic ids this epic depends on."
+    )
+    related_components: list[str] = Field(
+        default_factory=list,
+        description="Names of architecture components this epic touches.",
+    )
+
+
+class EpicContent(BaseModel):
+    epics: list[EpicItem] = Field(default_factory=list)
+
+
+class GenerateEpicsRequest(BaseModel):
+    # Reuses ArchitectureContent as-is: epic generation's input is exactly
+    # the shape architecture generation already produces.
+    architecture: ArchitectureContent
+
+
+class GenerateEpicsResponse(BaseModel):
+    content: EpicContent
+
+
+class TaskItem(BaseModel):
+    id: str = Field(..., description='Stable short id, e.g. "T-1".')
+    title: str
+    description: str
+    type: Literal["feature", "bug", "chore"]
+    priority: Literal["high", "medium", "low"]
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(
+        default_factory=list, description="Other task ids this task depends on."
+    )
+    epic_id: str = Field(..., description="The EpicItem.id this task belongs to.")
+    related_component: str = Field(
+        default="", description="Name of the single architecture component this task touches."
+    )
+    estimated_complexity: Literal["small", "medium", "large"]
+    suggested_order: int = Field(
+        ..., description="Suggested sequence position for implementing this task."
+    )
+
+
+class TaskContent(BaseModel):
+    tasks: list[TaskItem] = Field(default_factory=list)
+
+
+class GenerateTasksRequest(BaseModel):
+    # Reuses EpicContent as-is: task generation's input is exactly the shape
+    # epic generation already produces.
+    epics: EpicContent
+
+
+class GenerateTasksResponse(BaseModel):
+    content: TaskContent

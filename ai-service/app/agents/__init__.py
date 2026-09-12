@@ -1,1 +1,1 @@
-"""Agents. requirements/, prd/, and architecture/ are implemented (Phases 2-4)."""
+"""Agents. requirements/, prd/, architecture/, epics/, and tasks/ are implemented (Phases 2-5)."""

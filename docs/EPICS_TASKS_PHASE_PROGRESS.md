@@ -10,7 +10,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration(s)
-- [ ] 3. ai-service epics/tasks contracts and providers
+- [x] 3. ai-service epics/tasks contracts and providers
 - [ ] 4. API endpoints (Node) — epics and tasks
 - [ ] 5. Frontend epics/tasks flow
 - [ ] 6. Tests
@@ -93,7 +93,48 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `c72853c` — "feat(api): add epic_versions and task_versions data models and migration".
 
 ### 3. ai-service epics/tasks contracts and providers
-(pending)
+- Files: `ai-service/app/schemas.py` (added `EpicItem`/`EpicContent`/`GenerateEpicsRequest`
+  — reusing `ArchitectureContent` as-is for the input — `GenerateEpicsResponse`;
+  `TaskItem`/`TaskContent`/`GenerateTasksRequest` — reusing `EpicContent` as-is —
+  `GenerateTasksResponse`; updated module docstring), new
+  `ai-service/app/agents/{epics,tasks}/{__init__,provider,router}.py`, `ai-service/main.py`
+  (wires both new routers). Also corrected two more stale docstrings found while touching this
+  area: `ai-service/app/agents/__init__.py` and `ai-service/app/agents/architecture/__init__.py`
+  (the latter said it was "the last link in the requirements -> PRD -> architecture chain",
+  no longer true) — same recurring class of staleness caught and fixed in Phase 4's Milestone 3
+  for the prior pair of docstrings.
+- `EpicsProvider`/`TasksProvider` are each their own ABC, not a shared generic one with
+  `ArchitectureProvider` or each other — same reasoning as every prior phase: input/output
+  shapes genuinely differ per agent. `get_anthropic_api_key`/`ProviderNotConfiguredError`
+  reused unmodified.
+- `EpicItem.id`/`TaskItem.id` are stable short ids (`"EP-1"`, `"T-1"`) mirroring
+  `RequirementItem.id`'s exact precedent, not the PRD/Architecture flat-sections shape — see
+  the plan doc's "What's genuinely new" section for the full reasoning.
+- Commands run and results:
+  - `.venv/bin/python -m pytest tests/ -v` (before adding new epics/tasks tests, right after
+    the schema addition) → `23 passed` — confirms the schema/router changes are fully
+    behavior-preserving for requirements/PRD/architecture.
+  - Manual (real, unmocked): started uvicorn with `ANTHROPIC_API_KEY` genuinely unset —
+    `GET /health` → `{"status":"ok"}`; `POST /epics/generate` with `{}` → real `400` "Field
+    required" on `architecture`; with `{"architecture":{"overview":123}}` → real `400` with
+    Pydantic field-level detail; with a fully valid architecture body → real `503
+    PROVIDER_NOT_CONFIGURED` with "...to enable epic generation."; `POST /tasks/generate` with
+    `{}` → real `400` on `epics`; with `{"epics":{"epics":"not-a-list"}}` → real `400`; with a
+    fully valid epics body → real `503 PROVIDER_NOT_CONFIGURED` with "...to enable task
+    generation."; re-curled `/requirements/analyze`, `/prd/generate`, `/architecture/generate`
+    and confirmed all three messages byte-for-byte unchanged after wiring in two more routers.
+  - Verified before writing tests (not assumed): for epics, `{"overview":"x",
+    "system_architecture":"y"}` is the minimal-valid `ArchitectureContent` (every other field
+    defaults to empty list) — reaches 503, not 400. For tasks, `{"epics":{}}` is the
+    minimal-valid body — `EpicContent.epics` itself defaults to an empty list, so even the
+    nested object can be empty — also reaches 503, not 400. Both written into their suites as
+    explicit `test_generate_accepts_minimal_valid_*_and_reaches_the_provider_check` cases.
+  - `.venv/bin/python -m pytest tests/ -v` (full suite) → `39 passed` (8 new epics cases + 8
+    new tasks cases, each mirroring `test_architecture.py`'s 8 exactly — plus the 23
+    pre-existing requirements/PRD/architecture cases, unaffected).
+  - Killed the manually-started uvicorn process by exact PID; confirmed port 8001 free
+    afterward.
+- Commit: `<pending>` — "feat(ai-service): add epic- and task-generation endpoints and provider abstractions".
 
 ### 4. API endpoints (Node) — epics and tasks
 (pending)
