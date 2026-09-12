@@ -5,17 +5,14 @@ import { Card } from "../components/Card.js";
 import { ErrorState, LoadingState } from "../components/StateViews.js";
 import { RequirementsSection } from "../components/RequirementsSection.js";
 import { PrdSection } from "../components/PrdSection.js";
+import { ArchitectureSection } from "../components/ArchitectureSection.js";
 import { ApiError } from "../services/apiClient.js";
 import { getProjectRequest } from "../services/projectsApi.js";
 import type { Project } from "../types/project.js";
 
-// Requirements (Phase 2) and PRD (Phase 3) are implemented and rendered
-// above this grid, not listed here anymore.
+// Requirements (Phase 2), PRD (Phase 3), and Architecture (Phase 4) are
+// implemented and rendered above this grid, not listed here anymore.
 const upcomingCapabilities = [
-  {
-    title: "Architecture",
-    description: "Frontend/backend/database/auth/integration planning with trade-offs.",
-  },
   {
     title: "Tasks",
     description: "Epics, user stories and a dependency-aware task board.",
@@ -103,6 +100,11 @@ export function ProjectOverview() {
           <h2 className="mt-10 text-sm font-medium text-text-muted">PRD</h2>
           <div className="mt-3">
             <PrdSection projectId={state.project.id} />
+          </div>
+
+          <h2 className="mt-10 text-sm font-medium text-text-muted">Architecture</h2>
+          <div className="mt-3">
+            <ArchitectureSection projectId={state.project.id} />
           </div>
 
           <h2 className="mt-10 text-sm font-medium text-text-muted">

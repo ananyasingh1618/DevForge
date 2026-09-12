@@ -8,16 +8,19 @@ import * as authApi from "../services/authApi.js";
 import * as projectsApi from "../services/projectsApi.js";
 import * as requirementsApi from "../services/requirementsApi.js";
 import * as prdApi from "../services/prdApi.js";
+import * as architectureApi from "../services/architectureApi.js";
 
 vi.mock("../services/authApi.js");
 vi.mock("../services/projectsApi.js");
 vi.mock("../services/requirementsApi.js");
 vi.mock("../services/prdApi.js");
+vi.mock("../services/architectureApi.js");
 
 const mockedAuthApi = vi.mocked(authApi);
 const mockedProjectsApi = vi.mocked(projectsApi);
 const mockedRequirementsApi = vi.mocked(requirementsApi);
 const mockedPrdApi = vi.mocked(prdApi);
+const mockedArchitectureApi = vi.mocked(architectureApi);
 
 function renderOverview(id: string) {
   return render(
@@ -38,6 +41,7 @@ beforeEach(() => {
   });
   mockedRequirementsApi.listRequirementsVersionsRequest.mockResolvedValue({ versions: [] });
   mockedPrdApi.listPrdVersionsRequest.mockResolvedValue({ versions: [] });
+  mockedArchitectureApi.listArchitectureVersionsRequest.mockResolvedValue({ versions: [] });
 });
 
 describe("ProjectOverview page", () => {
@@ -57,12 +61,13 @@ describe("ProjectOverview page", () => {
 
     expect(await screen.findByText("DevForge")).toBeInTheDocument();
     expect(screen.getByText("AI software engineering platform")).toBeInTheDocument();
-    // Requirements (Phase 2) and PRD (Phase 3) are implemented and must not
-    // appear in the "Not yet implemented" grid alongside genuinely unbuilt
-    // capabilities.
+    // Requirements (Phase 2), PRD (Phase 3), and Architecture (Phase 4) are
+    // implemented and must not appear in the "Not yet implemented" grid
+    // alongside genuinely unbuilt capabilities.
     expect(await screen.findByText("No requirements yet")).toBeInTheDocument();
     expect(await screen.findByText("Requirements needed first")).toBeInTheDocument();
-    expect(screen.getAllByText("Not yet implemented")).toHaveLength(5);
+    expect(await screen.findByText("PRD needed first")).toBeInTheDocument();
+    expect(screen.getAllByText("Not yet implemented")).toHaveLength(4);
     expect(screen.getByText("Codebase Q&A")).toBeInTheDocument();
   });
 

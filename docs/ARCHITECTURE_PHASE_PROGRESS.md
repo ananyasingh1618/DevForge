@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Prisma schema and migration
 - [x] 3. ai-service architecture contract/provider
 - [x] 4. API endpoints (Node)
-- [ ] 5. Frontend architecture flow
+- [x] 5. Frontend architecture flow
 - [ ] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
@@ -192,7 +192,58 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `37b3ddb` — "feat(api): add architecture generation, versioning, and comparison endpoints".
 
 ### 5. Frontend architecture flow
-(pending)
+- Files: `frontend/src/types/architecture.ts` (new — `ArchitectureContent`, `ArchitectureVersion`,
+  `ArchitectureDiff` mirroring the backend Zod/Pydantic shapes),
+  `frontend/src/services/architectureApi.ts` (new — one function per endpoint, mirroring
+  `prdApi.ts`), `frontend/src/components/ArchitectureSection.tsx` (new — structurally parallel
+  to `PrdSection.tsx`, including the `VersionDetail` `key={version.id}`-remount pattern, all 13
+  content fields editable), `frontend/src/pages/ProjectOverview.tsx` (renders
+  `<ArchitectureSection>` below `<PrdSection>`; removed "Architecture" from the "Not yet
+  implemented" grid), `frontend/src/pages/ProjectOverview.test.tsx` (mocks `architectureApi`,
+  updated the "Not yet implemented" count from 5 to 4, added an assertion for the
+  architecture-blocked-state message).
+- `ArchitectureSection` fetches the PRD list and its own architecture list independently on
+  mount (no new coupling to `PrdSection`) and derives exactly three states, per the plan:
+  **blocked** ("PRD needed first" — no active PRD version, no Generate control ever rendered),
+  **empty** (active PRD exists, no architecture yet — a single "Generate architecture from PRD
+  v{N}" button), **populated** (version list with an active badge, full per-field editing for
+  all 13 `ArchitectureContent` fields, "Save changes", "Make active", "Regenerate from PRD
+  v{N}").
+- Commands run and results:
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean (one pre-existing, unrelated warning in `useAuth.tsx`).
+  - `pnpm exec vitest run` → `30 passed (30)` after wiring `ArchitectureSection` into
+    `ProjectOverview` and updating its test (the count-of-5→4 change and the new blocked-state
+    assertion were verified against the real rendered DOM, not just adjusted to pass).
+- Manual browser verification (real Postgres, real api on :4000, real ai-service on :8001 with
+  `ANTHROPIC_API_KEY` unset, real Vite dev server on :5173 — all three started fresh after
+  confirming no stale processes), driven with Playwright via a cached `npx` install against a
+  real registered user and real project:
+  - No requirements/PRD yet → confirmed the three-section cascade renders correctly in one
+    screenshot: Requirements empty, PRD blocked ("Requirements needed first"), Architecture
+    blocked ("PRD needed first") — no Generate button present anywhere in the DOM for either
+    blocked section.
+  - Seeded an active requirements version and an active PRD version directly via Prisma,
+    reloaded → Architecture section shows the **empty** state with "Generate architecture from
+    PRD v1".
+  - Clicked Generate with no LLM provider configured → the real `503 AI_PROVIDER_UNAVAILABLE`
+    message ("No LLM provider is configured. Set ANTHROPIC_API_KEY in the ai-service
+    environment to enable architecture generation.") rendered in the UI, propagated end-to-end
+    from ai-service through Node with no fabricated success.
+  - Seeded two `ArchitectureVersion` rows directly via Prisma (v1 inactive, v2 active) →
+    **populated** state: both versions listed, all 13 content fields rendered and editable,
+    active badge on v2.
+  - Selected the inactive version and clicked "Make active" → the active badge moved
+    correctly and the previously-active version's badge disappeared, confirming the
+    single-active-version invariant holds visually.
+  - Edited the `overview` field and clicked "Save changes" → change persisted.
+  - Screenshots captured for each state and reviewed directly (not just asserted to exist).
+  - Cleanup: deleted the test user (cascaded through project/requirements/PRD/architecture
+    versions via existing FK cascade rules), confirmed via `ps aux` that only the three
+    manually-started DevForge processes existed (no orphaned `tsx watch` child this time —
+    all four PIDs, including the api watcher's child, killed cleanly on the first pass),
+    confirmed ports 4000/8001/5173 all free afterward.
+- Commit: `<pending>` — "feat(frontend): add Architecture section with dependency, generate, and version flows".
 
 ### 6. Tests
 (pending)
