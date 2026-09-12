@@ -98,7 +98,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   when rerun both together and as part of a second full-suite run; this is pre-existing
   test-isolation flakiness under parallel workers, not caused by this milestone's schema-only
   change, which touches no route or service code.)
-- Commit: `<pending>` — "feat(api): add codebase_index, indexed_file, and symbol data model
+- Commit: `e259042` — "feat(api): add codebase_index, indexed_file, and symbol data model
   and migration".
 
 ### 3. GitHub retrieval and ai-service parser
