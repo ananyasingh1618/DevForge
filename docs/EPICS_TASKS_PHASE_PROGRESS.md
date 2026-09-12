@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. ai-service epics/tasks contracts and providers
 - [x] 4. API endpoints (Node) — epics and tasks
 - [x] 5. Frontend epics/tasks flow
-- [ ] 6. Tests
+- [x] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
 
@@ -271,7 +271,70 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `7d6fc8b` — "feat(frontend): add Epics and Tasks sections with dependency, generate, and version flows".
 
 ### 6. Tests
-(pending)
+- ai-service pytest coverage for epics/tasks (`PROVIDER_NOT_CONFIGURED` real for real, `FakeX
+  Provider` success/validation-error paths via monkeypatch, `AIResponseInvalidError`/
+  `ProviderRequestError` → 502) was already written and verified in Milestone 3
+  (`ai-service/tests/test_{epics,tasks}.py`, 8 cases each, 39 total in the suite) — not
+  repeated here.
+- New files this milestone: `api/src/routes/{epics,tasks}.test.ts` (Supertest, mocking only
+  the outbound `fetch()` to ai-service — mirror `architecture.test.ts`, extending the seed
+  chain one and two links further with new `createProjectWithActiveArchitecture`/
+  `createProjectWithActiveEpics` helpers), `frontend/src/components/{EpicSection,
+  TaskSection}.test.tsx` (Vitest + RTL, mocking the relevant service pairs — mirror
+  `ArchitectureSection.test.tsx` but assert against per-item card fields via
+  `getByDisplayValue`/`getByLabelText` scoped to a single-item fixture rather than flat
+  fields), `tests/{epics,tasks}.test.ts` (real HTTP integration, mirror
+  `architecture.test.ts`).
+- `api/src/routes/epics.test.ts` — 17 cases mirroring `architecture.test.ts`'s shape
+  one-for-one: 401/404; 400 `NO_ACTIVE_ARCHITECTURE` with no architecture (confirms `fetch` is
+  never called); successful generate asserting `sourceArchitectureVersionId`; real
+  `PROVIDER_NOT_CONFIGURED` → 503 with nothing persisted; 502 on network failure; list/get/
+  update/activate/compare — the compare case asserts the **id-matched item-list diff** shape
+  (`{"epics":{"added":[{id,title}],"removed":[],"changed":[]}}`) rather than the flat-field
+  shape architecture's own test uses, confirming `diffEpicItems` end-to-end through the full
+  HTTP stack. One typecheck fix mid-milestone: `AI_EPICS_SUCCESS_BODY.content.epics[0]` needed
+  a non-null assertion under `noUncheckedIndexedAccess` — a test-file-only fix, not a
+  production code change.
+- `api/src/routes/tasks.test.ts` — 17 cases, same shape, one link further: 400
+  `NO_ACTIVE_EPICS`; successful generate asserting `sourceEpicVersionId` and that the
+  generated task's `epicId`/`suggestedOrder` round-trip correctly; the PATCH-invalid-shape
+  case uses a real enum violation (`type: "not-a-type"`) rather than a missing field, to also
+  exercise Zod's `.enum()` validation through the full stack; compare asserts the same
+  id-matched item-list diff shape for tasks.
+- `frontend/src/components/EpicSection.test.tsx` / `TaskSection.test.tsx` — 7 and 8 cases
+  respectively, mirroring `ArchitectureSection.test.tsx`'s state coverage (blocked/empty/
+  populated/error, generation failure without fabrication, version switching/activation,
+  edit+save with server-error handling) plus one extra `TaskSection` case exercising the
+  `<select>`-based `type` enum editor specifically, since that control type is new to this
+  phase (PRD/Architecture only ever used textareas).
+- `tests/epics.test.ts` / `tasks.test.ts` — real HTTP integration against genuinely running
+  api/ai-service/Postgres. Because no `ANTHROPIC_API_KEY` is configured, the real path
+  exercised is each `NO_ACTIVE_*` dependency guard (architecture, then epics), plus a direct
+  check that ai-service's own `/epics/generate` and `/tasks/generate` still honestly report
+  `PROVIDER_NOT_CONFIGURED`.
+- Commands run and results:
+  - `cd api && pnpm exec vitest run src/routes/epics.test.ts` → `17 passed (17)`.
+  - `cd api && pnpm exec vitest run src/routes/tasks.test.ts` → `17 passed (17)`.
+  - `cd api && pnpm exec vitest run` (full suite) → `111 passed (111)` (77 pre-existing + 17
+    epics + 17 tasks).
+  - `cd api && pnpm exec tsc --noEmit` → one error found and fixed (see above), clean after.
+    `pnpm exec eslint .` → clean.
+  - `cd frontend && pnpm exec vitest run src/components/EpicSection.test.tsx` → `7 passed (7)`.
+  - `cd frontend && pnpm exec vitest run src/components/TaskSection.test.tsx` → `8 passed (8)`.
+  - `cd frontend && pnpm exec vitest run` (full suite) → `52 passed (52)` (37 pre-existing + 7
+    epics + 8 tasks).
+  - `cd frontend && pnpm exec tsc --noEmit` → clean. `pnpm exec eslint .` → clean (one
+    pre-existing, unrelated warning in `useAuth.tsx`).
+  - Started fresh api (:4000) and ai-service (:8001) instances against the real Docker Postgres
+    (no `ANTHROPIC_API_KEY`), after confirming both ports were free.
+  - `cd tests && pnpm exec vitest run epics.test.ts tasks.test.ts` → `2 passed (2)`.
+  - `cd tests && pnpm exec vitest run` (full suite) → `7 passed (7)` (register-login-project,
+    requirements, prd, architecture, epics, tasks). `pnpm exec tsc --noEmit` → clean.
+  - Confirmed no leftover `*integration-test*` users in Postgres afterward (each test's own
+    `afterAll` deleted its seeded user).
+  - Killed both manually-started processes by exact PID; confirmed ports 4000/8001 free
+    afterward with no orphaned children this time.
+- Commit: `<pending>` — "test(api,frontend,tests): add epic and task generation, versioning, and comparison coverage".
 
 ### 7. Docker verification
 (pending)
