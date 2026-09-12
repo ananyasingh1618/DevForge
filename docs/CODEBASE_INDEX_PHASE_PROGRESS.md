@@ -232,7 +232,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
     servers (`ps aux`), and confirmed the sibling VoxMind `uvicorn` process (port 8000) was the
     only remaining `uvicorn` process, untouched throughout.
-- Commit: `<pending>` — "feat(api): add codebase indexing service and API endpoints".
+- Commit: `feb67a9` — "feat(api): add codebase indexing service and API endpoints".
 
 ### 5. Frontend codebase index section
 _Not started._
