@@ -327,7 +327,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     `afterAll` deleted its seeded user).
   - Killed all three manually-started processes by exact PID; confirmed ports 4000/8001 free
     afterward with no orphaned children this time.
-- Commit: `<pending>` — "test(api,frontend,tests): add GitHub client, token crypto, and repository connection coverage".
+- Commit: `943b69a` — "test(api,frontend,tests): add GitHub client, token crypto, and repository connection coverage".
 
 ### 7. Docker verification
 (pending)
