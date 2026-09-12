@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. GitHub client and service
 - [x] 4. API endpoints (Node)
 - [x] 5. Frontend repository settings flow
-- [ ] 6. Tests
+- [x] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
 
@@ -264,7 +264,70 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `8ff5bbc` — "feat(frontend): add project settings page with GitHub repository connection flow".
 
 ### 6. Tests
-(pending)
+- New files: `api/src/lib/githubTokenCrypto.test.ts` (8 cases — unconfigured→`AppError`
+  `GITHUB_INTEGRATION_NOT_CONFIGURED`; once configured with a test-only key mutated directly on
+  the real `env` object: round-trip, no-plaintext-leakage, random-IV-per-encryption, GCM
+  tamper detection, `lastFourOf`), `api/src/lib/githubClient.test.ts` (11 cases — mocked-`fetch`
+  coverage of every status mapping in `getAuthenticatedUser`/`getRepository`/`listBranches`
+  including the 403-with-`X-RateLimit-Remaining:0`-vs-bare-403 distinction and branch-list
+  pagination, **plus one real, unmocked test hitting `https://api.github.com` for real** —
+  network reachability confirmed in Milestone 1, no real credentials used or required),
+  `api/src/routes/repository.test.ts` (22 cases — Supertest, mirroring `architecture.test.ts`'s
+  shape adapted for the singular-resource endpoints), `frontend/src/components/
+  RepositoryConnectionSection.test.tsx` (7 cases — RTL, mirroring `ArchitectureSection.test.tsx`'s
+  state coverage), `tests/repository.test.ts` (1 case — real HTTP integration, mirroring
+  `architecture.test.ts`'s shape, the first integration test in this repo that doesn't need
+  `ai-service` running at all).
+- `repository.test.ts`'s config-gate testing technique: `env.GITHUB_TOKEN_ENCRYPTION_KEY` is
+  set to a fixed test-only 32-byte key (`Buffer.alloc(32, 7)`, never a real secret) directly on
+  the real, imported `env` object in `beforeEach`/`afterEach`, since `githubTokenCrypto.ts`
+  reads it at call time rather than destructuring at import — this lets most of the suite
+  exercise the real business logic behind the config gate (which needs to be open to test
+  anything beyond the 503 itself) while one dedicated test clears the key back to `undefined`
+  (this environment's real, confirmed state) to prove the honest not-configured path fires
+  correctly, mirroring the "test doubles ... clearly separated from production behavior"
+  requirement without needing a second test file.
+- `githubClient.test.ts`'s one real, unmocked test is the direct analogue of every prior
+  phase's real "not configured" pytest case — except here, since no server-side config gate
+  applies to the raw client function itself (only to `connectRepository`'s pre-flight check),
+  the equivalent honest proof is a real network call to the real GitHub API rejecting a real
+  fake token, not a config-absence check.
+- Two `noUncheckedIndexedAccess` typecheck fixes mid-milestone: `responses[callIndex] ??
+  responses[responses.length - 1]` in both `githubClient.test.ts` and `repository.test.ts`'s
+  shared `mockGithubResponses`/`mockGithubResponses` helpers needed a trailing `!` non-null
+  assertion — test-file-only fixes, not production code changes (same recurring class of fix
+  Phase 5's Milestone 6 also hit once).
+- Commands run and results:
+  - `cd api && pnpm exec vitest run src/lib/githubTokenCrypto.test.ts` → `8 passed (8)`.
+  - `cd api && pnpm exec vitest run src/lib/githubClient.test.ts` → `11 passed (11)` (including
+    the real network test — its share of the run's duration confirmed a genuine round trip
+    happened, not an instantly-resolved mock).
+  - `cd api && pnpm exec vitest run src/routes/repository.test.ts` → `22 passed (22)`.
+  - `cd api && pnpm exec vitest run` (full suite) → `152 passed (152)` (111 pre-existing + 8 +
+    11 + 22 new + one migration of two flagged typecheck errors before it went clean).
+  - `cd api && pnpm exec tsc --noEmit` → two errors found and fixed (see above), clean after.
+    `pnpm exec eslint .` → clean.
+  - `cd frontend && pnpm exec vitest run src/components/RepositoryConnectionSection.test.tsx` →
+    `7 passed (7)`.
+  - `cd frontend && pnpm exec vitest run` (full suite) → `59 passed (59)` (52 pre-existing + 7
+    new).
+  - `cd frontend && pnpm exec tsc --noEmit` → clean. `pnpm exec eslint .` → clean (one
+    pre-existing, unrelated warning in `useAuth.tsx`).
+  - Started a fresh api (:4000) instance against the real Docker Postgres (no
+    `GITHUB_TOKEN_ENCRYPTION_KEY`, this environment's real state), after confirming the port
+    was free. `cd tests && pnpm exec vitest run repository.test.ts` → `1 passed (1)` — this is
+    the first integration test in this repo that doesn't need `ai-service` running at all,
+    since GitHub integration never calls it.
+  - Also started a fresh `ai-service` instance and re-ran the **full** `tests/` suite together
+    (per the explicit "run the complete existing test suite and verify that all prior phases
+    remain green" instruction, not just this phase's own test) → `8 passed (8)`
+    (register-login-project, requirements, prd, architecture, epics, tasks, repository).
+    `pnpm exec tsc --noEmit` → clean.
+  - Confirmed no leftover `*integration-test*` users in Postgres afterward (each test's own
+    `afterAll` deleted its seeded user).
+  - Killed all three manually-started processes by exact PID; confirmed ports 4000/8001 free
+    afterward with no orphaned children this time.
+- Commit: `<pending>` — "test(api,frontend,tests): add GitHub client, token crypto, and repository connection coverage".
 
 ### 7. Docker verification
 (pending)
