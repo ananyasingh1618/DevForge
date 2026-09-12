@@ -434,7 +434,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     end-state every prior phase's Milestone 7 left the environment in.
   - `git status --porcelain` after all of the above: clean — this milestone required no file
     changes.
-- Commit: `<pending>` — "chore: verify codebase indexing phase against a clean-volume Docker
+- Commit: `b4994b4` — "chore: verify codebase indexing phase against a clean-volume Docker
   rebuild".
 
 ### 8. Documentation
