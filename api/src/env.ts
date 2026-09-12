@@ -11,6 +11,16 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   FRONTEND_ORIGIN: z.string().url().default("http://localhost:5173"),
   AI_SERVICE_URL: z.string().url().default("http://localhost:8001"),
+  // Optional (not required) so the API still starts and serves every other
+  // route with this unset — mirrors ANTHROPIC_API_KEY's read-at-call-time,
+  // "gate the one feature, never crash the process" pattern. Must decode to
+  // exactly 32 bytes (AES-256-GCM key length); see lib/githubTokenCrypto.ts.
+  GITHUB_TOKEN_ENCRYPTION_KEY: z
+    .string()
+    .refine((value) => Buffer.from(value, "base64").length === 32, {
+      message: "GITHUB_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key",
+    })
+    .optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

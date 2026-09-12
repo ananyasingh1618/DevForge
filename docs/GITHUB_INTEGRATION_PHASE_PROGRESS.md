@@ -10,7 +10,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration
-- [ ] 3. GitHub client and service
+- [x] 3. GitHub client and service
 - [ ] 4. API endpoints (Node)
 - [ ] 5. Frontend repository settings flow
 - [ ] 6. Tests
@@ -95,7 +95,49 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `aacc141` — "feat(api): add repository_connections data model and migration".
 
 ### 3. GitHub client and service
-(pending)
+- Files: `api/src/env.ts` (added `GITHUB_TOKEN_ENCRYPTION_KEY` as `.optional()` with a
+  base64-32-byte-length `.refine()`, so its absence — this environment's real state — does not
+  call `process.exit(1)` at startup), `api/src/lib/githubTokenCrypto.ts` (new —
+  `encryptToken`/`decryptToken` via Node's built-in `crypto`, AES-256-GCM, key read at call
+  time via `getEncryptionKey()`; `isGithubIntegrationConfigured()`; `lastFourOf()`),
+  `api/src/lib/githubClient.ts` (new — `getAuthenticatedUser`/`getRepository`/`listBranches`
+  against the real `https://api.github.com`, throwing `AppError` directly rather than a
+  separate typed-exception layer — this call happens inside the Node API, not across an HTTP
+  boundary into a different service, so there's no second mapping step to justify, unlike
+  `aiServiceClient.ts`), `api/src/schemas/repository.ts` (new — `connectRepositorySchema`,
+  `updateBranchSchema`, owner/repo name validation via GitHub's real character rules),
+  `api/src/services/repository.ts` (new — `connectRepository`, `getConnection`,
+  `verifyAccess`, `listBranches`, `updateBranch`, `disconnectRepository`, a private `sanitize()`
+  that always strips `encryptedToken` before any data leaves the service layer).
+- `GITHUB_TOKEN_ENCRYPTION_KEY` absence is checked explicitly in `connectRepository` **before**
+  any GitHub API call (`isGithubIntegrationConfigured()`), not just implicitly via
+  `encryptToken` throwing later — mirrors every prior phase's "check the dependency before
+  doing any work" ordering exactly.
+- `verifyAccess` persists a degraded `status: "error"`/`lastError` on failure (so a later `GET`
+  reflects the real "last verification status" without another reverify call) but still
+  rethrows the original error so the triggering request gets the correct real HTTP status —
+  a deliberate two-part behavior documented here since it wasn't obvious from the endpoint list
+  alone.
+- Commands run and results:
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - Manual, real, unmocked verification against the actual GitHub API (confirmed reachable
+    from this environment in Milestone 1): `isGithubIntegrationConfigured()` → `false` (this
+    environment's real state); `getAuthenticatedUser()` with a genuinely fake token → real
+    GitHub `401` mapped to `GITHUB_INVALID_CREDENTIALS`; `getRepository()` with the same fake
+    token → real GitHub `401` mapped the same way — no fabricated success anywhere, matching
+    every prior phase's `ANTHROPIC_API_KEY` discipline exactly.
+  - Manual verification of the encryption scheme with a locally-generated (never persisted)
+    32-byte key: `isGithubIntegrationConfigured()` → `true` once set; encrypt→decrypt round-trip
+    recovers the exact original plaintext; the stored ciphertext string never contains the
+    plaintext token; `lastFourOf()` matches the real last four characters; **tampering with the
+    ciphertext is correctly rejected** by AES-GCM's authentication tag, confirmed by mutating
+    two hex characters and observing `decryptToken` throw.
+  - `pnpm exec vitest run` (full suite) → `111 passed (111)` — all pre-existing tests
+    (Foundation + Phases 2–5) still pass unchanged; this milestone's automated tests are
+    written in Milestone 6, per the stated implementation order (matching every prior phase's
+    Milestone 3, which also deferred automated tests to Milestone 6).
+- Commit: `<pending>` — "feat(api): add GitHub client, token encryption, and repository connection service".
 
 ### 4. API endpoints (Node)
 (pending)
