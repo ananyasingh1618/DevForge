@@ -430,3 +430,8 @@ evaluation pipeline, additional LLM providers, automatic task execution, automat
 generation) was implemented, scaffolded with fake behavior, or claimed as working anywhere in
 this phase — see the root README's "Known limitations" and "Future work" sections, which
 remain the authoritative statement of what's left.
+
+**Phase 6 (GitHub Integration) progress is tracked separately** in
+[docs/GITHUB_INTEGRATION_PHASE_PLAN.md](GITHUB_INTEGRATION_PHASE_PLAN.md) and
+[docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](GITHUB_INTEGRATION_PHASE_PROGRESS.md) — this file
+remains the historical record of Phase 5 only and is not updated further.
