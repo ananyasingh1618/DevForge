@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration(s)
 - [x] 3. ai-service epics/tasks contracts and providers
-- [ ] 4. API endpoints (Node) — epics and tasks
+- [x] 4. API endpoints (Node) — epics and tasks
 - [ ] 5. Frontend epics/tasks flow
 - [ ] 6. Tests
 - [ ] 7. Docker verification
@@ -137,7 +137,72 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `6b5e397` — "feat(ai-service): add epic- and task-generation endpoints and provider abstractions".
 
 ### 4. API endpoints (Node) — epics and tasks
-(pending)
+- Files: `api/src/schemas/{epics,tasks}.ts` (new — `epicItemSchema`/`epicContentSchema` and
+  `taskItemSchema`/`taskContentSchema`, the latter using Zod `.enum()` for `type`/`priority`/
+  `estimatedComplexity` and `.number().int()` for `suggestedOrder`), `api/src/lib/
+  aiServiceClient.ts` (extended — added the outbound `mapArchitectureContentToSnakeCase` and
+  `mapEpicContentToSnakeCase` directions, the inbound `mapAiEpicContentToCamelCase` and
+  `mapAiTaskContentToCamelCase` directions, and `generateEpicsViaAiService`/
+  `generateTasksViaAiService`, reusing the existing `postToAiService` helper unchanged),
+  `api/src/services/{epics,tasks}.ts` (new — mirror `services/architecture.ts`'s
+  generate/list/get/update/activate shape exactly, but with `diffEpicItems`/`diffTaskItems`
+  reusing `services/requirements.ts`'s id-matched item-diff logic instead of
+  `architecture.ts`'s flat-field diff, per the plan's "what's genuinely new" reasoning),
+  `api/src/controllers/{epics,tasks}.ts` (new), `api/src/routes/{epics,tasks}.ts` (new —
+  `/compare` registered before `/:versionId` in both), `api/src/app.ts` (wires both routers).
+- Before adding any new file, verified the `aiServiceClient.ts` extension was
+  behavior-preserving on its own via `pnpm exec tsc --noEmit` and `pnpm exec vitest run` (both
+  clean/`77 passed` with only the extension applied, no new route files yet) — same discipline
+  as every prior phase's Milestone 4.
+- The two dependency checks are enforced in `generateEpicsFromActiveArchitecture` (`400
+  NO_ACTIVE_ARCHITECTURE`) and `generateTasksFromActiveEpics` (`400 NO_ACTIVE_EPICS`), both
+  before the AI service is ever called. Both AI-service calls happen before any database
+  write, so a provider failure leaves nothing partially persisted.
+- Commands run and results (after implementation):
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `77 passed (77)` (unchanged — the automated Supertest files for
+    the new epics/tasks routes are written in Milestone 6, per the stated implementation
+    order).
+- Manual end-to-end verification (real Postgres via Docker, real api dev server on :4000, real
+  ai-service on :8001 with `ANTHROPIC_API_KEY` genuinely unset — killed and confirmed-clean
+  stale processes on both ports before starting):
+  - Registered `epics-manual@example.com`, created project "Epics Test Project".
+  - `POST /projects/:id/epics/generate` with no architecture yet → real `400
+    NO_ACTIVE_ARCHITECTURE`. `POST /projects/:id/tasks/generate` with no epics yet → real
+    `400 NO_ACTIVE_EPICS` — both checked before any upstream artifact existed at all.
+  - Seeded an active requirements version, active PRD version, and active architecture version
+    directly via Prisma (the full three-link upstream chain), then re-ran epics generate →
+    real `503 AI_PROVIDER_UNAVAILABLE` ("...to enable epic generation.") propagated
+    end-to-end through Node → ai-service; confirmed no `EpicVersion` row was created.
+  - Seeded two `EpicVersion` rows directly via Prisma (v1 with one epic "EP-1", v2 adding a
+    second epic "EP-2", v2 active). `GET .../epics` → both versions, newest-first, correct
+    `isActive`/`sourceArchitectureVersionId`. `GET .../epics/:v1` → correct content.
+  - `POST .../epics/:v1/activate` → v1 active, v2's `isActive` flips to `false` on immediate
+    re-fetch — the single-active-version invariant holds transactionally.
+  - `GET .../epics/compare?a=:v1&b=:v2` → correct **item-list** diff (not the flat-field shape
+    PRD/architecture use): `{"epics":{"added":[{"id":"EP-2","title":"Weekly stats
+    view"}],"removed":[],"changed":[]}}` — confirms `diffEpicItems` works as designed against
+    real seeded data, not just in isolation.
+  - With epic v1 now active, `POST .../tasks/generate` → real `503 AI_PROVIDER_UNAVAILABLE`
+    ("...to enable task generation.") — confirms the second link of the dependency chain
+    reaches the AI service correctly once its own upstream is active.
+  - `PATCH .../epics/:v1` with a full valid body → `200`, content persisted and echoed back.
+  - `PATCH .../epics/:v1` with a body missing required item fields → real `400`.
+  - `GET .../epics/compare?a=:v1&b=:v1` → real `400` (same-id rejected). Unauthenticated
+    `GET .../epics` → real `401`. Cross-user `GET .../epics` → real `404`.
+  - Seeded two `TaskVersion` rows directly via Prisma (v1 with task "T-1", v2 adding "T-2",
+    v2 active, both sourced from epic v1). Repeated the full list/get/activate/compare/PATCH
+    cycle for tasks — all correct, including the item-list diff (`{"tasks":{"added":[{"id":
+    "T-2",...}],...}}`) and a real `400` when PATCHing an invalid `type` enum value
+    (`"not-a-type"`), confirming Zod's `.enum()` validation fires for real through the full
+    HTTP stack, not just at the schema-unit level.
+  - Cleanup: deleted both manually-created users (cascaded through project/requirements/PRD/
+    architecture/epics/tasks versions); confirmed via `ps aux` that only the two
+    manually-started processes existed; found and killed one orphaned `tsx watch` child still
+    bound to port 4000 after killing its parent (same recurring pattern as every prior phase);
+    confirmed ports 4000/8001 free afterward; removed the temporary session-cookie files.
+- Commit: `<pending>` — "feat(api): add epic and task generation, versioning, and comparison endpoints".
 
 ### 5. Frontend epics/tasks flow
 (pending)

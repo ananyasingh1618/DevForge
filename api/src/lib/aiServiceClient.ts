@@ -3,6 +3,8 @@ import { AppError } from "./errors.js";
 import { requirementsContentSchema, type RequirementsContent } from "../schemas/requirements.js";
 import { prdContentSchema, type PrdContent } from "../schemas/prd.js";
 import { architectureContentSchema, type ArchitectureContent } from "../schemas/architecture.js";
+import { epicContentSchema, type EpicContent } from "../schemas/epics.js";
+import { taskContentSchema, type TaskContent } from "../schemas/tasks.js";
 
 type AiErrorBody = { error?: { code?: string; message?: string } };
 
@@ -54,6 +56,40 @@ type AiArchitectureContent = {
   tradeoffs: string[];
   assumptions: string[];
   open_questions: string[];
+};
+
+type AiEpicItem = {
+  id: string;
+  title: string;
+  description: string;
+  objective: string;
+  business_value: string;
+  scope: string;
+  acceptance_criteria: string[];
+  dependencies: string[];
+  related_components: string[];
+};
+
+type AiEpicContent = {
+  epics: AiEpicItem[];
+};
+
+type AiTaskItem = {
+  id: string;
+  title: string;
+  description: string;
+  type: "feature" | "bug" | "chore";
+  priority: "high" | "medium" | "low";
+  acceptance_criteria: string[];
+  dependencies: string[];
+  epic_id: string;
+  related_component: string;
+  estimated_complexity: "small" | "medium" | "large";
+  suggested_order: number;
+};
+
+type AiTaskContent = {
+  tasks: AiTaskItem[];
 };
 
 function mapItem(item: AiRequirementItem) {
@@ -163,6 +199,80 @@ function mapAiArchitectureContentToCamelCase(raw: AiArchitectureContent) {
     tradeoffs: raw.tradeoffs,
     assumptions: raw.assumptions,
     openQuestions: raw.open_questions,
+  };
+}
+
+// The reverse direction: epic generation needs to *send* the project's
+// (camelCase) active architecture content to ai-service, which expects the
+// same snake_case shape it itself returns.
+function mapArchitectureContentToSnakeCase(content: ArchitectureContent): AiArchitectureContent {
+  return {
+    overview: content.overview,
+    system_architecture: content.systemArchitecture,
+    technology_stack: content.technologyStack,
+    components: content.components,
+    data_model: content.dataModel,
+    api_design: content.apiDesign,
+    data_flows: content.dataFlows,
+    security: content.security,
+    scalability: content.scalability,
+    deployment: content.deployment,
+    tradeoffs: content.tradeoffs,
+    assumptions: content.assumptions,
+    open_questions: content.openQuestions,
+  };
+}
+
+function mapAiEpicContentToCamelCase(raw: AiEpicContent) {
+  return {
+    epics: raw.epics.map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      objective: item.objective,
+      businessValue: item.business_value,
+      scope: item.scope,
+      acceptanceCriteria: item.acceptance_criteria,
+      dependencies: item.dependencies,
+      relatedComponents: item.related_components,
+    })),
+  };
+}
+
+// The reverse direction: task generation needs to *send* the project's
+// (camelCase) active epic content to ai-service, which expects the same
+// snake_case shape it itself returns.
+function mapEpicContentToSnakeCase(content: EpicContent): AiEpicContent {
+  return {
+    epics: content.epics.map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      objective: item.objective,
+      business_value: item.businessValue,
+      scope: item.scope,
+      acceptance_criteria: item.acceptanceCriteria,
+      dependencies: item.dependencies,
+      related_components: item.relatedComponents,
+    })),
+  };
+}
+
+function mapAiTaskContentToCamelCase(raw: AiTaskContent) {
+  return {
+    tasks: raw.tasks.map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      type: item.type,
+      priority: item.priority,
+      acceptanceCriteria: item.acceptance_criteria,
+      dependencies: item.dependencies,
+      epicId: item.epic_id,
+      relatedComponent: item.related_component,
+      estimatedComplexity: item.estimated_complexity,
+      suggestedOrder: item.suggested_order,
+    })),
   };
 }
 
@@ -291,6 +401,66 @@ export async function generateArchitectureViaAiService(
       502,
       "AI_RESPONSE_INVALID",
       "The AI service's response did not match the expected architecture structure.",
+    );
+  }
+
+  return parsed.data;
+}
+
+/**
+ * Calls the ai-service's epic-generation endpoint with the project's active
+ * architecture content and returns validated, camelCase EpicContent — or
+ * throws an AppError. Same honesty guarantee as the other AI-service calls:
+ * no fallback fabricates a result.
+ */
+export async function generateEpicsViaAiService(
+  architecture: ArchitectureContent,
+): Promise<EpicContent> {
+  const body = await postToAiService("/epics/generate", {
+    architecture: mapArchitectureContentToSnakeCase(architecture),
+  });
+
+  if (!body?.content) {
+    throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
+  }
+
+  const parsed = epicContentSchema.safeParse(
+    mapAiEpicContentToCamelCase(body.content as AiEpicContent),
+  );
+  if (!parsed.success) {
+    throw new AppError(
+      502,
+      "AI_RESPONSE_INVALID",
+      "The AI service's response did not match the expected epic structure.",
+    );
+  }
+
+  return parsed.data;
+}
+
+/**
+ * Calls the ai-service's task-generation endpoint with the project's active
+ * epic content and returns validated, camelCase TaskContent — or throws an
+ * AppError. Same honesty guarantee as the other AI-service calls: no
+ * fallback fabricates a result.
+ */
+export async function generateTasksViaAiService(epics: EpicContent): Promise<TaskContent> {
+  const body = await postToAiService("/tasks/generate", {
+    epics: mapEpicContentToSnakeCase(epics),
+  });
+
+  if (!body?.content) {
+    throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
+  }
+
+  const parsed = taskContentSchema.safeParse(
+    mapAiTaskContentToCamelCase(body.content as AiTaskContent),
+  );
+  if (!parsed.success) {
+    throw new AppError(
+      502,
+      "AI_RESPONSE_INVALID",
+      "The AI service's response did not match the expected task structure.",
     );
   }
 

@@ -7,6 +7,8 @@ import { projectsRouter } from "./routes/projects.js";
 import { requirementsRouter } from "./routes/requirements.js";
 import { prdRouter } from "./routes/prd.js";
 import { architectureRouter } from "./routes/architecture.js";
+import { epicsRouter } from "./routes/epics.js";
+import { tasksRouter } from "./routes/tasks.js";
 import { AppError } from "./lib/errors.js";
 import { env } from "./env.js";
 
@@ -28,6 +30,8 @@ export function createApp() {
   app.use(requirementsRouter);
   app.use(prdRouter);
   app.use(architectureRouter);
+  app.use(epicsRouter);
+  app.use(tasksRouter);
 
   // Unmatched routes become a structured 404 rather than Express's default HTML page.
   app.use((_req, _res, next) => {
