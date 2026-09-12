@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration
-- [ ] 3. GitHub retrieval and ai-service parser
+- [x] 3. GitHub retrieval and ai-service parser
 - [ ] 4. Indexing service and API endpoints
 - [ ] 5. Frontend codebase index section
 - [ ] 6. Tests
@@ -102,7 +102,63 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   and migration".
 
 ### 3. GitHub retrieval and ai-service parser
-_Not started._
+- **`api/src/lib/githubClient.ts`**: added `getBranchCommit` (`GET
+  /repos/{owner}/{repo}/branches/{branch}` → `commit.sha`), `getTree` (`GET
+  /repos/{owner}/{repo}/git/trees/{sha}?recursive=1`, filters to `blob`/`tree`/`commit` entries
+  and surfaces GitHub's own `truncated` flag rather than treating a truncated tree as
+  complete), and `getBlob` (`GET /repos/{owner}/{repo}/git/blobs/{sha}`, decodes the base64
+  content). All three reuse the existing `githubFetch`/`errorForResponse` helpers, so they get
+  the same 401/404/403/429/502 mapping every other client function already has and already has
+  tests for. Fixed one `exactOptionalPropertyTypes` typecheck error in `getTree`'s mapping
+  (conditionally spreading `size` instead of always assigning a possibly-`undefined` value).
+- **`ai-service/app/parsing/`**: filled in the placeholder left by the Phase 4 architecture
+  pass. `parser.py` — tree-sitter-backed `detect_language()` (extension → `python` /
+  `typescript` / `javascript`, anything else → `None`) and `parse_file()` (language detection,
+  parses with a fresh `Parser` per call bound to a cached, reused `Language` grammar object,
+  returns `"unsupported"` for an undetected language, `"parse_error"` with no symbols when
+  `tree.root_node.has_error` — tree-sitter is error-recovering and never raises on bad syntax,
+  so this flag is the actual failure signal — or `"parsed"` with the extracted symbol list).
+  Symbol extraction implements exactly the node-type mapping prototyped in Milestone 1
+  (class/function/method for Python; class/interface/type_alias/function/method for
+  TypeScript/JavaScript, including a `variable_declarator` whose value is an arrow function or
+  function expression), with parent-child nesting tracked via each extracted symbol's own index
+  into the flat results list (not raw tree-sitter node identity, which is not guaranteed stable
+  across repeated attribute access in the Python bindings — using each `_Extracted` object's
+  own `index` field sidesteps that entirely). `schemas.py` — `ParseFileRequest`/
+  `ParseFileResponse`/`SymbolInfo` Pydantic models, kept separate from `app/schemas.py` since
+  those models double as Anthropic `output_format` schemas and parsing has no such second use.
+  `router.py` — `POST /parsing/parse`, registered in `main.py` alongside the five existing
+  agent routers.
+- **`ai-service/requirements.txt`**: added `tree-sitter==0.26.0`, `tree-sitter-python==0.25.0`,
+  `tree-sitter-javascript==0.25.0`, `tree-sitter-typescript==0.23.2` — confirmed during
+  Milestone 1 planning that all four have prebuilt `manylinux2014_x86_64` wheels for Python
+  3.12, so no Dockerfile change is needed.
+- Commands run and results:
+  - `pip install -r requirements.txt` inside `ai-service/.venv`, then ran `parse_file()`
+    directly against a nested-class/nested-closure Python fixture, an interface/class/
+    arrow-function TypeScript fixture, an intentionally-malformed JS fixture, and a `.png`
+    path — output matched the Milestone 1 prototype exactly, including correct `parent_index`
+    resolution three levels deep (closure → method → class) and the honest `"parse_error"` /
+    `"unsupported"` paths.
+  - `python -m pytest -q`: 39/39 existing ai-service tests still pass (no test added yet for
+    the new module — deferred to Milestone 6, matching Phase 6's Milestone 3, which also
+    deferred all new tests to its own Milestone 6).
+  - Booted `uvicorn main:app` on a scratch port and hit `POST /parsing/parse` over real HTTP:
+    correct parsed response for a Python fixture, correct `"unsupported"` for `a.md`, and a
+    real FastAPI `VALIDATION_ERROR` (400) for a request missing `content` — confirming the
+    route is wired in and validates through the same error envelope as every other ai-service
+    endpoint.
+  - `npm run typecheck` and `npm run lint` in `api/`: both clean after the `exactOptionalPropertyTypes`
+    fix above.
+  - Confirmed real GitHub reachability for the new branch-resolution shape
+    (`curl https://api.github.com/repos/octocat/Hello-World/branches/master` returned a real
+    `commit.sha` field matching what `getBranchCommit` reads); the tree endpoint returned a
+    real rate-limit response on this unauthenticated connection at the time of testing, which
+    is itself the expected/already-tested `GITHUB_RATE_LIMITED` path — deterministic
+    mocked-fetch unit tests for all three new functions are added in Milestone 6, matching how
+    every other `githubClient.ts` function is tested.
+- Commit: `<pending>` — "feat(api,ai-service): add GitHub tree/blob retrieval and tree-sitter
+  source parsing".
 
 ### 4. Indexing service and API endpoints
 _Not started._

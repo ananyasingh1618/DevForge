@@ -15,6 +15,15 @@ export type GithubRepository = {
 
 export type GithubBranch = { name: string; protected: boolean };
 
+export type GithubTreeEntry = {
+  path: string;
+  type: "blob" | "tree" | "commit";
+  sha: string;
+  size?: number;
+};
+
+export type GithubTree = { entries: GithubTreeEntry[]; truncated: boolean };
+
 /**
  * Throws AppError directly (not a separate typed-exception layer, unlike
  * ai-service's providers) — this call happens directly inside the Node API,
@@ -117,4 +126,78 @@ export async function listBranches(
     if (body.length < BRANCHES_PER_PAGE) break;
   }
   return branches;
+}
+
+/** The current commit SHA a branch points at — the basis for a deterministic
+ * codebase index (see docs/CODEBASE_INDEX_PHASE_PLAN.md). */
+export async function getBranchCommit(
+  token: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<string> {
+  const res = await githubFetch(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`,
+    token,
+  );
+  if (!res.ok) {
+    throw errorForResponse(res, `Resolving branch "${branch}" for ${owner}/${repo}`);
+  }
+  const body = (await res.json()) as { commit: { sha: string } };
+  return body.commit.sha;
+}
+
+/** The full recursive file tree for a commit. GitHub itself truncates very
+ * large trees (`truncated: true`) rather than paginating this endpoint —
+ * callers must surface that rather than treating a truncated tree as
+ * complete. */
+export async function getTree(
+  token: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<GithubTree> {
+  const res = await githubFetch(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(sha)}?recursive=1`,
+    token,
+  );
+  if (!res.ok) {
+    throw errorForResponse(res, `Listing the file tree for ${owner}/${repo}@${sha}`);
+  }
+  const body = (await res.json()) as {
+    tree: { path: string; type: string; sha: string; size?: number }[];
+    truncated: boolean;
+  };
+  const entries = body.tree
+    .filter((entry): entry is { path: string; type: "blob" | "tree" | "commit"; sha: string; size?: number } =>
+      entry.type === "blob" || entry.type === "tree" || entry.type === "commit",
+    )
+    .map((entry) => ({
+      path: entry.path,
+      type: entry.type,
+      sha: entry.sha,
+      ...(entry.size !== undefined ? { size: entry.size } : {}),
+    }));
+  return { entries, truncated: body.truncated };
+}
+
+/** Raw file content for one blob, decoded from GitHub's base64 encoding. */
+export async function getBlob(
+  token: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<string> {
+  const res = await githubFetch(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${encodeURIComponent(sha)}`,
+    token,
+  );
+  if (!res.ok) {
+    throw errorForResponse(res, `Fetching file contents for ${owner}/${repo}`);
+  }
+  const body = (await res.json()) as { content: string; encoding: string };
+  if (body.encoding !== "base64") {
+    throw new AppError(502, "GITHUB_API_ERROR", "GitHub returned an unexpected blob encoding.");
+  }
+  return Buffer.from(body.content, "base64").toString("utf-8");
 }

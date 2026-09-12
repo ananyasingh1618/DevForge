@@ -3,9 +3,11 @@
 Phase 2 added requirements analysis (see app/agents/requirements/). Phase 3
 added PRD generation (see app/agents/prd/). Phase 4 added architecture
 generation (see app/agents/architecture/). Phase 5 adds epic generation (see
-app/agents/epics/) and task generation (see app/agents/tasks/). Every other
-future capability — retrieval, codebase Q&A, code review — remains
-unimplemented; nothing in this service fabricates a response for them.
+app/agents/epics/) and task generation (see app/agents/tasks/). Phase 7 adds
+tree-sitter-backed source parsing and symbol extraction (see app/parsing/) —
+not an LLM call, so it needs no provider configuration. Every other future
+capability — retrieval, codebase Q&A, code review — remains unimplemented;
+nothing in this service fabricates a response for them.
 """
 
 from fastapi import FastAPI
@@ -16,6 +18,7 @@ from app.agents.prd.router import router as prd_router
 from app.agents.requirements.router import router as requirements_router
 from app.agents.tasks.router import router as tasks_router
 from app.errors import register_error_handlers
+from app.parsing.router import router as parsing_router
 
 app = FastAPI(title="DevForge AI Service", version="0.0.0")
 
@@ -25,6 +28,7 @@ app.include_router(prd_router)
 app.include_router(architecture_router)
 app.include_router(epics_router)
 app.include_router(tasks_router)
+app.include_router(parsing_router)
 
 
 @app.get("/health")
