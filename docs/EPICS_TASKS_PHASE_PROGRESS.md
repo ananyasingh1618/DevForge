@@ -53,7 +53,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Wrote `docs/EPICS_TASKS_PHASE_PLAN.md` and this progress file; added a pointer from
   `docs/ARCHITECTURE_PHASE_PROGRESS.md` to both, mirroring the pointer chain every prior phase
   established.
-- Commit: `<pending>` — "docs: Phase 5 (Epics & Tasks Generation) plan and progress tracker".
+- Commit: `e3db5b7` — "docs: Phase 5 (Epics & Tasks Generation) plan and progress tracker".
 
 ### 2. Prisma schema and migration(s)
 (pending)
