@@ -61,7 +61,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Confirmed no orphaned processes and Docker at the expected Phase-6-end state
   (`devforge-postgres-1` only) before starting; confirmed the sibling VoxMind `uvicorn` process
   is running and untouched.
-- Commit: `<pending>` — "docs: Phase 7 (AST Parsing & Codebase Indexing) plan and progress
+- Commit: `d5ae3f8` — "docs: Phase 7 (AST Parsing & Codebase Indexing) plan and progress
   tracker".
 
 ### 2. Prisma schema and migration
