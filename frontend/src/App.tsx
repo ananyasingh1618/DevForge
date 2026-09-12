@@ -6,6 +6,7 @@ import { Login } from "./pages/Login.js";
 import { Projects } from "./pages/Projects.js";
 import { ProjectNew } from "./pages/ProjectNew.js";
 import { ProjectOverview } from "./pages/ProjectOverview.js";
+import { ProjectSettings } from "./pages/ProjectSettings.js";
 
 export function App() {
   return (
@@ -35,6 +36,14 @@ export function App() {
           element={
             <RequireAuth>
               <ProjectOverview />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/projects/:id/settings"
+          element={
+            <RequireAuth>
+              <ProjectSettings />
             </RequireAuth>
           }
         />

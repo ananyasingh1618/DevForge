@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Prisma schema and migration
 - [x] 3. GitHub client and service
 - [x] 4. API endpoints (Node)
-- [ ] 5. Frontend repository settings flow
+- [x] 5. Frontend repository settings flow
 - [ ] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
@@ -196,7 +196,72 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `4e5b691` — "feat(api): add GitHub repository connection endpoints".
 
 ### 5. Frontend repository settings flow
-(pending)
+- Files: `frontend/src/types/repository.ts` (new), `frontend/src/services/repositoryApi.ts`
+  (new — one function per endpoint), `frontend/src/components/RepositoryConnectionSection.tsx`
+  (new — `ConnectForm` for the disconnected state, `ConnectedView` for the connected state,
+  both reusing `Button`/`Card`/`EmptyState`/`ErrorState`/`LoadingState` exactly as every prior
+  section does), `frontend/src/pages/ProjectSettings.tsx` (new page — a project-settings page
+  is the right home for a connection/credential concern, distinct from the content-generation
+  sections on the overview page, per the plan), `frontend/src/App.tsx` (new
+  `/projects/:id/settings` route), `frontend/src/pages/ProjectOverview.tsx` (added a
+  "Settings" link next to "← Projects"; changed the "Repository" entry in the "Not yet
+  implemented" grid to "Repository indexing" with a description reflecting only what's
+  actually still missing — the GitHub *connection* itself is now implemented via Settings, but
+  ingestion/AST indexing remain genuinely unbuilt, so the grid entry couldn't simply be
+  removed the way every prior phase's newly-implemented capability was).
+- One `eslint-plugin-react-hooks` fix mid-milestone: `ConnectedView`'s branch-fetching effect
+  originally reset `branches`/`branchesError` synchronously inside the effect body when
+  `connection.id` changed, tripping the same synchronous-setState-in-effect rule this repo has
+  hit repeatedly. Fixed with the same established technique: the parent now renders
+  `<ConnectedView key={connection.id} .../>`, remounting on a real connection change instead of
+  resetting state inside the effect; the effect's dependency array is just `[projectId]` since
+  the remount already guarantees a fresh run. Confirmed `connection.id` only changes when the
+  UI reachably would want a remount (disconnect-then-reconnect creates a new row via the
+  service's create-not-update path; verify/branch-update reuse the same row id and correctly do
+  *not* remount, since neither needs to re-fetch the branch list).
+- Commands run and results:
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → one error found and fixed (see above), clean after (one
+    pre-existing, unrelated warning in `useAuth.tsx` remains).
+  - `pnpm exec vitest run` → `52 passed (52)` unchanged (the grid-item-count assertion in
+    `ProjectOverview.test.tsx` still holds — the grid still has 3 items, only one's title/
+    description text changed, which that test doesn't assert on; the dedicated
+    `RepositoryConnectionSection.test.tsx` is written in Milestone 6, per the stated
+    implementation order).
+- Manual browser verification (real Postgres, real api on :4000, real Vite dev server on
+  :5173 — no `ai-service` involved in this phase at all — both started fresh after confirming
+  no stale processes), driven with Playwright via a cached `npx` install against a real
+  registered user and real project:
+  - Registered, created a project, clicked the new "Settings" link → landed on
+    `/projects/:id/settings` showing the **disconnected** state: the honest explanation, the
+    connect form (owner/repo/token), no premature "connected" claim anywhere.
+  - Submitted the connect form with `GITHUB_TOKEN_ENCRYPTION_KEY` genuinely unset → the real
+    `GitHub integration is not configured. Set GITHUB_TOKEN_ENCRYPTION_KEY...` message rendered
+    inline, form values preserved, still disconnected — no fabricated success.
+  - **Restarted the api process with a locally-generated (never persisted or committed)
+    32-byte key**: submitted the connect form again with a genuinely fake token → the real
+    GitHub `401` ("The GitHub token is invalid or expired.") rendered inline, still
+    disconnected.
+  - Seeded one `RepositoryConnection` row directly via Prisma, encrypted with the **same**
+    locally-generated key the running server had, to exercise the **connected** state UI
+    without a real valid PAT: reloaded the settings page → owner/repo, the real repository
+    URL as a link, a "verified" status badge, "Connected as octocat", the token shown only as
+    "•••• 0000" (the seeded fake token's real last four characters, never the full value —
+    confirmed by reading the rendered page, not just trusting the component code), a "Last
+    verified" timestamp, and the **live branches fetch genuinely failing** (the seeded token is
+    fake) — correctly surfaced as a real inline error rather than silently hidden or a
+    fabricated branch list.
+  - Clicked "Reverify access" → the real GitHub `401` surfaced again, and the connection's
+    status badge and "Last error" text updated in place (confirming the two-part `verifyAccess`
+    behavior from Milestone 4 is visible end-to-end in the UI, not just at the API layer).
+  - Clicked "Disconnect" → the UI correctly returned to the **disconnected** state (the connect
+    form reappeared), confirmed via a fresh screenshot.
+  - Screenshots captured for every state and reviewed directly (not just asserted to exist).
+  - Cleanup: deleted the test user (cascaded to its project and repository connection);
+    confirmed via `ps aux` that only the three manually-started DevForge processes existed;
+    killed all three cleanly with no orphaned children this time; confirmed ports 4000/5173
+    free afterward; removed the temporary locally-generated key file.
+- Commit: `<pending>` — "feat(frontend): add project settings page with GitHub repository connection flow".
 
 ### 6. Tests
 (pending)

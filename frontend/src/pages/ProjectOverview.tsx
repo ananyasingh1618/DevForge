@@ -12,13 +12,17 @@ import { ApiError } from "../services/apiClient.js";
 import { getProjectRequest } from "../services/projectsApi.js";
 import type { Project } from "../types/project.js";
 
-// Requirements (Phase 2), PRD (Phase 3), Architecture (Phase 4), and Epics &
+// Requirements (Phase 2), PRD (Phase 3), Architecture (Phase 4), Epics &
 // Tasks (Phase 5) are implemented and rendered above this grid, not listed
-// here anymore.
+// here anymore. GitHub repository *connection* (Phase 6) is implemented too
+// — see the "Settings" link above — but repository ingestion/AST-aware
+// indexing (what a connection will feed once those phases exist) remain
+// genuinely unbuilt, so "Repository" stays below with a description
+// reflecting only what's actually still missing.
 const upcomingCapabilities = [
   {
-    title: "Repository",
-    description: "GitHub connection, repository ingestion and AST-aware code indexing.",
+    title: "Repository indexing",
+    description: "Clone, AST-parse, and index the connected repository for retrieval.",
   },
   {
     title: "Codebase Q&A",
@@ -76,9 +80,17 @@ export function ProjectOverview() {
 
       {state.status === "ready" && (
         <div>
-          <Link to="/projects" className="text-sm text-text-muted hover:text-text">
-            &larr; Projects
-          </Link>
+          <div className="flex items-center justify-between gap-4">
+            <Link to="/projects" className="text-sm text-text-muted hover:text-text">
+              &larr; Projects
+            </Link>
+            <Link
+              to={`/projects/${state.project.id}/settings`}
+              className="text-sm text-text-muted hover:text-text"
+            >
+              Settings
+            </Link>
+          </div>
           <div className="mt-2 flex items-start justify-between gap-4">
             <div>
               <h1 className="text-xl font-semibold text-text">{state.project.name}</h1>
