@@ -193,7 +193,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     killed one orphaned `tsx watch` child still bound to port 4000 after killing its parent
     (same recurring pattern as every prior phase); confirmed port 4000 free afterward; removed
     the temporary session-cookie files.
-- Commit: `<pending>` — "feat(api): add GitHub repository connection endpoints".
+- Commit: `4e5b691` — "feat(api): add GitHub repository connection endpoints".
 
 ### 5. Frontend repository settings flow
 (pending)
