@@ -467,7 +467,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     end to end as one file, not just as isolated diffs).
   - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
     suite was already green as of Milestone 7's final Docker-and-local-restoration check.
-- Commit: `<pending>` — "docs: update README for Phase 7 (AST Parsing & Codebase Indexing)".
+- Commit: `9d368f4` — "docs: update README for Phase 7 (AST Parsing & Codebase Indexing)".
 
 ## Phase 7 (AST Parsing & Codebase Indexing): complete
 
