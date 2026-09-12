@@ -376,7 +376,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     watch`/`uvicorn` processes remained after stopping the manually-started servers (`ps aux`);
     the sibling VoxMind `uvicorn` process was the only `uvicorn` process left, untouched
     throughout.
-- Commit: `<pending>` — "test(api,ai-service,frontend,tests): add codebase indexing test
+- Commit: `a73a16c` — "test(api,ai-service,frontend,tests): add codebase indexing test
   coverage".
 
 ### 7. Docker verification
