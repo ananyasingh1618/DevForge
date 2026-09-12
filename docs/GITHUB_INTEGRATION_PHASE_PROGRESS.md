@@ -383,7 +383,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     → `59 passed` (the `tests/` package's own suite requires live api/ai-service processes,
     which were stopped by this point — already verified above against both local dev and the
     Dockerized stack, so this is expected, not a regression).
-- Commit: `<pending>` — "chore: verify GitHub integration phase against a clean-volume Docker rebuild".
+- Commit: `6459b4b` — "chore: verify GitHub integration phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
 (pending)
