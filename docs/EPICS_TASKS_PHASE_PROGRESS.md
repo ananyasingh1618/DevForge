@@ -15,7 +15,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 5. Frontend epics/tasks flow
 - [x] 6. Tests
 - [x] 7. Docker verification
-- [ ] 8. Documentation
+- [x] 8. Documentation
 
 ## Per-milestone log
 
@@ -386,4 +386,47 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `b570667` — "chore: verify epics/tasks phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
-(pending)
+- Files: root `README.md` (status banner, overview, "What works today", architecture diagram,
+  tech stack, repository structure, prerequisites, env var table, Docker verification note,
+  API summary, database schema, known limitations, and future work all updated to reflect
+  Phase 5 — "Tasks" removed from the "Not yet implemented" grid it previously appeared in; the
+  known-limitations section gained three new entries specific to this phase: no add/remove-item
+  UI control, unvalidated cross-references in `dependencies`/`epicId`/`relatedComponent(s)`,
+  and the directly-observed cross-section staleness characteristic from Milestone 5), `ai-
+  service/README.md` (updated to list all five implemented agents). `frontend/README.md` was
+  checked and needed no change (its one "architecture" mention is the generic "setup/
+  architecture docs" phrase, confirmed unrelated in Phase 4 already).
+- Commands run and results:
+  - Read every changed section back after editing to confirm no stray Phase-4-only phrasing
+    remained (e.g. searched for "Tasks" in the "not yet implemented" grid list and confirmed
+    every new endpoint/schema/limitation is reflected consistently across the repo's README
+    files).
+  - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
+    suite was already green as of Milestone 7's final workspace-wide check.
+- Commit: `<pending>` — "docs: update README and ai-service README for Phase 5 (Epics & Tasks Generation)".
+
+## Phase 5 (Epics & Tasks Generation): complete
+
+All 8 milestones are done and independently verified (see each entry above for exact commands
+and results). Epic and task generation — a project's active architecture version → a
+structured, versioned, editable set of epics, and its active epic version → a structured,
+versioned, editable set of tasks, each with an active version and a structural compare — are
+genuinely implemented and tested: this phase added 82 automated tests (34 api Supertest, 15
+frontend RTL, 2 real-HTTP integration, 16 ai-service pytest, split evenly across epics and
+tasks), and the full combined suite across all four AI-feature phases is green together, not
+just individually — `209 tests total` (111 api + 52 frontend + 7 tests/ + 39 ai-service). The
+system is demonstrable, with an honest "not configured" path throughout since this environment
+has no `ANTHROPIC_API_KEY`. Both new
+dependency checks (`400 NO_ACTIVE_ARCHITECTURE`, `400 NO_ACTIVE_EPICS`) are enforced both
+server-side, before any AI-service call, and in the UI, where no Generate control is ever
+rendered when the dependency isn't met. The full five-artifact chain (Requirements → PRD →
+Architecture → Epics → Tasks) was verified end-to-end, including the correct cascading blocked
+states across all four dependency links and a directly-observed, documented display-only
+staleness characteristic that does not affect data correctness. The central architectural
+decision — two independent versioned artifacts rather than one hierarchical work-plan artifact
+— was made explicit and reasoned through in Milestone 1 rather than assumed. No later
+DevForge feature (GitHub integration, AST parsing, retrieval, codebase Q&A, code review,
+evaluation pipeline, additional LLM providers, automatic task execution, automatic code
+generation) was implemented, scaffolded with fake behavior, or claimed as working anywhere in
+this phase — see the root README's "Known limitations" and "Future work" sections, which
+remain the authoritative statement of what's left.

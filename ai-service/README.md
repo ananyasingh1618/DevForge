@@ -2,11 +2,12 @@
 
 Python/FastAPI. Implements **requirements analysis** (`POST /requirements/analyze`, see
 `app/agents/requirements/`), **PRD generation** (`POST /prd/generate`, see `app/agents/prd/`),
-and **architecture generation** (`POST /architecture/generate`, see
-`app/agents/architecture/`), all via Anthropic Claude (`claude-opus-5`). Retrieval and code
-review are not implemented; nothing here fakes them. `GET /health` always works, even with no
-`ANTHROPIC_API_KEY` set — analyze/generate requests fail with a clear 503 in that case instead.
-See the root [README.md](../README.md) for the full picture.
+**architecture generation** (`POST /architecture/generate`, see `app/agents/architecture/`),
+**epic generation** (`POST /epics/generate`, see `app/agents/epics/`), and **task generation**
+(`POST /tasks/generate`, see `app/agents/tasks/`), all via Anthropic Claude (`claude-opus-5`).
+Retrieval and code review are not implemented; nothing here fakes them. `GET /health` always
+works, even with no `ANTHROPIC_API_KEY` set — analyze/generate requests fail with a clear 503
+in that case instead. See the root [README.md](../README.md) for the full picture.
 
 ```bash
 python3 -m venv .venv
