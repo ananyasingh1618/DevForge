@@ -15,7 +15,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 5. Frontend repository settings flow
 - [x] 6. Tests
 - [x] 7. Docker verification
-- [ ] 8. Documentation
+- [x] 8. Documentation
 
 ## Per-milestone log
 
@@ -386,4 +386,51 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `6459b4b` — "chore: verify GitHub integration phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
-(pending)
+- Files: root `README.md` (status banner, overview, "What works today", architecture diagram
+  — now showing the Node API's direct outbound call to the real GitHub REST API alongside its
+  `ai-service` call — tech stack, repository structure, prerequisites, both new environment
+  variable notes, Docker verification note, API summary, database schema, known limitations,
+  and future work all updated to reflect Phase 6), `ai-service/README.md` (checked, needed no
+  change — GitHub integration is entirely a Node API concern and never touches `ai-service`).
+  `frontend/README.md` was checked and needed no change (no phase-specific mentions to update).
+- The known-limitations section gained four entries specific to this phase: the PAT-only
+  authentication decision (with the OAuth/GitHub-App rejection reasoning restated briefly,
+  full detail in the plan doc), the explicit "no repository content is ever read" boundary
+  (only connection metadata is stored — the objective of this phase was connecting and
+  verifying access, not ingesting anything), unvalidated GitHub-reported fields, and the lack
+  of automatic re-verification.
+- Commands run and results:
+  - Read every changed section back after editing to confirm no stray Phase-5-only phrasing
+    remained (e.g. confirmed the "Repository" future-work/limitations language now correctly
+    distinguishes "connection" — implemented — from "ingestion" — still future work — instead
+    of treating "GitHub integration" as one undifferentiated unimplemented item).
+  - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
+    suite was already green as of Milestone 7's final workspace-wide check.
+- Commit: `<pending>` — "docs: update README for Phase 6 (GitHub Integration)".
+
+## Phase 6 (GitHub Integration): complete
+
+All 8 milestones are done and independently verified (see each entry above for exact commands
+and results). Connecting a GitHub repository to a project — authenticate with a user-supplied
+personal access token, verify real access against the live GitHub API, view connection status
+and the authenticated account, list and select a branch, reverify, disconnect — is genuinely
+implemented and tested: this phase added 63 automated tests (41 api — 8 crypto unit + 11
+client unit + 22 Supertest, 7 frontend RTL, 1 real-HTTP integration), and the full combined
+suite across all five feature phases is green together, not just individually — `219 tests
+total` (152 api + 59 frontend + 8 tests/). The system is demonstrable, with an honest "not
+configured" path throughout since this environment has no `GITHUB_TOKEN_ENCRYPTION_KEY`, and
+with genuinely verified real-GitHub-API failure paths (invalid credentials) exercised for real
+— no real, valid GitHub credentials were used or required anywhere in this phase's
+verification, and no fabricated connection was ever claimed. Both central design decisions —
+personal access token over OAuth/GitHub App, and a single-row connection model over a
+versioned artifact — were made explicit and reasoned through in Milestone 1 rather than
+assumed, breaking from the Requirements→PRD→Architecture→Epics→Tasks generation-chain pattern
+deliberately, since this phase is not another link in that chain. The stored token is
+encrypted at rest (AES-256-GCM) and never returned by any API response, verified directly at
+every layer (unit tests, Supertest response-body assertions, and manual browser verification
+reading the actual rendered page). No later DevForge feature (AST parsing, repository
+indexing, embeddings, retrieval, codebase Q&A, code review, automatic code generation,
+automatic task execution, GitHub issue/PR creation, GitHub Actions integration, additional LLM
+providers) was implemented, scaffolded with fake behavior, or claimed as working anywhere in
+this phase — see the root README's "Known limitations" and "Future work" sections, which
+remain the authoritative statement of what's left.

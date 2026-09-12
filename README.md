@@ -3,19 +3,20 @@
 AI Software Engineering & Codebase Intelligence Platform.
 
 > **Current status: Foundation phase + Phase 2 (Requirements Analysis) + Phase 3 (PRD
-> Generation) + Phase 4 (Architecture Generation) + Phase 5 (Epics & Tasks Generation)
-> complete.** This repository implements authentication, a project workspace, AI-assisted
-> requirements analysis, AI-assisted PRD generation, AI-assisted architecture generation, and
-> AI-assisted epic/task generation, end to end, with tests and a working Docker Compose stack.
-> GitHub integration, AST-aware indexing, hybrid retrieval, codebase Q&A, and AI code review
-> are part of the full product specification but are **not yet implemented** — nothing in this
-> repository simulates or fakes those capabilities. See
-> [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
+> Generation) + Phase 4 (Architecture Generation) + Phase 5 (Epics & Tasks Generation) +
+> Phase 6 (GitHub Integration) complete.** This repository implements authentication, a
+> project workspace, AI-assisted requirements analysis, AI-assisted PRD generation,
+> AI-assisted architecture generation, AI-assisted epic/task generation, and a secure GitHub
+> repository connection, end to end, with tests and a working Docker Compose stack. AST-aware
+> indexing, hybrid retrieval, codebase Q&A, and AI code review are part of the full product
+> specification but are **not yet implemented** — nothing in this repository simulates or
+> fakes those capabilities. See [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 > [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 > [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
-> [docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md), and
-> [docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md) for the detailed,
-> verified log of every milestone that built each phase.
+> [docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
+> [docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md), and
+> [docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md) for
+> the detailed, verified log of every milestone that built each phase.
 
 ## Overview
 
@@ -26,9 +27,12 @@ real codebase. The Foundation phase built what everything else attaches to (auth
 ownership); Phase 2 added the first real AI capability — turning a free-text idea into
 structured, versioned requirements; Phase 3 added the second — turning a project's active
 requirements version into a structured, versioned PRD; Phase 4 added the third — turning a
-project's active PRD version into a structured, versioned technical architecture; Phase 5 adds
-the fourth and fifth — turning a project's active architecture version into a versioned set of
-epics, and its active epic version into a versioned set of tasks.
+project's active PRD version into a structured, versioned technical architecture; Phase 5
+added the fourth and fifth — turning a project's active architecture version into a versioned
+set of epics, and its active epic version into a versioned set of tasks; Phase 6 adds the
+first non-AI capability — securely connecting a GitHub repository to a project, the
+groundwork later phases (repository ingestion, AST parsing, retrieval, codebase Q&A, code
+review) will build on.
 
 ## What works today
 
@@ -73,9 +77,18 @@ epics, and its active epic version into a versioned set of tasks.
   message instead of an enabled control. Versions can be listed, viewed, edited (per task),
   and made active; two versions can be compared. Same honesty guarantee: no
   `ANTHROPIC_API_KEY` configured means a clear 503, never fabricated tasks.
+- **GitHub repository connection**: connect a GitHub repository to a project from its Settings
+  page using a personal access token you generate yourself — DevForge never invents or assumes
+  one exists, and never uses OAuth or a GitHub App (see "Known limitations" for why). The
+  connection is verified against the real GitHub API before being saved; the token is
+  encrypted at rest (AES-256-GCM) and never returned by any API response — only its last four
+  characters are. View connection status, the authenticated GitHub account, and the last
+  verification result; list and select a branch (validated against the repository's real
+  branches); reverify access or disconnect at any time. If `GITHUB_TOKEN_ENCRYPTION_KEY` isn't
+  configured, connecting fails with a clear, honest error — never a fabricated connection.
 - A project overview page that shows real project data and honestly labels every remaining
-  planned capability (Repository, Codebase Q&A, Reviews) as **Not yet implemented** rather
-  than presenting a stub as working.
+  planned capability (Repository indexing, Codebase Q&A, Reviews) as **Not yet implemented**
+  rather than presenting a stub as working.
 - Opaque, server-side sessions: a random token lives only in an httpOnly cookie; only its
   SHA-256 hash is ever persisted.
 - The full stack (Postgres, API, frontend, and the AI service) runs via a single
@@ -90,6 +103,10 @@ React + TypeScript (Vite)                 Python/FastAPI AI service
         v                                     (Anthropic Claude, claude-opus-5);
 Node/Express API  ------------------------->   retrieval/review not implemented
         |            fetch (AI_SERVICE_URL)
+        |
+        |----------------------------------> GitHub REST API (api.github.com)
+        |            fetch, encrypted PAT      repository metadata, branches, access
+        |                                      verification only — no cloning/indexing
         | Prisma (driver adapter: @prisma/adapter-pg)
         v
    PostgreSQL
@@ -98,7 +115,9 @@ Node/Express API  ------------------------->   retrieval/review not implemented
 The Node API and the Python AI service are separate processes/containers — the architecture
 principle from the full spec ("keep application CRUD/orchestration separate from AI-heavy
 processing") holds: the Node API validates, persists, and enforces ownership; the AI service
-only ever does the LLM call and returns structured, schema-validated content.
+only ever does the LLM call and returns structured, schema-validated content. GitHub
+connectivity is a Node API concern only (there's no AI involved in verifying repository
+access), so it calls the GitHub REST API directly rather than routing through `ai-service`.
 
 ## Tech stack
 
@@ -116,6 +135,7 @@ only ever does the LLM call and returns structured, schema-validated content.
 | AI provider | Anthropic Claude (`claude-opus-5`), via `client.messages.parse()` structured outputs | No provider was configured before Phase 2; documented choice in `docs/REQUIREMENTS_PHASE_PLAN.md` — first-party SDK, strict structured-output support |
 | Testing | Vitest, Supertest, pytest, React Testing Library, Playwright (ad hoc manual verification) | One test runner style per language |
 | AI service | Python/FastAPI | Its own process/container; requirements analysis, PRD generation, architecture generation, and epic/task generation are implemented |
+| GitHub integration | Personal access token (user-supplied), native `fetch` against the GitHub REST API, AES-256-GCM token encryption via Node's built-in `crypto` | Smallest secure option — no OAuth App/GitHub App registration or callback infrastructure needed; no new dependency for a thin HTTP boundary. Documented choice in `docs/GITHUB_INTEGRATION_PHASE_PLAN.md` |
 | Local/dev orchestration | Docker Compose | Postgres, API, frontend, ai-service, each with a healthcheck |
 
 ## Repository structure
@@ -131,8 +151,9 @@ devforge/
   docs/            FOUNDATION_PROGRESS.md, REQUIREMENTS_PHASE_PLAN.md,
                     REQUIREMENTS_PHASE_PROGRESS.md, PRD_PHASE_PLAN.md, PRD_PHASE_PROGRESS.md,
                     ARCHITECTURE_PHASE_PLAN.md, ARCHITECTURE_PHASE_PROGRESS.md,
-                    EPICS_TASKS_PHASE_PLAN.md, EPICS_TASKS_PHASE_PROGRESS.md — the verified
-                    milestone-by-milestone log for each phase
+                    EPICS_TASKS_PHASE_PLAN.md, EPICS_TASKS_PHASE_PROGRESS.md,
+                    GITHUB_INTEGRATION_PHASE_PLAN.md, GITHUB_INTEGRATION_PHASE_PROGRESS.md —
+                    the verified milestone-by-milestone log for each phase
   scripts/         Local dev/setup scripts (test-database bootstrap)
   docker-compose.yml
 ```
@@ -149,6 +170,10 @@ devforge/
   generation, architecture generation, and epic/task generation actually return content
   instead of a clear "not configured" error. Get one at
   [console.anthropic.com](https://console.anthropic.com).
+- A GitHub personal access token, **optional** — only needed if you want to actually connect a
+  repository; generate one at [github.com/settings/tokens](https://github.com/settings/tokens)
+  with read access to the repository you want to connect. You paste it into DevForge's UI when
+  connecting — it is never read from an environment variable.
 
 ### Environment variables
 
@@ -164,6 +189,7 @@ where) and fill in real values. Never commit a real `.env` file.
 | `AI_SERVICE_URL` | `api/.env` | Base URL of the ai-service (default `http://localhost:8001`) |
 | `VITE_API_URL` | `frontend/.env` | API base URL the browser calls (baked in at build time) |
 | `ANTHROPIC_API_KEY` | `ai-service` environment (shell env, or Docker Compose's own env — not a committed file) | Enables real requirements analysis, PRD generation, architecture generation, and epic/task generation. Unset → every analyze/generate request returns a clear 503, never fake content |
+| `GITHUB_TOKEN_ENCRYPTION_KEY` | `api/.env` (or shell env — not a committed file) | A base64-encoded 32-byte key used to encrypt (AES-256-GCM) a connected repository's personal access token at rest. **Optional** — the API still starts and every other feature still works with this unset; only connecting a repository is gated. Generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Unset → connecting returns a clear 503 `GITHUB_INTEGRATION_NOT_CONFIGURED`, never a fake connection |
 
 ### Local development (without Docker)
 
@@ -205,7 +231,9 @@ gated by a healthcheck so dependents wait for their dependencies to actually be 
 just started. Verified end to end from a volume-wiped clean start (`docker compose down -v
 && docker compose up -d --build`), including the api-container → ai-service-container network
 call over the Docker-internal hostname for requirements analysis, PRD generation, architecture
-generation, and epic/task generation:
+generation, and epic/task generation, and (separately) the api-container's own outbound call
+to the real GitHub REST API for repository connections — the API container starts and stays
+healthy whether or not `GITHUB_TOKEN_ENCRYPTION_KEY` is set:
 
 | Service | URL | Health |
 |---|---|---|
@@ -234,12 +262,16 @@ pnpm lint
 ```
 
 No test in this repository claims a real LLM call succeeded unless a real, configured
-`ANTHROPIC_API_KEY` was actually used for that run — see
+`ANTHROPIC_API_KEY` was actually used for that run, and no test claims a repository was
+actually connected unless a real, valid, user-supplied GitHub personal access token was used
+(none was, anywhere in this repository's test suite) — see
 [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
-[docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md), and
-[docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md) for exactly which
-tests use a test double for the AI provider and which exercise the real "not configured" path.
+[docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
+[docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md), and
+[docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md) for
+exactly which tests use a test double and which exercise a real "not configured"/real-API
+failure path.
 
 ## API summary
 
@@ -285,10 +317,17 @@ failure.
 | PATCH | `/projects/:id/tasks/:versionId` | session | Update a task version's content in place |
 | POST | `/projects/:id/tasks/:versionId/activate` | session | Make a task version the active one |
 | GET | `/projects/:id/tasks/compare?a=&b=` | session | Id-matched diff between two task versions |
+| POST | `/projects/:id/repository/connect` | session | Connect (or reconnect) a repository — body `{ token, owner, repo }`; verified against the real GitHub API before saving (503 `GITHUB_INTEGRATION_NOT_CONFIGURED` if no encryption key is set) |
+| GET | `/projects/:id/repository` | session | View the current connection (sanitized — never the token), or `{ connection: null }` if none |
+| POST | `/projects/:id/repository/verify` | session | Re-verify access against the stored token; 404 if nothing connected |
+| GET | `/projects/:id/repository/branches` | session | List live branches from GitHub; 404 if nothing connected |
+| PATCH | `/projects/:id/repository` | session | Update the selected branch — body `{ branch }`; validated against the live branch list (400 `GITHUB_INVALID_BRANCH` if it doesn't exist) |
+| DELETE | `/projects/:id/repository` | session | Disconnect; 404 if nothing connected |
 
 `ai-service` also exposes `POST /requirements/analyze`, `POST /prd/generate`,
 `POST /architecture/generate`, `POST /epics/generate`, and `POST /tasks/generate` directly
-(called by the Node API, not the browser) and `GET /health`.
+(called by the Node API, not the browser) and `GET /health`. The repository endpoints above
+never call `ai-service` — the Node API talks to the real GitHub REST API directly.
 
 ## Database schema
 
@@ -305,17 +344,39 @@ projects `ON DELETE CASCADE`, version, source_architecture_version_id → archit
 `ON DELETE RESTRICT`, content `jsonb` — `{ epics: EpicItem[] }`, is_active, timestamps; unique
 on `(project_id, version)`) — `task_versions` (id, project_id → projects `ON DELETE CASCADE`,
 version, source_epic_version_id → epic_versions `ON DELETE RESTRICT`, content `jsonb` —
-`{ tasks: TaskItem[] }`, is_active, timestamps; unique on `(project_id, version)`). Unlike
+`{ tasks: TaskItem[] }`, is_active, timestamps; unique on `(project_id, version)`) —
+`repository_connections` (id, project_id → projects `ON DELETE CASCADE`, **unique on
+`project_id` alone** — github_owner, github_repo, github_repo_id, github_account_login,
+repository_url, default_branch, selected_branch, status (`pending`/`verified`/`error`),
+last_verified_at, last_error, encrypted_token, token_last_4, timestamps). Unlike
 requirements/PRD/architecture, whose `content` is one document of prose/list sections, epic
 and task content is a **list of id-bearing items** (mirroring `RequirementItem[]`), diffed and
-edited per-item rather than per-field. See `api/prisma/schema.prisma` for the exact fields,
-and its header comment for how later entities (`repositories`, `code_chunks`, `conversations`,
+edited per-item rather than per-field. `repository_connections` is different again: a single
+row per project (not a versioned artifact at all — connecting again replaces the row instead
+of adding a new version), because a GitHub connection is state, not generated content worth a
+history — see `docs/GITHUB_INTEGRATION_PHASE_PLAN.md` for the full reasoning.
+`encrypted_token` is AES-256-GCM ciphertext, never the plaintext PAT; `token_last_4` is the
+only token-derived value ever returned by the API. See `api/prisma/schema.prisma` for the
+exact fields, and its header comment for how later entities (`code_chunks`, `conversations`,
 `reviews`, `review_findings`, `feedback`) will attach once those phases start.
 
 ## Known limitations
 
-- No GitHub integration, code indexing/retrieval, codebase Q&A, or code review yet — see
-  "What works today" above.
+- No repository ingestion, code indexing/retrieval, codebase Q&A, or code review yet — the
+  GitHub connection stores only owner/repo/branch/status metadata and never clones, lists
+  files from, or reads content out of the connected repository — see "What works today" above.
+- GitHub authentication supports only a user-supplied personal access token — not OAuth and
+  not a GitHub App installation. Both were evaluated and rejected for this phase: OAuth needs
+  a registered OAuth App (Client ID/Secret) and a reachable public callback URL; a GitHub App
+  needs an even heavier manifest/private-key/webhook setup. Neither is available in this
+  environment, and a PAT is the smallest option that still lets DevForge never invent or
+  assume a credential exists. Documented in `docs/GITHUB_INTEGRATION_PHASE_PLAN.md`.
+- `dependencies`/`epicId`/`relatedComponent(s)` on epics/tasks aside, the repository
+  connection's own cross-references are likewise unvalidated beyond what GitHub itself
+  confirms: `githubRepoId`/`githubAccountLogin`/`defaultBranch` are trusted as reported by the
+  GitHub API at verification time and not re-checked against any other source.
+- No webhook, polling, or automatic re-verification of a connection — verification only
+  happens on an explicit user action (connect, or "Reverify access").
 - Requirements analysis, PRD generation, architecture generation, epic generation, and task
   generation each support one LLM provider (Anthropic). Each has its own provider abstraction
   (`ai-service/app/agents/{requirements,prd,architecture,epics,tasks}/provider.py`), sharing
@@ -357,15 +418,16 @@ and its header comment for how later entities (`repositories`, `code_chunks`, `c
 
 ## Future work
 
-GitHub OAuth and repository ingestion, Tree-sitter AST indexing, hybrid (BM25 + vector + RRF +
-reranking) retrieval, cited codebase Q&A, and the bug/security/performance/quality review
-pipeline — per the full product specification. See
-[docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
+Repository ingestion (cloning and reading the connected repository's actual content),
+Tree-sitter AST indexing, hybrid (BM25 + vector + RRF + reranking) retrieval, cited codebase
+Q&A, and the bug/security/performance/quality review pipeline — per the full product
+specification. See [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
-[docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md), and
-[docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md) for what's been
-verified so far and how it was verified.
+[docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
+[docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md), and
+[docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md) for
+what's been verified so far and how it was verified.
 
 ## License
 
