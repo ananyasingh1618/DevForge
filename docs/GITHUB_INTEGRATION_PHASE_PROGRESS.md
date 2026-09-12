@@ -261,7 +261,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     confirmed via `ps aux` that only the three manually-started DevForge processes existed;
     killed all three cleanly with no orphaned children this time; confirmed ports 4000/5173
     free afterward; removed the temporary locally-generated key file.
-- Commit: `<pending>` — "feat(frontend): add project settings page with GitHub repository connection flow".
+- Commit: `8ff5bbc` — "feat(frontend): add project settings page with GitHub repository connection flow".
 
 ### 6. Tests
 (pending)
