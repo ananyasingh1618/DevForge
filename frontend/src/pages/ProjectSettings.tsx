@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { AppShell } from "../components/AppShell.js";
 import { ErrorState, LoadingState } from "../components/StateViews.js";
 import { RepositoryConnectionSection } from "../components/RepositoryConnectionSection.js";
+import { CodebaseIndexSection } from "../components/CodebaseIndexSection.js";
 import { ApiError } from "../services/apiClient.js";
 import { getProjectRequest } from "../services/projectsApi.js";
 import type { Project } from "../types/project.js";
@@ -62,6 +63,11 @@ export function ProjectSettings() {
           <h2 className="mt-10 text-sm font-medium text-text-muted">GitHub repository</h2>
           <div className="mt-3">
             <RepositoryConnectionSection projectId={state.project.id} />
+          </div>
+
+          <h2 className="mt-10 text-sm font-medium text-text-muted">Codebase index</h2>
+          <div className="mt-3">
+            <CodebaseIndexSection projectId={state.project.id} />
           </div>
         </div>
       )}

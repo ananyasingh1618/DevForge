@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Prisma schema and migration
 - [x] 3. GitHub retrieval and ai-service parser
 - [x] 4. Indexing service and API endpoints
-- [ ] 5. Frontend codebase index section
+- [x] 5. Frontend codebase index section
 - [ ] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
@@ -235,7 +235,68 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `feb67a9` — "feat(api): add codebase indexing service and API endpoints".
 
 ### 5. Frontend codebase index section
-_Not started._
+- **`frontend/src/types/codebaseIndex.ts`** / **`frontend/src/services/codebaseIndexApi.ts`**
+  (new): types and `apiRequest`-based service functions for all five endpoints, matching the
+  exact conventions `types/repository.ts`/`services/repositoryApi.ts` already established.
+- **`frontend/src/components/CodebaseIndexSection.tsx`** (new): a second `Card`-based section
+  on `ProjectSettings`, gated on a repository connection existing (fetches
+  `getRepositoryConnectionRequest` itself, independent of `RepositoryConnectionSection`'s own
+  internal state, matching how sibling sections in this codebase don't share state). Renders
+  its own `EmptyState`/`ErrorState`/`LoadingState` for the no-connection/error/loading cases,
+  a "ready to index" prompt with a `Start indexing` button when no index exists yet, and full
+  index details (branch, commit, status badge, file/parsed/failed counts, truncation and last
+  error, `Reindex` button) once one does. `FilesAndSymbolsBrowser` lists indexed files with a
+  parse-status label per file and lets the user click a file to lazily fetch and expand its
+  symbols. Never shows a fabricated progress bar — the `indexing` UI state is exactly "the
+  Start/Reindex button's own request is in-flight" (`loading` prop, same as every other action
+  button in this codebase), since indexing is synchronous and there is no real partial-progress
+  signal to display.
+  - **Remount-key subtlety worth recording**: `RepositoryConnectionSection`'s established
+    pattern remounts its detail view via `key={connection.id}` because disconnect+reconnect
+    really does create a new row. `CodebaseIndex` never works that way — `runOrReuse`/
+    `runIndexingPipeline` always `upsert` the *same* `projectId`-unique row, so `index.id` is
+    stable across every reindex. Keying `FilesAndSymbolsBrowser` on `index.id` would have left
+    it showing a stale file list after a real reindex. Used `key={index.updatedAt}` instead,
+    which changes on every actual completed/failed mutation of the row (Prisma's `@updatedAt`),
+    while never changing mid-flight since the whole request is synchronous from the browser's
+    perspective.
+- **`frontend/src/pages/ProjectSettings.tsx`**: added the "Codebase index" section below the
+  existing "GitHub repository" one.
+- **`frontend/src/pages/ProjectOverview.tsx`**: removed "Repository indexing" from
+  `upcomingCapabilities` (Phase 7 implements it) and reworded the surrounding comment and the
+  remaining two entries' descriptions to correctly attribute retrieval/Q&A/review as what's
+  still missing, not indexing itself.
+- Commands run and results:
+  - `npm run typecheck`, `npm run lint`, `npm run build` (frontend): all clean (one pre-existing
+    `react-refresh/only-export-components` warning in `useAuth.tsx`, unrelated to this phase).
+  - `npm run test` (frontend) initially failed one pre-existing assertion in
+    `ProjectOverview.test.tsx` that hardcoded the old 3-item "Not yet implemented" count — fixed
+    by updating it to 2 and adding an explicit assertion that "Repository indexing" no longer
+    appears there. Full suite then passed: 59/59.
+  - `npm run test` (api): 152/152, confirming no regression from this milestone's frontend-only
+    change.
+  - Manual Playwright verification against the real (unconfigured, then locally-configured with
+    a never-committed key) dev stack, screenshots read back directly: confirmed the "Codebase
+    index" section shows its own "No repository connected" gate when no connection exists (even
+    while the repository section's own connect form is visible above it); confirmed, after
+    directly inserting a `RepositoryConnection` row pointing at a real public repo with a fake
+    token (the same throwaway-script technique used in Milestone 4, since no real PAT exists to
+    pass `connectRepository`'s own GitHub verification), the "Ready to index…" prompt renders;
+    confirmed clicking `Start indexing` shows the real GitHub 401 message
+    ("The GitHub token is invalid or expired.") rather than any fabricated success; confirmed,
+    after a full page reload, the persisted `failed` status, real error, and file/parsed/failed
+    counts (all `0`) render correctly with a `Reindex` button.
+  - **Caught and fixed a real UX-honesty issue during this manual verification**: the summary
+    stats row originally labeled the completion timestamp "Last indexed" even when
+    `status: "failed"` — misleading, since nothing was actually indexed on a failed run.
+    Relabeled to the status-neutral "Last run" and reconfirmed via a fresh screenshot.
+  - The `completed`-status view (a real file list with expandable symbols) could not be
+    exercised live without a real, valid GitHub PAT — deferred to Milestone 6's deterministic,
+    mocked-fetch RTL tests, matching exactly how the plan calls for testing this state.
+  - Deleted the scratch project/user and confirmed no orphaned `tsx watch`/`vite`/`uvicorn`
+    processes remained afterward (`ps aux`); the sibling VoxMind `uvicorn` process was the only
+    `uvicorn` process left running, untouched throughout.
+- Commit: `<pending>` — "feat(frontend): add codebase index section to project settings".
 
 ### 6. Tests
 _Not started._

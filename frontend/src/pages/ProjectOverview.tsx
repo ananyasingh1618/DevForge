@@ -13,20 +13,16 @@ import { getProjectRequest } from "../services/projectsApi.js";
 import type { Project } from "../types/project.js";
 
 // Requirements (Phase 2), PRD (Phase 3), Architecture (Phase 4), Epics &
-// Tasks (Phase 5) are implemented and rendered above this grid, not listed
-// here anymore. GitHub repository *connection* (Phase 6) is implemented too
-// — see the "Settings" link above — but repository ingestion/AST-aware
-// indexing (what a connection will feed once those phases exist) remain
-// genuinely unbuilt, so "Repository" stays below with a description
+// Tasks (Phase 5), GitHub repository connection (Phase 6), and AST parsing &
+// codebase indexing (Phase 7 — file/symbol extraction, browsable in
+// Settings) are implemented, not listed here anymore. Retrieval (embeddings,
+// semantic search over the index Phase 7 built) and everything downstream of
+// it remain genuinely unbuilt, so those stay below with descriptions
 // reflecting only what's actually still missing.
 const upcomingCapabilities = [
   {
-    title: "Repository indexing",
-    description: "Clone, AST-parse, and index the connected repository for retrieval.",
-  },
-  {
     title: "Codebase Q&A",
-    description: "Cited, evidence-backed answers about the connected repository.",
+    description: "Cited, evidence-backed answers about the connected repository via retrieval.",
   },
   {
     title: "Reviews",
