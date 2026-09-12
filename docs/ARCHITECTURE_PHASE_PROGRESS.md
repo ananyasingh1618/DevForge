@@ -391,3 +391,8 @@ feature (epics/tasks, GitHub integration, AST parsing, retrieval, codebase Q&A, 
 evaluation pipeline, additional LLM providers) was implemented, scaffolded with fake behavior,
 or claimed as working anywhere in this phase — see the root README's "Known limitations" and
 "Future work" sections, which remain the authoritative statement of what's left.
+
+**Phase 5 (Epics & Tasks Generation) progress is tracked separately** in
+[docs/EPICS_TASKS_PHASE_PLAN.md](EPICS_TASKS_PHASE_PLAN.md) and
+[docs/EPICS_TASKS_PHASE_PROGRESS.md](EPICS_TASKS_PHASE_PROGRESS.md) — this file remains the
+historical record of Phase 4 only and is not updated further.
