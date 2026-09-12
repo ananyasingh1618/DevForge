@@ -268,7 +268,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     cascade rules), confirmed via `ps aux` that only the four manually-started DevForge
     processes existed, killed all four cleanly, confirmed ports 4000/8001/5173 all free
     afterward.
-- Commit: `<pending>` — "feat(frontend): add Epics and Tasks sections with dependency, generate, and version flows".
+- Commit: `7d6fc8b` — "feat(frontend): add Epics and Tasks sections with dependency, generate, and version flows".
 
 ### 6. Tests
 (pending)
