@@ -466,3 +466,89 @@ export async function generateTasksViaAiService(epics: EpicContent): Promise<Tas
 
   return parsed.data;
 }
+
+export type ParsedFileSymbol = {
+  name: string;
+  type: string;
+  startLine: number;
+  endLine: number;
+  parentIndex: number | null;
+  signature: string | null;
+};
+
+export type ParsedFile = {
+  language: string | null;
+  status: "parsed" | "unsupported" | "parse_error";
+  symbols: ParsedFileSymbol[];
+  error: string | null;
+};
+
+type AiParsedFileSymbol = {
+  name: string;
+  type: string;
+  start_line: number;
+  end_line: number;
+  parent_index: number | null;
+  signature: string | null;
+};
+
+type AiParseFileResponse = {
+  language: string | null;
+  status: "parsed" | "unsupported" | "parse_error";
+  symbols: AiParsedFileSymbol[];
+  error: string | null;
+};
+
+/**
+ * Calls ai-service's tree-sitter-backed parsing endpoint for one file's
+ * source and returns validated, camelCase symbol data — or throws an
+ * AppError. Deliberately does not reuse postToAiService: parsing is not an
+ * LLM call, so it has no PROVIDER_NOT_CONFIGURED case, and an unreachable
+ * parser gets its own distinct error code rather than being conflated with
+ * an unreachable LLM provider.
+ */
+export async function parseFileViaAiService(path: string, content: string): Promise<ParsedFile> {
+  let res: Response;
+  try {
+    res = await fetch(`${env.AI_SERVICE_URL}/parsing/parse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, content }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new AppError(
+      502,
+      "PARSER_SERVICE_UNREACHABLE",
+      "Could not reach the AI service's parser. Confirm it is running and AI_SERVICE_URL is correct.",
+    );
+  }
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as AiErrorBody | null;
+    throw new AppError(
+      502,
+      "PARSER_SERVICE_ERROR",
+      errBody?.error?.message ?? `The AI service's parser returned an unexpected ${res.status} response.`,
+    );
+  }
+
+  const body = (await res.json().catch(() => null)) as AiParseFileResponse | null;
+  if (!body) {
+    throw new AppError(502, "PARSER_SERVICE_ERROR", "The AI service's parser returned no content.");
+  }
+
+  return {
+    language: body.language,
+    status: body.status,
+    error: body.error,
+    symbols: body.symbols.map((s) => ({
+      name: s.name,
+      type: s.type,
+      startLine: s.start_line,
+      endLine: s.end_line,
+      parentIndex: s.parent_index,
+      signature: s.signature,
+    })),
+  };
+}

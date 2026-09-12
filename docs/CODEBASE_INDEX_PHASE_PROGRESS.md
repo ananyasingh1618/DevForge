@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration
 - [x] 3. GitHub retrieval and ai-service parser
-- [ ] 4. Indexing service and API endpoints
+- [x] 4. Indexing service and API endpoints
 - [ ] 5. Frontend codebase index section
 - [ ] 6. Tests
 - [ ] 7. Docker verification
@@ -161,7 +161,78 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   source parsing".
 
 ### 4. Indexing service and API endpoints
-_Not started._
+- **`api/src/lib/aiServiceClient.ts`**: added `parseFileViaAiService(path, content)`, kept
+  deliberately separate from `postToAiService` — parsing has no `PROVIDER_NOT_CONFIGURED` case
+  (it's not an LLM call) and an unreachable parser gets its own `PARSER_SERVICE_UNREACHABLE`
+  code rather than being conflated with `AI_SERVICE_UNREACHABLE`. Maps ai-service's
+  snake_case symbol fields to camelCase, matching every other ai-service call's boundary
+  convention.
+- **`api/src/services/codebaseIndex.ts`** (new): `startIndexing`, `reindexRepository`,
+  `getIndex`, `listFiles`, `listSymbols`. Implements exactly the pipeline from
+  `docs/CODEBASE_INDEX_PHASE_PLAN.md`: resolve the connected repository and branch (checking
+  "no connection" before "not configured", so the more specific problem is always reported),
+  resolve the branch's current commit, short-circuit-reuse an already-completed index for an
+  unchanged commit (only for `start`, never for an explicit `reindex`), fetch the recursive
+  file tree, filter (skip directories, oversized files by the tree's own reported size,
+  binary-by-extension, then a NUL-byte sniff on actually-fetched content as a second binary
+  check, then a file-count cap), fetch and parse each remaining candidate file via
+  `parseFileViaAiService`, and replace the index's files/symbols wholesale in one short
+  transaction that only does DB writes (all GitHub/ai-service I/O happens before the
+  transaction opens). `contentHash` uses the git blob SHA GitHub's own tree API already
+  computes — free, genuinely content-derived, and available even for files whose bytes were
+  never fetched, so every recorded file has one, not just parsed ones. Symbol
+  parent/child links are resolved via client-generated UUIDs (`randomUUID()`) assigned before
+  insertion, so both `indexedFile.createMany` and `symbol.createMany` run as single batched
+  queries per index run instead of one round trip per row.
+- **Found and fixed a real gap during manual verification** (see below): the original
+  `startIndexing`/`reindexRepository` only created a `CodebaseIndex` row once branch-commit
+  resolution had already succeeded, so a failure at that very first GitHub call (e.g. invalid
+  credentials) left no row at all — a subsequent `GET` showed `{ index: null }` instead of a
+  real, visible `"failed"` status with the actual error message. Refactored into a shared
+  `runOrReuse()` that persists a `"failed"` row (via `upsert`, since a fresh project may have
+  no prior row) on a commit-resolution failure too, not just on a failure inside the pipeline
+  proper — mirrors `services/repository.ts`'s `verifyAccess` degraded-state pattern. Verified
+  the fix live (see below).
+- **`api/src/schemas/codebaseIndex.ts`** (new): `projectIdParamSchema`, `fileIdParamSchema` —
+  each schema file in this codebase keeps its own copy of these rather than sharing one (same
+  convention `schemas/repository.ts` and `schemas/tasks.ts` already follow).
+- **`api/src/controllers/codebaseIndex.ts`** / **`api/src/routes/codebaseIndex.ts`** (new): five
+  endpoints exactly matching the plan's API table, all under `requireAuth`, registered in
+  `api/src/app.ts` alongside every other feature router.
+- Commands run and results:
+  - `npm run typecheck` / `npm run lint`: clean.
+  - **Caught and fixed a real bug before it reached a test or commit**: the NUL-byte binary
+    sniff was originally written as `content.includes(" ")`, but the Write tool persisted
+    it as a literal raw NUL byte in the source file rather than the two-character escape
+    sequence — syntactically valid but completely illegible (renders as an invisible
+    character/blank in a diff or editor). Found it because `grep` silently found zero matches
+    for `includes` in the file (grep treats a file containing a NUL byte as binary and stops
+    text-matching it) where `awk`/`Read` still worked; confirmed via `xxd` on the raw line
+    bytes, then rewrote it as the explicit `"\0"` escape sequence.
+  - Manual live verification, in this order, cleaning up all created data and stopping every
+    manually-started process afterward: booted `ai-service` and `api` (real, unconfigured
+    `GITHUB_TOKEN_ENCRYPTION_KEY`) against the real local Postgres; registered a user, created
+    a project; confirmed `GET .../codebase-index` returns `{ index: null }` before any
+    connection exists; confirmed `POST .../codebase-index/start` returns 400
+    `NO_REPOSITORY_CONNECTED`; confirmed `GET .../codebase-index/files` returns 404
+    `CODEBASE_INDEX_NOT_FOUND`. Generated a local, never-committed `GITHUB_TOKEN_ENCRYPTION_KEY`,
+    restarted the API with it configured, and directly inserted (via a throwaway script, not
+    through `connectRepository`, since no real PAT exists to pass its own GitHub verification)
+    a `RepositoryConnection` row pointing at the real public repo `octocat/Hello-World` with a
+    validly-encrypted but fake token. Called `start`: got a real 401 `GITHUB_INVALID_CREDENTIALS`
+    from the genuine GitHub API (confirming `getBranchCommit` really reaches GitHub), confirmed
+    the raw response contains no `ghp_` substring anywhere, and confirmed (after the fix above)
+    that a subsequent `GET` now correctly shows `status: "failed"` with the real error message
+    and no leaked credential. Restarted the API unconfigured again with the same connection row
+    still present and confirmed `start` now returns 503 `GITHUB_INTEGRATION_NOT_CONFIGURED`
+    (proving the "no connection" vs. "not configured" check ordering is correct). Deleted the
+    scratch project/user afterward.
+  - `npm run test` (full `api/` suite): 152/152 passed both before and after the fix, confirming
+    no regression from this milestone's schema-unrelated service/controller/route code.
+  - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
+    servers (`ps aux`), and confirmed the sibling VoxMind `uvicorn` process (port 8000) was the
+    only remaining `uvicorn` process, untouched throughout.
+- Commit: `<pending>` — "feat(api): add codebase indexing service and API endpoints".
 
 ### 5. Frontend codebase index section
 _Not started._
