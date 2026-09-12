@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. ai-service architecture contract/provider
 - [x] 4. API endpoints (Node)
 - [x] 5. Frontend architecture flow
-- [ ] 6. Tests
+- [x] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
 
@@ -246,7 +246,67 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `58da8ed` — "feat(frontend): add Architecture section with dependency, generate, and version flows".
 
 ### 6. Tests
-(pending)
+- ai-service pytest coverage for architecture (`PROVIDER_NOT_CONFIGURED` real for real, a
+  `FakeArchitectureProvider` success/validation-error path via monkeypatch,
+  `AIResponseInvalidError`/`ProviderRequestError` → 502) was already written and verified in
+  Milestone 3 (`ai-service/tests/test_architecture.py`, 8 cases, 23 total in the suite) — not
+  repeated here.
+- New files this milestone: `api/src/routes/architecture.test.ts` (Supertest, mocking only the
+  outbound `fetch()` to ai-service — mirrors `prd.test.ts` exactly, one link further down the
+  chain), `frontend/src/components/ArchitectureSection.test.tsx` (Vitest + RTL, mocking
+  `prdApi`/`architectureApi` — mirrors `PrdSection.test.tsx`), `tests/architecture.test.ts`
+  (real HTTP integration, mirrors `prd.test.ts`).
+- `api/src/routes/architecture.test.ts` — 17 cases, mirroring `prd.test.ts`'s shape
+  one-for-one: 401 without a session; 404 for a project owned by someone else; 400
+  `NO_ACTIVE_PRD` with no PRD (confirms `fetch` is never called); successful generate from a
+  mocked ai-service response, asserting `sourcePrdVersionId` matches the seeded active PRD
+  version; a real `PROVIDER_NOT_CONFIGURED` ai-service response mapped to `503
+  AI_PROVIDER_UNAVAILABLE` with nothing persisted; `502 AI_SERVICE_UNREACHABLE` on a network
+  failure; list/get/update/activate/compare coverage. The upstream chain (active requirements
+  → active PRD) is seeded through the real `/requirements/analyze` and `/prd/generate`
+  endpoints (each behind a mocked `fetch`), not a direct Prisma insert — a genuine three-link
+  chain, extending the same principle `prd.test.ts`'s helper established one link up, via a new
+  `createProjectWithActivePrd` helper.
+- `frontend/src/components/ArchitectureSection.test.tsx` — 7 cases, mirroring
+  `PrdSection.test.tsx`'s shape one-for-one: blocked state renders the dependency message with
+  no Generate control anywhere in the DOM; list-load failure shows the error state with retry;
+  empty state shows the single "Generate architecture from PRD v{N}" button; generation failure
+  surfaces the real error message and stays in the empty state; populated state renders the
+  active version's content and version list with no "Make active" button on the active version;
+  switching to a non-active version and activating it calls
+  `activateArchitectureVersionRequest` with the right ids; editing and saving calls
+  `updateArchitectureVersionRequest` with the edited content and surfaces a server error on
+  failure.
+- `tests/architecture.test.ts` — real HTTP integration against genuinely running
+  api/ai-service/Postgres. Because no `ANTHROPIC_API_KEY` is configured in this environment,
+  requirements analysis (and therefore PRD generation) cannot succeed, so the project used here
+  genuinely has zero PRD versions — the real path this test exercises. Asserts: registering and
+  creating a project works over real HTTP; the project's PRD list is genuinely empty; calling
+  `POST /architecture/generate` returns the real `400 NO_ACTIVE_PRD` (not a provider error
+  masking the actual dependency problem); nothing was persisted; and, as a check that this
+  environment's state hasn't silently changed, a direct call to ai-service's own
+  `/architecture/generate` still genuinely returns `503 PROVIDER_NOT_CONFIGURED`.
+- Commands run and results:
+  - `cd api && pnpm exec vitest run src/routes/architecture.test.ts` → `17 passed (17)`.
+  - `cd api && pnpm exec vitest run` (full suite) → `77 passed (77)` (60 pre-existing + 17
+    new).
+  - `cd api && pnpm exec tsc --noEmit` → clean. `pnpm exec eslint .` → clean.
+  - `cd frontend && pnpm exec vitest run src/components/ArchitectureSection.test.tsx` →
+    `7 passed (7)`.
+  - `cd frontend && pnpm exec vitest run` (full suite) → `37 passed (37)` (30 pre-existing + 7
+    new).
+  - `cd frontend && pnpm exec tsc --noEmit` → clean. `pnpm exec eslint .` → clean (one
+    pre-existing, unrelated warning in `useAuth.tsx`).
+  - Started fresh api (:4000) and ai-service (:8001) instances against the real Docker Postgres
+    (no `ANTHROPIC_API_KEY`), after confirming both ports were free.
+  - `cd tests && pnpm exec vitest run architecture.test.ts` → `1 passed (1)`.
+  - `cd tests && pnpm exec vitest run` (full suite) → `5 passed (5)` (register-login-project,
+    requirements, prd, architecture). `pnpm exec tsc --noEmit` → clean.
+  - Confirmed no leftover `*integration-test*` users in Postgres afterward (the test's own
+    `afterAll` deleted its seeded user).
+  - Killed both manually-started processes by exact PID; confirmed ports 4000/8001 free
+    afterward with no orphaned children this time.
+- Commit: `<pending>` — "test(api,frontend,tests): add architecture generation, versioning, and comparison coverage".
 
 ### 7. Docker verification
 (pending)
