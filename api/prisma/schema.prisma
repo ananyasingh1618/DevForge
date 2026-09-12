@@ -4,12 +4,16 @@
 // Phase 3 (PRD Generation) adds: prd_versions.
 // Phase 4 (Architecture Generation) adds: architecture_versions.
 // Phase 5 (Epics & Tasks Generation) adds: epic_versions, task_versions.
-// Future entities (repositories, code_chunks, conversations, reviews,
-// review_findings, feedback) are intentionally not modeled yet — see
-// docs/EPICS_TASKS_PHASE_PLAN.md, docs/ARCHITECTURE_PHASE_PLAN.md,
-// docs/PRD_PHASE_PLAN.md, docs/REQUIREMENTS_PHASE_PLAN.md and
-// docs/FOUNDATION_PROGRESS.md for how they will attach to `projects` /
-// `repositories` once those phases start.
+// Phase 6 (GitHub Integration) adds: repository_connections — a single
+// connection row per project (not a versioned artifact; see
+// docs/GITHUB_INTEGRATION_PHASE_PLAN.md for why).
+// Future entities (code_chunks, conversations, reviews, review_findings,
+// feedback) are intentionally not modeled yet — see
+// docs/GITHUB_INTEGRATION_PHASE_PLAN.md, docs/EPICS_TASKS_PHASE_PLAN.md,
+// docs/ARCHITECTURE_PHASE_PLAN.md, docs/PRD_PHASE_PLAN.md,
+// docs/REQUIREMENTS_PHASE_PLAN.md and docs/FOUNDATION_PROGRESS.md for how
+// they will attach to `projects` / `repository_connections` once those
+// phases start.
 
 generator client {
   provider = "prisma-client-js"
@@ -70,6 +74,7 @@ model Project {
   architectureVersions ArchitectureVersion[]
   epicVersions         EpicVersion[]
   taskVersions         TaskVersion[]
+  repositoryConnection RepositoryConnection?
 
   @@index([ownerId])
   @@map("projects")
@@ -204,4 +209,41 @@ model TaskVersion {
   @@index([projectId])
   @@index([sourceEpicVersionId])
   @@map("task_versions")
+}
+
+enum RepositoryConnectionStatus {
+  pending
+  verified
+  error
+}
+
+// Exactly one connection per project (not a versioned artifact like every
+// AI-generated table above — see docs/GITHUB_INTEGRATION_PHASE_PLAN.md for
+// why a connection is modeled as replaced state rather than an append-only
+// history). `encryptedToken` is never the plaintext PAT — see
+// api/src/lib/githubTokenCrypto.ts for the AES-256-GCM scheme and
+// api/src/env.ts for the (optional) GITHUB_TOKEN_ENCRYPTION_KEY it requires.
+// `tokenLast4` is the only token-derived value ever safe to return to a
+// client.
+model RepositoryConnection {
+  id                 String                     @id @default(uuid())
+  projectId          String                     @unique @map("project_id")
+  githubOwner        String                     @map("github_owner")
+  githubRepo         String                     @map("github_repo")
+  githubRepoId       String?                    @map("github_repo_id")
+  githubAccountLogin String?                    @map("github_account_login")
+  repositoryUrl      String                     @map("repository_url")
+  defaultBranch      String?                    @map("default_branch")
+  selectedBranch     String?                    @map("selected_branch")
+  status             RepositoryConnectionStatus @default(pending)
+  lastVerifiedAt     DateTime?                  @map("last_verified_at")
+  lastError          String?                    @map("last_error")
+  encryptedToken     String                     @map("encrypted_token")
+  tokenLast4         String                     @map("token_last_4")
+  createdAt          DateTime                   @default(now()) @map("created_at")
+  updatedAt          DateTime                   @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("repository_connections")
 }

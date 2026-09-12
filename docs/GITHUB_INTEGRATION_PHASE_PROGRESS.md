@@ -9,7 +9,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 ## Milestones
 
 - [x] 1. Inspect and plan
-- [ ] 2. Prisma schema and migration
+- [x] 2. Prisma schema and migration
 - [ ] 3. GitHub client and service
 - [ ] 4. API endpoints (Node)
 - [ ] 5. Frontend repository settings flow
@@ -61,7 +61,38 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `168c147` — "docs: Phase 6 (GitHub Integration) plan and progress tracker".
 
 ### 2. Prisma schema and migration
-(pending)
+- Files: `api/prisma/schema.prisma` (new `RepositoryConnectionStatus` enum, new
+  `RepositoryConnection` model, `Project.repositoryConnection` optional-one relation, updated
+  header comment), `api/prisma/migrations/20260912104113_add_repository_connections/
+  migration.sql`.
+- `RepositoryConnection` is deliberately **not** shaped like `PrdVersion`/`ArchitectureVersion`/
+  etc. — no `version` column, no `isActive` invariant, just a unique `project_id` (`@unique`,
+  not `@@unique([projectId, version])`) so there is structurally at most one row per project,
+  matching the Milestone 1 data-model decision. Generated SQL confirms: `ON DELETE CASCADE` to
+  `projects`, a unique index on `project_id` alone, `encrypted_token`/`token_last_4` as
+  required text columns (never nullable — a connection row is never created without them),
+  every GitHub-derived field (`github_repo_id`, `github_account_login`, `default_branch`,
+  `selected_branch`, `last_verified_at`, `last_error`) nullable since they're only known after
+  a successful verification.
+- Commands run and results:
+  - `pnpm exec prisma format` → clean (also reformatted surrounding relation-array column
+    alignment, a cosmetic formatter side effect, not a manual edit).
+  - `pnpm exec prisma migrate dev --name add_repository_connections` → migration created and
+    applied to the local dev database.
+  - `DATABASE_URL=...devforge_test pnpm exec prisma migrate deploy` → applied to the test
+    database too.
+  - `pnpm exec prisma generate` → client regenerated.
+  - A throwaway `tsx` script: created a user → project → repository connection (with a
+    placeholder "encrypted" value shaped like real ciphertext — `iv:authTag:ciphertext` — never
+    a real token, since Milestone 3's actual encryption code doesn't exist yet); confirmed a
+    second connection for the same `projectId` is rejected by the unique constraint; confirmed
+    the stored `encryptedToken` value is not a bare token shape; then deleted the user and
+    confirmed the connection was cascade-deleted via the project relation (0 remaining).
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `111 passed (111)` — all pre-existing tests (Foundation + Phases
+    2–5) still pass unchanged.
+- Commit: `<pending>` — "feat(api): add repository_connections data model and migration".
 
 ### 3. GitHub client and service
 (pending)
