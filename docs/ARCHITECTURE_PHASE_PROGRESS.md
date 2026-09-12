@@ -15,7 +15,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 5. Frontend architecture flow
 - [x] 6. Tests
 - [x] 7. Docker verification
-- [ ] 8. Documentation
+- [x] 8. Documentation
 
 ## Per-milestone log
 
@@ -353,4 +353,41 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `ef0d964` — "chore: verify architecture phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
-(pending)
+- Files: root `README.md` (status banner, overview, "What works today", architecture diagram,
+  tech stack, repository structure, prerequisites, env var table, Docker verification note,
+  API summary, database schema, known limitations, and future work all updated to reflect
+  Phase 4 — "Architecture" removed from every "not yet implemented" list it previously
+  appeared in), `ai-service/README.md` (updated to list architecture generation alongside
+  requirements analysis and PRD generation). `frontend/README.md` was checked and needed no
+  change (its one "architecture" mention is the generic "setup/architecture docs" phrase, not
+  a reference to the `ArchitectureVersion` feature).
+- Commands run and results:
+  - Read every changed section back after editing to confirm no stray Phase-3-only phrasing
+    remained (e.g. searched for "architecture generation...not implemented" and "Architecture"
+    in the "not yet implemented" grid list across the repo's README files).
+  - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
+    suite was already green as of Milestone 7's final workspace-wide check.
+- Commit: `<pending>` — "docs: update README and ai-service README for Phase 4 (Architecture Generation)".
+
+## Phase 4 (Architecture Generation): complete
+
+All 8 milestones are done and independently verified (see each entry above for exact commands
+and results). Architecture generation — a project's active PRD version → a structured,
+versioned, editable technical architecture with an active version and a structural compare —
+is genuinely implemented and tested: this phase added 33 automated tests (17 api Supertest, 7
+frontend RTL, 1 real-HTTP integration, 8 ai-service pytest), and the full combined suite across
+all three AI-feature phases is green together, not just individually — `142 tests total` (77
+api + 37 frontend + 5 tests/ + 23 ai-service). One transient environmental flakiness episode
+mid-Milestone-4 (host scheduling contention causing spurious test timeouts, diagnosed and
+confirmed not a code defect — see that milestone's log entry) did not affect the final count.
+The system is demonstrable, with an honest "not configured" path throughout since this
+environment has no
+`ANTHROPIC_API_KEY`. The active-PRD dependency is enforced both server-side (`400
+NO_ACTIVE_PRD` before any AI-service call) and in the UI (no Generate control is ever rendered
+when the dependency isn't met — never an enabled button that would fail on click). The full
+three-phase chain (Requirements → PRD → Architecture) was verified end-to-end, including the
+correct cascading blocked states when an upstream artifact is missing. No later DevForge
+feature (epics/tasks, GitHub integration, AST parsing, retrieval, codebase Q&A, code review,
+evaluation pipeline, additional LLM providers) was implemented, scaffolded with fake behavior,
+or claimed as working anywhere in this phase — see the root README's "Known limitations" and
+"Future work" sections, which remain the authoritative statement of what's left.
