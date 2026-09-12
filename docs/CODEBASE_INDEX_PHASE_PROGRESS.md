@@ -15,7 +15,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 4. Indexing service and API endpoints
 - [x] 5. Frontend codebase index section
 - [x] 6. Tests
-- [ ] 7. Docker verification
+- [x] 7. Docker verification
 - [ ] 8. Documentation
 
 ## Per-milestone log
@@ -380,7 +380,62 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   coverage".
 
 ### 7. Docker verification
-_Not started._
+- No `docker-compose.yml`/`Dockerfile` changes were needed — confirmed via `git status`/`git
+  diff` before starting that no Docker config had been touched this phase. `tree-sitter`'s
+  wheel availability for the existing `python:3.12-slim` base image had already been confirmed
+  during Milestone 1 planning, so `ai-service/requirements.txt`'s new lines were the only thing
+  required for the container to pick them up.
+- Commands run and results:
+  - `docker compose down -v` (full volume wipe, including the standalone dev Postgres left
+    running from prior milestones) then `docker compose up -d --build` for a genuinely clean
+    rebuild of all four services.
+  - Watched the `ai-service` build log directly: `pip install -r requirements.txt` really did
+    download and install `tree-sitter-0.26.0`, `tree-sitter-python-0.25.0`,
+    `tree-sitter-javascript-0.25.0`, and `tree-sitter-typescript-0.23.2` as
+    `manylinux2014_aarch64` wheels inside the container — no compiler invoked, no build
+    failure, confirming Milestone 1's `pip download --platform` check was correct in practice,
+    not just in theory.
+  - All four containers reached `healthy` (`docker compose ps`); confirmed all 7 migrations —
+    including `20260912122024_add_codebase_index` — auto-applied from the `api` container's own
+    startup logs.
+  - Verified `POST /parsing/parse` directly against the containerized `ai-service` for all four
+    real cases: a parsed Python file, a parsed TypeScript file, an unsupported `README.md`, and
+    a malformed JS file producing `"parse_error"` — all four matched local-dev behavior exactly.
+  - Verified the codebase-index endpoints through the containerized `api` (no
+    `GITHUB_TOKEN_ENCRYPTION_KEY` passed through Docker Compose, deliberately, mirroring
+    Phase 6's decision — this is Docker's real, honest unconfigured state, not a simulation of
+    it): registered a user, created a project, confirmed `GET .../codebase-index` returns
+    `{ index: null }`, confirmed `POST .../codebase-index/start` returns 400
+    `NO_REPOSITORY_CONNECTED`, and confirmed `GET .../codebase-index/files` returns 404
+    `CODEBASE_INDEX_NOT_FOUND`.
+  - **Re-verified all five prior phases' real dependency-chain behavior through this same
+    containerized stack**, not assumed intact: `POST .../repository/connect` still returns 503
+    `GITHUB_INTEGRATION_NOT_CONFIGURED`; `POST .../requirements/analyze` still returns 503
+    `AI_PROVIDER_UNAVAILABLE`; and `POST .../prd/generate`, `.../architecture/generate`,
+    `.../epics/generate`, `.../tasks/generate` each still return their real, honest
+    `NO_ACTIVE_*` dependency-chain error — none of Phase 7's changes altered any of these.
+  - `cd tests && pnpm test` against the running Docker stack (`API_URL`/`DATABASE_URL` defaults
+    already match Docker Compose's mapped ports): 9/9 passed, including the new
+    `codebaseIndex.test.ts`.
+  - `docker compose logs api` / `docker compose logs ai-service`, grepped for `ghp_` and other
+    token-shaped strings: none found in either service's logs.
+  - Playwright against the Dockerized frontend (`http://localhost:4173`): registered, created a
+    project, opened Settings, and confirmed the "Codebase index" section renders its
+    "No repository connected" gate correctly — screenshot read back directly, not just asserted
+    to exist.
+  - Deleted all scratch users/projects created during this verification via the running
+    container's Postgres, then `docker compose down` (without `-v`, preserving the now-current
+    `devforge` database) and restored the local-dev baseline: brought the standalone `postgres`
+    service back up, recreated `devforge_test` and applied all 7 migrations to it via
+    `scripts/setup-test-db.sh`, and confirmed `devforge` itself needed no further migration
+    (already current from the Docker run). Re-ran `npm run test` in `api/` against the restored
+    local dev database: 174/174 passed. Confirmed no orphaned `tsx watch`/`uvicorn`/`vite`
+    processes and that only `devforge-postgres-1` remains running in Docker — the same
+    end-state every prior phase's Milestone 7 left the environment in.
+  - `git status --porcelain` after all of the above: clean — this milestone required no file
+    changes.
+- Commit: `<pending>` — "chore: verify codebase indexing phase against a clean-volume Docker
+  rebuild".
 
 ### 8. Documentation
 _Not started._
