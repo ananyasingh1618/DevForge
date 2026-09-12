@@ -434,3 +434,8 @@ automatic task execution, GitHub issue/PR creation, GitHub Actions integration, 
 providers) was implemented, scaffolded with fake behavior, or claimed as working anywhere in
 this phase — see the root README's "Known limitations" and "Future work" sections, which
 remain the authoritative statement of what's left.
+
+**Phase 7 (AST Parsing & Codebase Indexing) progress is tracked separately** in
+[docs/CODEBASE_INDEX_PHASE_PLAN.md](CODEBASE_INDEX_PHASE_PLAN.md) and
+[docs/CODEBASE_INDEX_PHASE_PROGRESS.md](CODEBASE_INDEX_PHASE_PROGRESS.md) — this file remains
+the historical record of Phase 6 only and is not updated further.
