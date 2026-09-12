@@ -296,7 +296,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - Deleted the scratch project/user and confirmed no orphaned `tsx watch`/`vite`/`uvicorn`
     processes remained afterward (`ps aux`); the sibling VoxMind `uvicorn` process was the only
     `uvicorn` process left running, untouched throughout.
-- Commit: `<pending>` — "feat(frontend): add codebase index section to project settings".
+- Commit: `27ad914` — "feat(frontend): add codebase index section to project settings".
 
 ### 6. Tests
 _Not started._
