@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Inspect and plan
 - [x] 2. Prisma schema and migration
 - [x] 3. GitHub client and service
-- [ ] 4. API endpoints (Node)
+- [x] 4. API endpoints (Node)
 - [ ] 5. Frontend repository settings flow
 - [ ] 6. Tests
 - [ ] 7. Docker verification
@@ -140,7 +140,60 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `3c51b0e` — "feat(api): add GitHub client, token encryption, and repository connection service".
 
 ### 4. API endpoints (Node)
-(pending)
+- Files: `api/src/controllers/repository.ts` (new — `connect`/`getConnection`/`verify`/
+  `listBranches`/`updateBranch`/`disconnect`), `api/src/routes/repository.ts` (new — singular-
+  resource shape per the plan, not the version-list shape Phases 2–5 use: `POST .../connect`,
+  `GET .../repository`, `POST .../verify`, `GET .../branches`, `PATCH .../repository`,
+  `DELETE .../repository`), `api/src/app.ts` (wires `repositoryRouter`).
+- `connect` returns `200` (not `201`) — this is an upsert of a singleton resource (connecting
+  again replaces the existing connection), not an append-only "create a new version" like every
+  AI-generated phase's `generate` endpoints, so `201`'s "a new resource was created" semantic
+  doesn't fit uniformly. `GET .../repository` returns `200 { connection: null }` when nothing
+  is connected yet (not `404`) — mirrors how `GET .../requirements` returns `200` with an empty
+  array rather than `404` when nothing's been generated; the project not existing/not being
+  owned is the only `404` at that level. `verify`/`branches`/`PATCH`/`DELETE` all `404` when no
+  connection exists yet, since there is genuinely nothing for that action to act on.
+- Commands run and results:
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `111 passed (111)` (unchanged — the automated Supertest file for
+    the new repository routes is written in Milestone 6, per the stated implementation order).
+- Manual end-to-end verification (real Postgres via Docker, real api dev server on :4000 — no
+  `ai-service` involved in this phase at all):
+  - Registered `github-manual@example.com`, created project "GitHub Test Project".
+  - `GET .../repository` with nothing connected → real `200 { connection: null }`.
+  - `POST .../repository/connect` with `GITHUB_TOKEN_ENCRYPTION_KEY` genuinely unset → real
+    `503 GITHUB_INTEGRATION_NOT_CONFIGURED`, checked before any GitHub API call.
+  - `POST .../verify`, `GET .../branches`, `PATCH .../repository`, `DELETE .../repository`,
+    each with no connection existing yet → real `404` for all four.
+  - Unauthenticated `GET .../repository` → real `401`. Cross-user `GET .../repository` → real
+    `404`. Malformed owner (`"-bad-owner-"`) → real `400 VALIDATION_ERROR` with a field-level
+    detail. Token below the minimum length → real `400`.
+  - **Restarted the api process with a locally-generated (never persisted to `.env` or
+    committed) 32-byte key** in `GITHUB_TOKEN_ENCRYPTION_KEY`, to exercise the fully-configured
+    path for real: `POST .../connect` with a genuinely fake token, key configured → the call
+    reached the real GitHub API and got back a real `401`, mapped to
+    `GITHUB_INVALID_CREDENTIALS` — confirmed the response body never contains the submitted
+    token string (`grep` for it on the raw response found zero matches); confirmed nothing was
+    persisted from the failed attempt (`GET .../repository` immediately after still showed
+    `null`).
+  - Seeded one `RepositoryConnection` row directly via Prisma, encrypted with the **same**
+    locally-generated key the running server had, to exercise the "connected" state without a
+    real valid PAT: `GET .../repository` → sanitized connection returned (`encryptedToken`
+    genuinely absent from the JSON body — confirmed by inspection, only `tokenLast4` present).
+    `POST .../verify` with the seeded fake token → real `401 GITHUB_INVALID_CREDENTIALS`; a
+    follow-up `GET .../repository` confirmed the **two-part verify behavior** worked exactly as
+    designed — the connection's `status` flipped to `"error"` and `lastError` was set to the
+    real GitHub error message, persisted despite the triggering request itself correctly
+    returning `401`. `GET .../branches` and `PATCH .../repository` (branch update, which lists
+    branches first) both correctly surfaced the same real `401` rather than a misleading `400`.
+    `DELETE .../repository` → real `204`, confirmed via a follow-up `GET` showing `null` again.
+  - Cleanup: deleted both manually-created users (cascaded to their projects/connections);
+    confirmed via `ps aux` that only the one manually-started api process existed; found and
+    killed one orphaned `tsx watch` child still bound to port 4000 after killing its parent
+    (same recurring pattern as every prior phase); confirmed port 4000 free afterward; removed
+    the temporary session-cookie files.
+- Commit: `<pending>` — "feat(api): add GitHub repository connection endpoints".
 
 ### 5. Frontend repository settings flow
 (pending)
