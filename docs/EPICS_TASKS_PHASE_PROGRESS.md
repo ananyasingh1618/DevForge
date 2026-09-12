@@ -14,7 +14,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 4. API endpoints (Node) — epics and tasks
 - [x] 5. Frontend epics/tasks flow
 - [x] 6. Tests
-- [ ] 7. Docker verification
+- [x] 7. Docker verification
 - [ ] 8. Documentation
 
 ## Per-milestone log
@@ -337,7 +337,53 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `8d31ed2` — "test(api,frontend,tests): add epic and task generation, versioning, and comparison coverage".
 
 ### 7. Docker verification
-(pending)
+- No changes to `docker-compose.yml` or `api/Dockerfile` were needed. Epic/task generation
+  reuses the `AI_SERVICE_URL`/`ANTHROPIC_API_KEY` wiring Phase 2 added, and the api container
+  already runs `prisma migrate deploy` on startup, which picks up the new
+  `add_epic_and_task_versions` migration automatically — confirmed below, not just assumed.
+- Commands run and results (all against a genuinely rebuilt, volume-wiped stack, mirroring the
+  exact procedure every prior phase's Milestone 7 used):
+  - `docker compose down -v` → removed the postgres volume entirely.
+  - `docker compose build` → all three custom images (api, frontend, ai-service) built clean.
+  - `docker compose up -d` → all four containers reached `healthy` (postgres + ai-service in
+    parallel, then api, then frontend), confirmed via `docker compose ps`.
+  - `psql \dt` → `epic_versions` and `task_versions` present alongside `users`, `sessions`,
+    `projects`, `requirements_versions`, `prd_versions`, `architecture_versions` — all five
+    migrations ran automatically on the api container's startup, from a completely empty
+    volume.
+  - `curl` against `http://localhost:4000/health` and `http://localhost:8001/health` → both
+    real 200s.
+  - Registered a user and created a project through the **containerized** API, then called
+    `POST .../epics/generate` with no architecture yet → real `400 NO_ACTIVE_ARCHITECTURE`;
+    `POST .../tasks/generate` with no epics yet → real `400 NO_ACTIVE_EPICS`.
+  - Seeded active requirements/PRD/architecture versions directly via Prisma against the
+    Docker-mapped Postgres port, re-called epics generate → real `503 AI_PROVIDER_UNAVAILABLE`
+    ("...to enable epic generation.") — proving the epic generation call correctly reaches the
+    **containerized** ai-service over the Docker-internal hostname.
+  - Seeded an active epic version directly via Prisma, called tasks generate → real
+    `503 AI_PROVIDER_UNAVAILABLE` ("...to enable task generation.") — proving the second new
+    link of the chain also reaches the containerized ai-service correctly.
+  - A throwaway Playwright script drove the **Dockerized frontend** (port 4173, a real static
+    production build) through register → create project → the full **five-section** dependency
+    cascade rendered correctly (Requirements empty, PRD/Architecture/Epics/Tasks each blocked
+    on exactly their correct upstream dependency). Same pre-existing, unrelated console entry
+    as every prior phase (a 401 from `useAuth`'s own `meRequest()` session check on page load
+    for an unauthenticated visitor) — not a new error introduced by this phase.
+  - `cd tests && API_URL=http://localhost:4000 AI_SERVICE_URL=http://localhost:8001 DATABASE_URL=postgresql://devforge:devforge@localhost:5433/devforge pnpm test`
+    (against the Dockerized stack) → `6 files, 7 passed` (register-login-project, requirements,
+    prd, architecture, epics, tasks).
+  - Deleted the Docker-verification test users via `psql`; `docker compose down` (volumes
+    preserved).
+  - Restarted `postgres` alone for local dev; re-ran `./scripts/setup-test-db.sh` to recreate
+    `devforge_test` (wiped by the earlier `down -v`) — output confirmed all five migrations,
+    including `add_epic_and_task_versions`, applied to it.
+  - Final full-workspace check: root `pnpm -r typecheck` → clean (api, frontend, tests). Root
+    `pnpm -r lint` → clean (one pre-existing, unrelated warning in `useAuth.tsx`).
+    `pnpm --filter @devforge/api test` → `111 passed`; `pnpm --filter @devforge/frontend test`
+    → `52 passed` (the `tests/` package's own suite requires live api/ai-service processes,
+    which were stopped by this point — already verified above against both local dev and the
+    Dockerized stack, so this is expected, not a regression).
+- Commit: `<pending>` — "chore: verify epics/tasks phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
 (pending)
