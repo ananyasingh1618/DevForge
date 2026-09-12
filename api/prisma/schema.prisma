@@ -3,11 +3,13 @@
 // Phase 2 (Requirements Analysis) adds: requirements_versions.
 // Phase 3 (PRD Generation) adds: prd_versions.
 // Phase 4 (Architecture Generation) adds: architecture_versions.
-// Future entities (epics, tasks, repositories, code_chunks, conversations,
-// reviews, review_findings, feedback) are intentionally not modeled yet —
-// see docs/ARCHITECTURE_PHASE_PLAN.md, docs/PRD_PHASE_PLAN.md,
-// docs/REQUIREMENTS_PHASE_PLAN.md and docs/FOUNDATION_PROGRESS.md for how
-// they will attach to `projects` / `repositories` once those phases start.
+// Phase 5 (Epics & Tasks Generation) adds: epic_versions, task_versions.
+// Future entities (repositories, code_chunks, conversations, reviews,
+// review_findings, feedback) are intentionally not modeled yet — see
+// docs/EPICS_TASKS_PHASE_PLAN.md, docs/ARCHITECTURE_PHASE_PLAN.md,
+// docs/PRD_PHASE_PLAN.md, docs/REQUIREMENTS_PHASE_PLAN.md and
+// docs/FOUNDATION_PROGRESS.md for how they will attach to `projects` /
+// `repositories` once those phases start.
 
 generator client {
   provider = "prisma-client-js"
@@ -66,6 +68,8 @@ model Project {
   requirementsVersions RequirementsVersion[]
   prdVersions          PrdVersion[]
   architectureVersions ArchitectureVersion[]
+  epicVersions         EpicVersion[]
+  taskVersions         TaskVersion[]
 
   @@index([ownerId])
   @@map("projects")
@@ -137,11 +141,67 @@ model ArchitectureVersion {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  project          Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  sourcePrdVersion PrdVersion @relation(fields: [sourcePrdVersionId], references: [id])
+  project          Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourcePrdVersion PrdVersion    @relation(fields: [sourcePrdVersionId], references: [id])
+  epicVersions     EpicVersion[]
 
   @@unique([projectId, version])
   @@index([projectId])
   @@index([sourcePrdVersionId])
   @@map("architecture_versions")
+}
+
+// One row per epic-generation run (or manual edit) for a project. `content`
+// is validated structured JSON — a list of id-bearing epic items (mirrors
+// RequirementItem[], not PrdContent/ArchitectureContent's flat-sections
+// shape) — generated from, and tracing back to, whichever ArchitectureVersion
+// was active at generation time via `sourceArchitectureVersionId`. Same
+// single-active-version invariant as every prior artifact, enforced the same
+// way (see api/src/services/epics.ts).
+model EpicVersion {
+  id                          String   @id @default(uuid())
+  projectId                   String   @map("project_id")
+  version                     Int
+  sourceArchitectureVersionId String   @map("source_architecture_version_id")
+  content                     Json
+  isActive                    Boolean  @default(false) @map("is_active")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  project                   Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceArchitectureVersion ArchitectureVersion @relation(fields: [sourceArchitectureVersionId], references: [id])
+  taskVersions              TaskVersion[]
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@index([sourceArchitectureVersionId])
+  @@map("epic_versions")
+}
+
+// One row per task-generation run (or manual edit) for a project. `content`
+// is validated structured JSON — a list of id-bearing task items, each
+// referencing an epic id from the source EpicVersion's content via a plain
+// `epicId` string field (not a DB-level foreign key — the same way no
+// content field anywhere in this schema cross-references another content
+// field's items by FK; content is JSON throughout). Generated from, and
+// tracing back to, whichever EpicVersion was active at generation time via
+// `sourceEpicVersionId`. Same single-active-version invariant as every prior
+// artifact (see api/src/services/tasks.ts).
+model TaskVersion {
+  id                  String   @id @default(uuid())
+  projectId           String   @map("project_id")
+  version             Int
+  sourceEpicVersionId String   @map("source_epic_version_id")
+  content             Json
+  isActive            Boolean  @default(false) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  project           Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceEpicVersion EpicVersion @relation(fields: [sourceEpicVersionId], references: [id])
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@index([sourceEpicVersionId])
+  @@map("task_versions")
 }

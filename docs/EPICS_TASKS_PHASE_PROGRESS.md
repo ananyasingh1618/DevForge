@@ -9,7 +9,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 ## Milestones
 
 - [x] 1. Inspect and plan
-- [ ] 2. Prisma schema and migration(s)
+- [x] 2. Prisma schema and migration(s)
 - [ ] 3. ai-service epics/tasks contracts and providers
 - [ ] 4. API endpoints (Node) — epics and tasks
 - [ ] 5. Frontend epics/tasks flow
@@ -56,7 +56,41 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `e3db5b7` — "docs: Phase 5 (Epics & Tasks Generation) plan and progress tracker".
 
 ### 2. Prisma schema and migration(s)
-(pending)
+- Files: `api/prisma/schema.prisma` (new `EpicVersion` and `TaskVersion` models +
+  `Project.epicVersions`/`Project.taskVersions` and
+  `ArchitectureVersion.epicVersions`/`EpicVersion.taskVersions` relations, updated header
+  comment), `api/prisma/migrations/20260912093458_add_epic_and_task_versions/migration.sql`
+  (one migration containing both tables — they landed together cleanly since both were added
+  to the schema in the same `prisma migrate dev` invocation).
+- `EpicVersion` mirrors `ArchitectureVersion` exactly field for field (`sourceArchitectureVersionId`
+  instead of `sourcePrdVersionId`); `TaskVersion` mirrors it with `sourceEpicVersionId`. Both
+  confirmed via generated SQL: `ON DELETE CASCADE` to `projects`, `ON DELETE RESTRICT` to the
+  respective upstream table, unique index on `(project_id, version)`, indexes on `project_id`
+  and the source FK — exactly matching the plan and every prior artifact's precedent.
+- Commands run and results:
+  - `pnpm exec prisma format` → clean (also reformatted surrounding relation-array column
+    alignment, a cosmetic formatter side effect, not a manual edit).
+  - `pnpm exec prisma migrate dev --name add_epic_and_task_versions` → migration created and
+    applied to the local dev database.
+  - `DATABASE_URL=...devforge_test pnpm exec prisma migrate deploy` → applied to the test
+    database too.
+  - `pnpm exec prisma generate` → client regenerated.
+  - A throwaway `tsx` script exercising the full five-link chain: created a user → project →
+    active requirements version → active PRD version → active architecture version → epic
+    version referencing it → task version referencing that. Confirmed both new source-tracking
+    FKs resolve to the right ids; confirmed a duplicate `(projectId, version)` insert is
+    rejected for both `EpicVersion` and `TaskVersion`; confirmed **directly attempting to
+    delete the referenced architecture version while an epic version still exists is
+    blocked**, and separately that **deleting the referenced epic version while a task version
+    still exists is blocked** (RESTRICT firing for real on both new FKs, not just present in
+    the schema); then deleted the user and confirmed all five artifact tables
+    (requirements/PRD/architecture/epics/tasks) were cascade-deleted via the project relation
+    (0 remaining each).
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean.
+  - `pnpm exec vitest run` → `77 passed (77)` — all pre-existing tests (Foundation + Phases
+    2–4) still pass unchanged.
+- Commit: `<pending>` — "feat(api): add epic_versions and task_versions data models and migration".
 
 ### 3. ai-service epics/tasks contracts and providers
 (pending)
