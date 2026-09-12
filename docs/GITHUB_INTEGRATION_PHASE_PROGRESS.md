@@ -137,7 +137,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     (Foundation + Phases 2–5) still pass unchanged; this milestone's automated tests are
     written in Milestone 6, per the stated implementation order (matching every prior phase's
     Milestone 3, which also deferred automated tests to Milestone 6).
-- Commit: `<pending>` — "feat(api): add GitHub client, token encryption, and repository connection service".
+- Commit: `3c51b0e` — "feat(api): add GitHub client, token encryption, and repository connection service".
 
 ### 4. API endpoints (Node)
 (pending)
