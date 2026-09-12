@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "./errors.js";
-import { getAuthenticatedUser, getRepository, listBranches } from "./githubClient.js";
+import {
+  getAuthenticatedUser,
+  getBlob,
+  getBranchCommit,
+  getRepository,
+  getTree,
+  listBranches,
+} from "./githubClient.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -131,6 +138,94 @@ describe("listBranches", () => {
     const branches = await listBranches("fake-token", "octocat", "Hello-World");
     expect(branches).toHaveLength(101);
     expect(branches[branches.length - 1]).toEqual({ name: "last-branch", protected: false });
+  });
+});
+
+describe("getBranchCommit", () => {
+  it("returns the branch's current commit sha", async () => {
+    mockGithubResponses([{ status: 200, body: { commit: { sha: "abc123" } } }]);
+    const sha = await getBranchCommit("fake-token", "octocat", "Hello-World", "master");
+    expect(sha).toBe("abc123");
+  });
+
+  it("maps a 404 to GITHUB_REPOSITORY_NOT_FOUND when the branch doesn't exist", async () => {
+    mockGithubResponses([{ status: 404, body: { message: "Branch not found" } }]);
+    await expect(getBranchCommit("fake-token", "octocat", "Hello-World", "no-such-branch")).rejects.toMatchObject({
+      status: 404,
+      code: "GITHUB_REPOSITORY_NOT_FOUND",
+    });
+  });
+});
+
+describe("getTree", () => {
+  it("returns blob/tree/commit entries, filtering out unrecognized types", async () => {
+    mockGithubResponses([
+      {
+        status: 200,
+        body: {
+          tree: [
+            { path: "src/app.ts", type: "blob", sha: "sha1", size: 100 },
+            { path: "src", type: "tree", sha: "sha2" },
+            { path: "vendor/lib", type: "commit", sha: "sha3" },
+          ],
+          truncated: false,
+        },
+      },
+    ]);
+    const tree = await getTree("fake-token", "octocat", "Hello-World", "abc123");
+    expect(tree).toEqual({
+      truncated: false,
+      entries: [
+        { path: "src/app.ts", type: "blob", sha: "sha1", size: 100 },
+        { path: "src", type: "tree", sha: "sha2" },
+        { path: "vendor/lib", type: "commit", sha: "sha3" },
+      ],
+    });
+  });
+
+  it("surfaces GitHub's own truncated flag rather than hiding it", async () => {
+    mockGithubResponses([
+      { status: 200, body: { tree: [{ path: "a.ts", type: "blob", sha: "sha1", size: 10 }], truncated: true } },
+    ]);
+    const tree = await getTree("fake-token", "octocat", "Hello-World", "abc123");
+    expect(tree.truncated).toBe(true);
+  });
+
+  it("maps a rate-limited response to GITHUB_RATE_LIMITED", async () => {
+    mockGithubResponses([
+      { status: 403, body: { message: "rate limited" }, headers: { "x-ratelimit-remaining": "0" } },
+    ]);
+    await expect(getTree("fake-token", "octocat", "Hello-World", "abc123")).rejects.toMatchObject({
+      status: 429,
+      code: "GITHUB_RATE_LIMITED",
+    });
+  });
+});
+
+describe("getBlob", () => {
+  it("decodes base64 content", async () => {
+    const content = "console.log('hi');";
+    mockGithubResponses([
+      { status: 200, body: { content: Buffer.from(content, "utf-8").toString("base64"), encoding: "base64" } },
+    ]);
+    const result = await getBlob("fake-token", "octocat", "Hello-World", "sha1");
+    expect(result).toBe(content);
+  });
+
+  it("rejects an unexpected encoding", async () => {
+    mockGithubResponses([{ status: 200, body: { content: "abc", encoding: "utf-8" } }]);
+    await expect(getBlob("fake-token", "octocat", "Hello-World", "sha1")).rejects.toMatchObject({
+      status: 502,
+      code: "GITHUB_API_ERROR",
+    });
+  });
+
+  it("maps a 404 to GITHUB_REPOSITORY_NOT_FOUND", async () => {
+    mockGithubResponses([{ status: 404, body: { message: "Not Found" } }]);
+    await expect(getBlob("fake-token", "octocat", "Hello-World", "sha1")).rejects.toMatchObject({
+      status: 404,
+      code: "GITHUB_REPOSITORY_NOT_FOUND",
+    });
   });
 });
 

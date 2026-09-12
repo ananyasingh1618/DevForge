@@ -14,7 +14,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. GitHub retrieval and ai-service parser
 - [x] 4. Indexing service and API endpoints
 - [x] 5. Frontend codebase index section
-- [ ] 6. Tests
+- [x] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
 
@@ -299,7 +299,85 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `27ad914` — "feat(frontend): add codebase index section to project settings".
 
 ### 6. Tests
-_Not started._
+- **`api/src/lib/githubClient.test.ts`** (extended): 8 new cases for `getBranchCommit`,
+  `getTree` (including surfacing `truncated: true` and mapping a rate-limited response), and
+  `getBlob` (including rejecting an unexpected non-base64 `encoding` field) — same
+  mocked-`fetch` pattern the existing tests in this file already use, no new file needed.
+- **`ai-service/tests/test_parsing.py`** (new, 13 cases): `detect_language` for every
+  supported/unsupported extension; direct `parse_file()` unit tests reusing the exact fixtures
+  prototyped in Milestone 1 (nested Python class/method/closure with correct `parent_index`
+  chaining three levels deep, TypeScript interface/class/type_alias/arrow-function including
+  the `export const arrow = ...` fallthrough case, a `.tsx` file to confirm the TSX grammar is
+  actually selected, plain JavaScript); a malformed-JS fixture asserting `"parse_error"` with
+  no symbols; an unsupported extension asserting no parse is attempted; and three
+  `POST /parsing/parse` endpoint-level tests via `TestClient` (success, unsupported, and a real
+  FastAPI 400 `VALIDATION_ERROR` for a missing field). No provider-not-configured case exists
+  here, unlike every other ai-service test file — parsing has no LLM dependency to gate.
+- **`api/src/routes/codebaseIndex.test.ts`** (new, 14 cases): auth (401 on all five endpoints)
+  and ownership (404 for another user's project); `NO_REPOSITORY_CONNECTED` and
+  `GITHUB_INTEGRATION_NOT_CONFIGURED` (confirming `fetch` is never called for the latter);
+  persisting a `"failed"` row with the real error when branch-commit resolution itself fails
+  (the exact gap found and fixed during Milestone 4's manual verification, now covered by an
+  automated regression test); the full happy path — connect, start, and confirm the resulting
+  index summary, the per-file list (an unsupported `README.md`, a parsed `src/app.ts`, and a
+  `node_modules/...` file that never appears at all, confirming directory filtering happens
+  before a file ever becomes a candidate), and the persisted symbol for the parsed file, via
+  real HTTP responses through the whole route→service→(mocked)client chain; a `parse_error`
+  file recorded with no symbols and counted in `failedFileCount`; an oversized file and a
+  binary-extension file each skipped with the correct status *and* asserted (via the fetch
+  spy's call count) to never trigger a blob fetch; the commit-unchanged short-circuit on
+  `start` (asserted via a `fetchSpy.toHaveBeenCalledTimes(1)` — only `getBranchCommit`, no
+  `getTree`) versus `reindex` always re-running (`toHaveBeenCalledTimes(2)`); `GET
+  .../codebase-index` returning `{ index: null }` before any attempt; and 404
+  `CODEBASE_INDEX_NOT_FOUND` for both "no index yet" and "file id not in this index" on the
+  files/symbols endpoints. Required re-running `prisma migrate deploy` against the
+  `devforge_test` database — Milestone 2's migration had only ever been applied to the local
+  dev database and the Docker Postgres volume, not the separate test database vitest.config.ts
+  points at, so the very first run of this file failed with `relation "symbols" does not
+  exist` before any test logic ran; every prior milestone's full-suite runs had stayed green
+  only because nothing yet touched the new tables.
+- **`frontend/src/components/CodebaseIndexSection.test.tsx`** (new, 8 cases): the
+  no-repository gate (and confirms the index endpoint is never called in that state); a
+  connection-load failure error state with retry; the ready state's `Start indexing` control,
+  including that a real failure response leaves the ready prompt in place rather than
+  rendering a fabricated indexed view; a successful start transitioning to the indexed view; a
+  `"failed"`-status index rendering its real error under the status-neutral "Last run" label
+  (and explicitly asserting "Last indexed" is never rendered — the exact wording bug found and
+  fixed during Milestone 5's manual verification, now guarded by a regression test) and never
+  fetching the files list for a failed index; listing indexed files and lazily fetching a
+  file's symbols only once it's expanded; a `parse_error` file's inline error message; and
+  reindexing, including that a real failure surfaces its real message rather than a fabricated
+  success.
+- **`tests/codebaseIndex.test.ts`** (new, 1 case): real-HTTP integration test — register,
+  create a project, and confirm the honest `NO_REPOSITORY_CONNECTED` response from a genuinely
+  running API process for a project with no repository connected, that nothing is persisted
+  from the blocked attempt, and that listing files before any index exists is a real 404
+  `CODEBASE_INDEX_NOT_FOUND`. Like `tests/repository.test.ts`, needs no real GitHub credentials
+  and — notably, since this is the first `tests/` file to note it explicitly — does not need
+  `ai-service` running at all, since the pipeline never reaches the parser without a connected
+  repository.
+- Commands run and results:
+  - `npm run typecheck` / `npm run lint` (api, frontend): clean.
+  - `npm run test` (api): 174/174 (152 prior + 8 `githubClient` + 14 `codebaseIndex` route
+    tests).
+  - `python -m pytest -q` (ai-service): 52/52 (39 prior + 13 new).
+  - `npm run test` (frontend): 67/67 (59 prior + 8 new).
+  - `npm run test` (`tests/`): 9/9 (8 prior + 1 new) — run against the real local dev stack
+    (Postgres, `api`, `ai-service` all genuinely running); confirmed the other four
+    ai-service-dependent integration tests correctly failed with a clear timeout message when
+    `ai-service` was not yet started, then passed once it was — this environment has no
+    `ANTHROPIC_API_KEY` set either, so those four still exercise only the honest
+    "not configured" paths, unchanged from every prior phase.
+  - Combined total across all four suites: **302 tests** (174 api + 52 ai-service + 67
+    frontend + 9 tests/) — recomputed and double-checked before writing this line, learning
+    from the arithmetic-mistake lesson recorded in Phase 5's and Phase 6's own progress docs.
+  - Deleted all scratch data created during manual verification passes in this milestone (none
+    beyond what earlier milestones already cleaned up) and confirmed no orphaned `tsx
+    watch`/`uvicorn` processes remained after stopping the manually-started servers (`ps aux`);
+    the sibling VoxMind `uvicorn` process was the only `uvicorn` process left, untouched
+    throughout.
+- Commit: `<pending>` — "test(api,ai-service,frontend,tests): add codebase indexing test
+  coverage".
 
 ### 7. Docker verification
 _Not started._
