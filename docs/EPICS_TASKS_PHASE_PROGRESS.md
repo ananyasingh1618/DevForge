@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Prisma schema and migration(s)
 - [x] 3. ai-service epics/tasks contracts and providers
 - [x] 4. API endpoints (Node) — epics and tasks
-- [ ] 5. Frontend epics/tasks flow
+- [x] 5. Frontend epics/tasks flow
 - [ ] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
@@ -205,7 +205,70 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `780fa4b` — "feat(api): add epic and task generation, versioning, and comparison endpoints".
 
 ### 5. Frontend epics/tasks flow
-(pending)
+- Files: `frontend/src/types/{epics,tasks}.ts` (new — `EpicItem`/`EpicContent`/`EpicVersion`/
+  `EpicDiff` and `TaskItem`/`TaskContent`/`TaskVersion`/`TaskDiff` mirroring the backend Zod/
+  Pydantic shapes), `frontend/src/services/{epicsApi,tasksApi}.ts` (new — one function per
+  endpoint, mirroring `architectureApi.ts`), `frontend/src/components/{EpicSection,
+  TaskSection}.tsx` (new — structurally parallel to `ArchitectureSection.tsx` for the
+  three-state/version-list/activate/regenerate shell, but with a per-item `EpicCard`/`TaskCard`
+  editor instead of per-flat-field textareas, since content is entirely an item list — no
+  add/remove-item control, per the plan's documented scope boundary; `TaskCard` uses `<select>`
+  dropdowns for `type`/`priority`/`estimatedComplexity` and a number input for
+  `suggestedOrder`), `frontend/src/pages/ProjectOverview.tsx` (renders `<EpicSection>` and
+  `<TaskSection>` below `<ArchitectureSection>`; removed "Tasks" from the "Not yet implemented"
+  grid — nothing named "Epics" was ever listed there separately), `frontend/src/pages/
+  ProjectOverview.test.tsx` (mocks `epicsApi`/`tasksApi`, updated the "Not yet implemented"
+  count from 4 to 3, added assertions for both new blocked-state messages).
+- `EpicSection` blocks on no active architecture ("Architecture needed first");
+  `TaskSection` blocks on no active epics ("Epics needed first") — each fetches its own
+  upstream list and its own list independently on mount, preserving the full five-section
+  cascade with no cross-component coupling.
+- Commands run and results:
+  - `pnpm exec tsc --noEmit` → clean.
+  - `pnpm exec eslint .` → clean (one pre-existing, unrelated warning in `useAuth.tsx`).
+  - `pnpm exec vitest run` → `37 passed (37)` after wiring both sections into `ProjectOverview`
+    and updating its test (the count-of-4→3 change and the two new blocked-state assertions
+    were verified against the real rendered DOM, not just adjusted to pass).
+- Manual browser verification (real Postgres, real api on :4000, real ai-service on :8001 with
+  `ANTHROPIC_API_KEY` unset, real Vite dev server on :5173 — all three started fresh after
+  confirming no stale processes), driven with Playwright via a cached `npx` install against a
+  real registered user and real project:
+  - No requirements yet → confirmed the full **five-section blocked cascade** renders
+    correctly in one screenshot: Requirements empty, PRD blocked ("Requirements needed
+    first"), Architecture blocked ("PRD needed first"), Epics blocked ("Architecture needed
+    first"), Tasks blocked ("Epics needed first") — no Generate button present anywhere in the
+    DOM for any of the four blocked sections.
+  - Seeded active requirements/PRD/architecture versions directly via Prisma, reloaded → Epics
+    section shows the **empty** state with "Generate epics from Architecture v1"; Tasks
+    remains correctly blocked (no active epics yet).
+  - Clicked Generate on Epics with no LLM provider configured → the real
+    `503 AI_PROVIDER_UNAVAILABLE` message rendered in the UI ("...to enable epic
+    generation."), propagated end-to-end with no fabricated success.
+  - Seeded two `EpicVersion` rows directly via Prisma (v1 one epic, v2 two epics, v2 active) →
+    **populated** state: both versions listed, the epic card rendered with its `EP-1` id
+    badge and every field (title/description/objective/businessValue/scope/
+    acceptanceCriteria/dependencies/relatedComponents) editable.
+  - Selected the inactive version (v1) and clicked "Make active" → the active badge moved
+    correctly, confirming the single-active-version invariant holds visually.
+  - Edited an epic's title and clicked "Save changes" → change persisted and visible in the
+    same card afterward.
+  - **Observed and verified a cross-section staleness characteristic**: after activating epic
+    v1 (previously v2), the already-mounted Task section's "Generate tasks from Epics v{N}"
+    button kept showing the stale "v2" label until the page was reloaded — confirmed via a
+    second Playwright run that a fresh page load correctly shows "Generate tasks from Epics
+    v1". This is not a data-correctness bug (the server is always the true source of truth for
+    which version is active; generating tasks would correctly use whichever epic version is
+    actually active server-side, regardless of the client's stale label) — it is the same
+    "each section fetches independently on mount, no cross-component coupling" design decision
+    every prior phase deliberately made, now directly observed for the first time because this
+    is the first phase with three sections chained deeply enough in one page to notice it.
+    Documented as a known limitation in Milestone 8 rather than silently left unmentioned.
+  - Screenshots captured for each state and reviewed directly (not just asserted to exist).
+  - Cleanup: deleted the test user (cascaded through all six version tables via existing FK
+    cascade rules), confirmed via `ps aux` that only the four manually-started DevForge
+    processes existed, killed all four cleanly, confirmed ports 4000/8001/5173 all free
+    afterward.
+- Commit: `<pending>` — "feat(frontend): add Epics and Tasks sections with dependency, generate, and version flows".
 
 ### 6. Tests
 (pending)
