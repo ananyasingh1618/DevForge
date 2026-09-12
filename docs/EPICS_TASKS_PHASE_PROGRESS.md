@@ -403,7 +403,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     files).
   - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
     suite was already green as of Milestone 7's final workspace-wide check.
-- Commit: `<pending>` — "docs: update README and ai-service README for Phase 5 (Epics & Tasks Generation)".
+- Commit: `c52b148` — "docs: update README and ai-service README for Phase 5 (Epics & Tasks Generation)".
 
 ## Phase 5 (Epics & Tasks Generation): complete
 
