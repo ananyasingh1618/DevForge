@@ -7,13 +7,17 @@
 // Phase 6 (GitHub Integration) adds: repository_connections — a single
 // connection row per project (not a versioned artifact; see
 // docs/GITHUB_INTEGRATION_PHASE_PLAN.md for why).
+// Phase 7 (AST Parsing & Codebase Indexing) adds: codebase_indexes,
+// indexed_files, symbols — one index row per project (same
+// replaced-state-not-versioned-artifact shape as repository_connections; see
+// docs/CODEBASE_INDEX_PHASE_PLAN.md for why).
 // Future entities (code_chunks, conversations, reviews, review_findings,
 // feedback) are intentionally not modeled yet — see
-// docs/GITHUB_INTEGRATION_PHASE_PLAN.md, docs/EPICS_TASKS_PHASE_PLAN.md,
-// docs/ARCHITECTURE_PHASE_PLAN.md, docs/PRD_PHASE_PLAN.md,
-// docs/REQUIREMENTS_PHASE_PLAN.md and docs/FOUNDATION_PROGRESS.md for how
-// they will attach to `projects` / `repository_connections` once those
-// phases start.
+// docs/CODEBASE_INDEX_PHASE_PLAN.md, docs/GITHUB_INTEGRATION_PHASE_PLAN.md,
+// docs/EPICS_TASKS_PHASE_PLAN.md, docs/ARCHITECTURE_PHASE_PLAN.md,
+// docs/PRD_PHASE_PLAN.md, docs/REQUIREMENTS_PHASE_PLAN.md and
+// docs/FOUNDATION_PROGRESS.md for how they will attach to `projects` /
+// `repository_connections` / `codebase_indexes` once those phases start.
 
 generator client {
   provider = "prisma-client-js"
@@ -75,6 +79,7 @@ model Project {
   epicVersions         EpicVersion[]
   taskVersions         TaskVersion[]
   repositoryConnection RepositoryConnection?
+  codebaseIndex        CodebaseIndex?
 
   @@index([ownerId])
   @@map("projects")
@@ -243,7 +248,104 @@ model RepositoryConnection {
   createdAt          DateTime                   @default(now()) @map("created_at")
   updatedAt          DateTime                   @updatedAt @map("updated_at")
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  codebaseIndexes CodebaseIndex[]
 
   @@map("repository_connections")
+}
+
+enum CodebaseIndexStatus {
+  pending
+  indexing
+  completed
+  failed
+}
+
+// Exactly one index per project (same replaced-state shape as
+// RepositoryConnection, not a versioned artifact — see
+// docs/CODEBASE_INDEX_PHASE_PLAN.md). Indexing the same connection again
+// reuses this row; its files/symbols are replaced wholesale in a
+// transaction rather than accumulating history. `repositoryConnectionId` is
+// a plain (non-cascading) FK: disconnecting a repository does not delete
+// its index in the same request — see the plan doc's "known limitations".
+model CodebaseIndex {
+  id                     String              @id @default(uuid())
+  projectId              String              @unique @map("project_id")
+  repositoryConnectionId String              @map("repository_connection_id")
+  branch                 String
+  commitSha              String?             @map("commit_sha")
+  status                 CodebaseIndexStatus @default(pending)
+  truncated              Boolean             @default(false)
+  fileCount              Int                 @default(0) @map("file_count")
+  parsedFileCount        Int                 @default(0) @map("parsed_file_count")
+  failedFileCount        Int                 @default(0) @map("failed_file_count")
+  startedAt              DateTime?           @map("started_at")
+  completedAt            DateTime?           @map("completed_at")
+  error                  String?
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+
+  project              Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  repositoryConnection RepositoryConnection @relation(fields: [repositoryConnectionId], references: [id])
+  files                IndexedFile[]
+
+  @@index([repositoryConnectionId])
+  @@map("codebase_indexes")
+}
+
+enum FileParseStatus {
+  parsed
+  unsupported
+  parse_error
+  skipped_binary
+  skipped_too_large
+  skipped_index_limit
+}
+
+// One row per file considered during an index run (not just successfully
+// parsed ones — a skipped/unsupported/failed file is still recorded, never
+// silently dropped from the list; see docs/CODEBASE_INDEX_PHASE_PLAN.md).
+// No source content is stored, only `contentHash` (for future
+// change-detection) — symbols carry line ranges, not text.
+model IndexedFile {
+  id          String          @id @default(uuid())
+  indexId     String          @map("index_id")
+  path        String
+  language    String?
+  sizeBytes   Int             @map("size_bytes")
+  contentHash String          @map("content_hash")
+  parseStatus FileParseStatus @map("parse_status")
+  parseError  String?         @map("parse_error")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  index   CodebaseIndex @relation(fields: [indexId], references: [id], onDelete: Cascade)
+  symbols Symbol[]
+
+  @@unique([indexId, path])
+  @@map("indexed_files")
+}
+
+// One row per extracted symbol (class/interface/type_alias/function/method
+// — see docs/CODEBASE_INDEX_PHASE_PLAN.md for the exact tree-sitter node-type
+// mapping). `type`/`signature` are plain strings rather than enums since the
+// set of symbol kinds already spans three unrelated language grammars and is
+// meant to grow as more languages are added. `parentId` self-references for
+// nested symbols (e.g. a method inside a class, a closure inside a method).
+model Symbol {
+  id        String  @id @default(uuid())
+  fileId    String  @map("file_id")
+  name      String
+  type      String
+  startLine Int     @map("start_line")
+  endLine   Int     @map("end_line")
+  parentId  String? @map("parent_id")
+  signature String?
+
+  file     IndexedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  parent   Symbol?     @relation("SymbolParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children Symbol[]    @relation("SymbolParent")
+
+  @@index([fileId])
+  @@index([parentId])
+  @@map("symbols")
 }
