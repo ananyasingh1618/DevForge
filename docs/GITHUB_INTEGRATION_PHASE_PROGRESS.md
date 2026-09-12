@@ -14,7 +14,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 4. API endpoints (Node)
 - [x] 5. Frontend repository settings flow
 - [x] 6. Tests
-- [ ] 7. Docker verification
+- [x] 7. Docker verification
 - [ ] 8. Documentation
 
 ## Per-milestone log
@@ -330,7 +330,60 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `943b69a` — "test(api,frontend,tests): add GitHub client, token crypto, and repository connection coverage".
 
 ### 7. Docker verification
-(pending)
+- No changes to `docker-compose.yml` or `api/Dockerfile` were needed. `GITHUB_TOKEN_ENCRYPTION_KEY`
+  is intentionally **not** wired into `docker-compose.yml`'s `api` service (mirroring how
+  `ANTHROPIC_API_KEY` is the only cross-service secret ever passed through) — this environment's
+  real, confirmed-unconfigured state carries through to the containerized stack unchanged, which
+  is exactly what this milestone verifies rather than assumes.
+- Commands run and results (all against a genuinely rebuilt, volume-wiped stack, mirroring the
+  exact procedure every prior phase's Milestone 7 used):
+  - `docker compose down -v` → removed the postgres volume entirely.
+  - `docker compose build` → all three custom images (api, frontend, ai-service) built clean —
+    confirms the new `env.ts` schema field and all Phase 6 TypeScript compiles cleanly in the
+    production build, not just under `tsx`.
+  - `docker compose up -d` → all four containers reached `healthy` (postgres + ai-service in
+    parallel, then api, then frontend), confirmed via `docker compose ps`. **The api container
+    started successfully with `GITHUB_TOKEN_ENCRYPTION_KEY` completely unset** — confirms the
+    `.optional()` schema design doesn't crash the process, the central design point from
+    Milestone 1's plan.
+  - `psql \dt` → `repository_connections` present alongside all nine other tables — all six
+    migrations ran automatically on the api container's startup, from a completely empty
+    volume.
+  - `curl` against `http://localhost:4000/health` and `http://localhost:8001/health` → both
+    real 200s.
+  - Registered a user and created a project through the **containerized** API, then called
+    `POST .../repository/connect` with the key genuinely unset → real
+    `503 GITHUB_INTEGRATION_NOT_CONFIGURED`.
+  - **Confirmed all five prior phases' functionality remains fully intact** through the same
+    containerized API (an explicit Milestone 7 requirement, not assumed from "no code changed
+    in those routers"): real `503 AI_PROVIDER_UNAVAILABLE` from requirements/analyze, real
+    `400 NO_ACTIVE_REQUIREMENTS` from prd/generate, real `400 NO_ACTIVE_PRD` from
+    architecture/generate, real `400 NO_ACTIVE_ARCHITECTURE` from epics/generate, real
+    `400 NO_ACTIVE_EPICS` from tasks/generate — every dependency chain link still fires
+    correctly with the new `repositoryRouter` mounted alongside them.
+  - A throwaway Playwright script drove the **Dockerized frontend** (port 4173, a real static
+    production build) through register → create project → the new "Settings" link → the
+    disconnected state → submitting the connect form → the real
+    `GITHUB_INTEGRATION_NOT_CONFIGURED` message rendered correctly. Same pre-existing,
+    unrelated console entry as every prior phase (a 401 from `useAuth`'s own `meRequest()`
+    session check on page load) plus the expected 503 from the connect attempt itself (the
+    browser logging a failed fetch is normal, not a bug) — no credentials or unexpected errors
+    in the console.
+  - `cd tests && API_URL=http://localhost:4000 AI_SERVICE_URL=http://localhost:8001 DATABASE_URL=postgresql://devforge:devforge@localhost:5433/devforge pnpm test`
+    (against the Dockerized stack) → `7 files, 8 passed` (register-login-project, requirements,
+    prd, architecture, epics, tasks, repository).
+  - Deleted the Docker-verification test users via `psql`; `docker compose down` (volumes
+    preserved).
+  - Restarted `postgres` alone for local dev; re-ran `./scripts/setup-test-db.sh` to recreate
+    `devforge_test` (wiped by the earlier `down -v`) — output confirmed all six migrations,
+    including `add_repository_connections`, applied to it.
+  - Final full-workspace check: root `pnpm -r typecheck` → clean (api, frontend, tests). Root
+    `pnpm -r lint` → clean (one pre-existing, unrelated warning in `useAuth.tsx`).
+    `pnpm --filter @devforge/api test` → `152 passed`; `pnpm --filter @devforge/frontend test`
+    → `59 passed` (the `tests/` package's own suite requires live api/ai-service processes,
+    which were stopped by this point — already verified above against both local dev and the
+    Dockerized stack, so this is expected, not a regression).
+- Commit: `<pending>` — "chore: verify GitHub integration phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
 (pending)
