@@ -367,7 +367,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     in the "not yet implemented" grid list across the repo's README files).
   - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
     suite was already green as of Milestone 7's final workspace-wide check.
-- Commit: `<pending>` — "docs: update README and ai-service README for Phase 4 (Architecture Generation)".
+- Commit: `e381fc9` — "docs: update README and ai-service README for Phase 4 (Architecture Generation)".
 
 ## Phase 4 (Architecture Generation): complete
 
