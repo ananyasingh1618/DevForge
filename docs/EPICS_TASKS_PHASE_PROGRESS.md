@@ -134,7 +134,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     pre-existing requirements/PRD/architecture cases, unaffected).
   - Killed the manually-started uvicorn process by exact PID; confirmed port 8001 free
     afterward.
-- Commit: `<pending>` — "feat(ai-service): add epic- and task-generation endpoints and provider abstractions".
+- Commit: `6b5e397` — "feat(ai-service): add epic- and task-generation endpoints and provider abstractions".
 
 ### 4. API endpoints (Node) — epics and tasks
 (pending)
