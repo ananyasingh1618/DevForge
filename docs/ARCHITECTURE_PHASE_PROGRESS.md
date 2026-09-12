@@ -243,7 +243,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     manually-started DevForge processes existed (no orphaned `tsx watch` child this time —
     all four PIDs, including the api watcher's child, killed cleanly on the first pass),
     confirmed ports 4000/8001/5173 all free afterward.
-- Commit: `<pending>` — "feat(frontend): add Architecture section with dependency, generate, and version flows".
+- Commit: `58da8ed` — "feat(frontend): add Architecture section with dependency, generate, and version flows".
 
 ### 6. Tests
 (pending)
