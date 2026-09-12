@@ -406,7 +406,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     of treating "GitHub integration" as one undifferentiated unimplemented item).
   - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
     suite was already green as of Milestone 7's final workspace-wide check.
-- Commit: `<pending>` — "docs: update README for Phase 6 (GitHub Integration)".
+- Commit: `1a8fc75` — "docs: update README for Phase 6 (GitHub Integration)".
 
 ## Phase 6 (GitHub Integration): complete
 
