@@ -16,7 +16,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 5. Frontend codebase index section
 - [x] 6. Tests
 - [x] 7. Docker verification
-- [ ] 8. Documentation
+- [x] 8. Documentation
 
 ## Per-milestone log
 
@@ -438,4 +438,74 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   rebuild".
 
 ### 8. Documentation
-_Not started._
+- **`README.md`**: updated the status banner, overview, "What works today" (new "AST parsing &
+  codebase indexing" bullet; removed "Repository indexing" from the overview page's own
+  remaining-capabilities line since it's now implemented), architecture diagram (added the
+  ai-service parsing branch and GitHub file-tree/blob retrieval to the existing GitHub REST API
+  arrow), tech stack (updated the ai-service row, added a new "AST parsing" row), repository
+  structure (updated ai-service's description, added the two new doc files), Docker
+  verification note (parsing verified through the container, tree-sitter wheel install
+  confirmed from the real build log), tests section (updated the "no test claims..." sentence
+  and doc-pointer list), API summary (5 new endpoints, updated the `ai-service` direct-endpoint
+  note), database schema (added `codebase_indexes`/`indexed_files`/`symbols`), known
+  limitations (reworded the old blanket "no repository ingestion..." bullet — indexing is now
+  implemented — and added the 5 limitations from `docs/CODEBASE_INDEX_PHASE_PLAN.md`: the
+  synchronous/capped indexing request, only-three-languages, partial symbol-node coverage, no
+  cascade-delete on disconnect, no automatic re-verification before indexing), and future work
+  (removed "Tree-sitter AST indexing"/"repository ingestion" — implemented; kept and reworded
+  embeddings/retrieval/Q&A/review as what's still missing, explicitly noting they build on
+  Phase 7's index).
+- **`ai-service/README.md`**: added a sentence for `POST /parsing/parse`, explicit that it
+  needs no `ANTHROPIC_API_KEY` since it isn't an LLM call.
+- **`frontend/README.md`**: checked, no change needed — it was already phase-agnostic (no
+  phase-specific feature list to update), same as Phase 6's Milestone 8 finding.
+- Commands run and results:
+  - Read every changed README section back after editing to confirm no stray phase-6-only
+    phrasing remained (e.g. confirmed "What works today"'s AST parsing bullet correctly
+    distinguishes *indexing* — implemented — from *retrieval/Q&A* — still future work — and
+    confirmed the tech-stack/repository-structure/database-schema sections read consistently
+    end to end as one file, not just as isolated diffs).
+  - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
+    suite was already green as of Milestone 7's final Docker-and-local-restoration check.
+- Commit: `<pending>` — "docs: update README for Phase 7 (AST Parsing & Codebase Indexing)".
+
+## Phase 7 (AST Parsing & Codebase Indexing): complete
+
+All 8 milestones are done and independently verified (see each entry above for exact commands
+and results). Indexing a connected GitHub repository's codebase — resolving its current
+commit, fetching its file tree, parsing supported source files with tree-sitter, and
+extracting classes/interfaces/type aliases/functions/methods with correct parent/child
+nesting into a persisted, browsable index — is implemented and tested end to end.
+
+This phase added **44 new tests**: 22 api (8 `githubClient.test.ts` additions + 14
+`codebaseIndex.test.ts`), 13 ai-service (`test_parsing.py`), 8 frontend
+(`CodebaseIndexSection.test.tsx`), and 1 real-HTTP integration test
+(`tests/codebaseIndex.test.ts`). Combined with every prior phase's suite, the full repository
+now has **302 tests passing together, not just individually**: 174 api (152 prior + 22 new) +
+52 ai-service (39 prior + 13 new) + 67 frontend (59 prior + 8 new) + 9 tests/ (8 prior + 1 new)
+= 302 — recomputed and double-checked (`174+52+67+9 = 302`) immediately before writing this
+section, the same arithmetic-care lesson recorded in Phase 5's and Phase 6's own closing
+sections.
+
+The two central Milestone 1 design decisions — parsing runs in `ai-service` via tree-sitter
+(filling in a placeholder the Phase 4 architecture pass had already left for exactly this,
+rather than building a second parser stack in Node), and indexing is a synchronous, capped
+request rather than a background job (since no job-queue infrastructure exists anywhere in
+this codebase yet) — were made explicit and reasoned through in Milestone 1, with tree-sitter's
+`manylinux` wheel availability and the exact symbol node-type/parent-nesting mapping both
+confirmed by running real parses *before* committing to the schema, not assumed. Two real bugs
+were found and fixed during manual verification, each now covered by a regression test: a
+failure resolving the branch's commit originally left no durable "failed" index row for a
+subsequent `GET` to show (Milestone 4), and the summary view originally mislabeled a failed
+run's timestamp as "Last indexed" (Milestone 5). The system is demonstrable, with an honest
+"no repository connected" / "not configured" path throughout since this environment has no
+`GITHUB_TOKEN_ENCRYPTION_KEY`, and with genuinely verified real-GitHub-API failure paths
+(invalid credentials, both at the connect layer from Phase 6 and now at the indexing layer)
+exercised for real — no real, valid GitHub credentials were used or required anywhere in this
+phase's verification, and no fabricated index was ever claimed, including in the containerized
+Docker environment. No later DevForge feature (embeddings, vector storage, retrieval/semantic
+search, codebase Q&A, code review, automatic code generation, automatic task execution, GitHub
+issue/PR creation, GitHub Actions integration, additional LLM providers) was implemented,
+scaffolded with fake behavior, or claimed as working anywhere in this phase — see the root
+README's "Known limitations" and "Future work" sections, which remain the authoritative
+statement of what's left.

@@ -4,19 +4,22 @@ AI Software Engineering & Codebase Intelligence Platform.
 
 > **Current status: Foundation phase + Phase 2 (Requirements Analysis) + Phase 3 (PRD
 > Generation) + Phase 4 (Architecture Generation) + Phase 5 (Epics & Tasks Generation) +
-> Phase 6 (GitHub Integration) complete.** This repository implements authentication, a
-> project workspace, AI-assisted requirements analysis, AI-assisted PRD generation,
-> AI-assisted architecture generation, AI-assisted epic/task generation, and a secure GitHub
-> repository connection, end to end, with tests and a working Docker Compose stack. AST-aware
-> indexing, hybrid retrieval, codebase Q&A, and AI code review are part of the full product
+> Phase 6 (GitHub Integration) + Phase 7 (AST Parsing & Codebase Indexing) complete.** This
+> repository implements authentication, a project workspace, AI-assisted requirements
+> analysis, AI-assisted PRD generation, AI-assisted architecture generation, AI-assisted
+> epic/task generation, a secure GitHub repository connection, and tree-sitter-backed AST
+> parsing and codebase indexing (fetching a connected repository's source, parsing supported
+> files, and extracting symbols), end to end, with tests and a working Docker Compose stack.
+> Embeddings, hybrid retrieval, codebase Q&A, and AI code review are part of the full product
 > specification but are **not yet implemented** — nothing in this repository simulates or
 > fakes those capabilities. See [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 > [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 > [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
 > [docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
-> [docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md), and
-> [docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md) for
-> the detailed, verified log of every milestone that built each phase.
+> [docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md),
+> [docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md), and
+> [docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md) for the
+> detailed, verified log of every milestone that built each phase.
 
 ## Overview
 
@@ -29,10 +32,11 @@ structured, versioned requirements; Phase 3 added the second — turning a proje
 requirements version into a structured, versioned PRD; Phase 4 added the third — turning a
 project's active PRD version into a structured, versioned technical architecture; Phase 5
 added the fourth and fifth — turning a project's active architecture version into a versioned
-set of epics, and its active epic version into a versioned set of tasks; Phase 6 adds the
-first non-AI capability — securely connecting a GitHub repository to a project, the
-groundwork later phases (repository ingestion, AST parsing, retrieval, codebase Q&A, code
-review) will build on.
+set of epics, and its active epic version into a versioned set of tasks; Phase 6 added the
+first non-AI capability — securely connecting a GitHub repository to a project; Phase 7 builds
+on that connection — fetching the repository's source, parsing supported files into an AST,
+and extracting symbols into a persisted, browsable index — the groundwork later phases
+(embeddings, retrieval, codebase Q&A, code review) will build on.
 
 ## What works today
 
@@ -86,9 +90,21 @@ review) will build on.
   verification result; list and select a branch (validated against the repository's real
   branches); reverify access or disconnect at any time. If `GITHUB_TOKEN_ENCRYPTION_KEY` isn't
   configured, connecting fails with a clear, honest error — never a fabricated connection.
+- **AST parsing & codebase indexing**: from a project's Settings page, index the connected
+  repository's selected branch — resolves the branch's current commit, fetches its file tree
+  from the real GitHub API, parses supported files (Python, TypeScript, JavaScript) with
+  tree-sitter, and extracts symbols (classes, interfaces, type aliases, functions, methods,
+  with correct parent/child nesting). View the index's status, file/parsed/failed counts, and
+  last error; browse indexed files (including *why* an unsupported/binary/oversized file was
+  skipped, never silently dropped from the list) and a file's extracted symbols; reindex at
+  any time. Indexing the same branch at the same commit again is a no-op — it reuses the
+  existing completed index rather than redoing the work; an explicit reindex always re-runs.
+  Same honesty guarantee as GitHub repository connection: no connected repository, no
+  `GITHUB_TOKEN_ENCRYPTION_KEY` configured, or a real GitHub/parser failure each produce a
+  clear, real error — never a fabricated index.
 - A project overview page that shows real project data and honestly labels every remaining
-  planned capability (Repository indexing, Codebase Q&A, Reviews) as **Not yet implemented**
-  rather than presenting a stub as working.
+  planned capability (Codebase Q&A, Reviews) as **Not yet implemented** rather than presenting
+  a stub as working.
 - Opaque, server-side sessions: a random token lives only in an httpOnly cookie; only its
   SHA-256 hash is ever persisted.
 - The full stack (Postgres, API, frontend, and the AI service) runs via a single
@@ -101,12 +117,12 @@ React + TypeScript (Vite)                 Python/FastAPI AI service
         |                                    requirements analysis + PRD generation +
         | fetch, credentials: include         architecture generation + epic/task generation
         v                                     (Anthropic Claude, claude-opus-5);
-Node/Express API  ------------------------->   retrieval/review not implemented
-        |            fetch (AI_SERVICE_URL)
+Node/Express API  ------------------------->   + tree-sitter source parsing (no LLM call);
+        |            fetch (AI_SERVICE_URL)    retrieval/review not implemented
         |
         |----------------------------------> GitHub REST API (api.github.com)
         |            fetch, encrypted PAT      repository metadata, branches, access
-        |                                      verification only — no cloning/indexing
+        |                                      verification, file tree + blob content
         | Prisma (driver adapter: @prisma/adapter-pg)
         v
    PostgreSQL
@@ -115,9 +131,13 @@ Node/Express API  ------------------------->   retrieval/review not implemented
 The Node API and the Python AI service are separate processes/containers — the architecture
 principle from the full spec ("keep application CRUD/orchestration separate from AI-heavy
 processing") holds: the Node API validates, persists, and enforces ownership; the AI service
-only ever does the LLM call and returns structured, schema-validated content. GitHub
-connectivity is a Node API concern only (there's no AI involved in verifying repository
-access), so it calls the GitHub REST API directly rather than routing through `ai-service`.
+does the LLM calls and returns structured, schema-validated content, and — since Phase 7 — also
+does tree-sitter-backed source parsing (not an LLM call, but still a specialized-library
+concern kept out of the Node process). GitHub connectivity and file retrieval are Node API
+concerns only (there's no AI involved in verifying repository access or fetching a file tree),
+so the Node API calls the GitHub REST API directly rather than routing through `ai-service`;
+the Node API then sends each fetched file's content to `ai-service`'s parser and persists the
+result.
 
 ## Tech stack
 
@@ -134,8 +154,9 @@ access), so it calls the GitHub REST API directly rather than routing through `a
 | Validation | Zod (Node), Pydantic (ai-service) | Request bodies, route params, and environment variables validated the same way in each language |
 | AI provider | Anthropic Claude (`claude-opus-5`), via `client.messages.parse()` structured outputs | No provider was configured before Phase 2; documented choice in `docs/REQUIREMENTS_PHASE_PLAN.md` — first-party SDK, strict structured-output support |
 | Testing | Vitest, Supertest, pytest, React Testing Library, Playwright (ad hoc manual verification) | One test runner style per language |
-| AI service | Python/FastAPI | Its own process/container; requirements analysis, PRD generation, architecture generation, and epic/task generation are implemented |
+| AI service | Python/FastAPI | Its own process/container; requirements analysis, PRD generation, architecture generation, epic/task generation, and tree-sitter source parsing are implemented |
 | GitHub integration | Personal access token (user-supplied), native `fetch` against the GitHub REST API, AES-256-GCM token encryption via Node's built-in `crypto` | Smallest secure option — no OAuth App/GitHub App registration or callback infrastructure needed; no new dependency for a thin HTTP boundary. Documented choice in `docs/GITHUB_INTEGRATION_PHASE_PLAN.md` |
+| AST parsing | tree-sitter (`tree-sitter`, `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`), inside `ai-service` | Genuinely multi-language from one API, ships prebuilt `manylinux` wheels (confirmed for the existing `python:3.12-slim` image before adopting it — no compiler needed), and belongs next to the other "worker for the Node API" concern rather than a second parser stack in Node. Documented choice in `docs/CODEBASE_INDEX_PHASE_PLAN.md` |
 | Local/dev orchestration | Docker Compose | Postgres, API, frontend, ai-service, each with a healthcheck |
 
 ## Repository structure
@@ -145,14 +166,16 @@ devforge/
   frontend/       React + TypeScript client
   api/             Node/Express application API + Prisma schema/migrations
   ai-service/      Python/FastAPI AI service (requirements analysis + PRD generation +
-                    architecture generation + epic/task generation)
+                    architecture generation + epic/task generation + tree-sitter source
+                    parsing — see ai-service/app/parsing/)
   tests/           Cross-cutting integration tests (real HTTP, not in-process)
   evaluation/       Retrieval/review evaluation — empty until those phases exist
   docs/            FOUNDATION_PROGRESS.md, REQUIREMENTS_PHASE_PLAN.md,
                     REQUIREMENTS_PHASE_PROGRESS.md, PRD_PHASE_PLAN.md, PRD_PHASE_PROGRESS.md,
                     ARCHITECTURE_PHASE_PLAN.md, ARCHITECTURE_PHASE_PROGRESS.md,
                     EPICS_TASKS_PHASE_PLAN.md, EPICS_TASKS_PHASE_PROGRESS.md,
-                    GITHUB_INTEGRATION_PHASE_PLAN.md, GITHUB_INTEGRATION_PHASE_PROGRESS.md —
+                    GITHUB_INTEGRATION_PHASE_PLAN.md, GITHUB_INTEGRATION_PHASE_PROGRESS.md,
+                    CODEBASE_INDEX_PHASE_PLAN.md, CODEBASE_INDEX_PHASE_PROGRESS.md —
                     the verified milestone-by-milestone log for each phase
   scripts/         Local dev/setup scripts (test-database bootstrap)
   docker-compose.yml
@@ -231,9 +254,11 @@ gated by a healthcheck so dependents wait for their dependencies to actually be 
 just started. Verified end to end from a volume-wiped clean start (`docker compose down -v
 && docker compose up -d --build`), including the api-container → ai-service-container network
 call over the Docker-internal hostname for requirements analysis, PRD generation, architecture
-generation, and epic/task generation, and (separately) the api-container's own outbound call
-to the real GitHub REST API for repository connections — the API container starts and stays
-healthy whether or not `GITHUB_TOKEN_ENCRYPTION_KEY` is set:
+generation, epic/task generation, and source parsing (confirmed `pip install` really did pull
+prebuilt `tree-sitter` wheels into the container — no compiler needed), and (separately) the
+api-container's own outbound calls to the real GitHub REST API for repository connections and
+codebase indexing — the API container starts and stays healthy whether or not
+`GITHUB_TOKEN_ENCRYPTION_KEY` is set:
 
 | Service | URL | Health |
 |---|---|---|
@@ -262,16 +287,18 @@ pnpm lint
 ```
 
 No test in this repository claims a real LLM call succeeded unless a real, configured
-`ANTHROPIC_API_KEY` was actually used for that run, and no test claims a repository was
-actually connected unless a real, valid, user-supplied GitHub personal access token was used
-(none was, anywhere in this repository's test suite) — see
+`ANTHROPIC_API_KEY` was actually used for that run, no test claims a repository was actually
+connected unless a real, valid, user-supplied GitHub personal access token was used, and no
+test claims a real repository was actually indexed without one either (none was, anywhere in
+this repository's test suite) — see
 [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
 [docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
-[docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md), and
-[docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md) for
-exactly which tests use a test double and which exercise a real "not configured"/real-API
-failure path.
+[docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md),
+[docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md), and
+[docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md) for exactly
+which tests use a test double and which exercise a real "not configured"/real-API failure
+path.
 
 ## API summary
 
@@ -323,11 +350,18 @@ failure.
 | GET | `/projects/:id/repository/branches` | session | List live branches from GitHub; 404 if nothing connected |
 | PATCH | `/projects/:id/repository` | session | Update the selected branch — body `{ branch }`; validated against the live branch list (400 `GITHUB_INVALID_BRANCH` if it doesn't exist) |
 | DELETE | `/projects/:id/repository` | session | Disconnect; 404 if nothing connected |
+| POST | `/projects/:id/codebase-index/start` | session | Start indexing the connected repository's selected branch; reuses the existing index if the commit is unchanged and already completed (400 `NO_REPOSITORY_CONNECTED` if nothing is connected, 503 `GITHUB_INTEGRATION_NOT_CONFIGURED` if unconfigured) |
+| GET | `/projects/:id/codebase-index` | session | View the current index's status/summary, or `{ index: null }` if never started |
+| GET | `/projects/:id/codebase-index/files` | session | List indexed files (path, language, parse status, size); 404 `CODEBASE_INDEX_NOT_FOUND` if no index exists yet |
+| GET | `/projects/:id/codebase-index/files/:fileId/symbols` | session | List a file's extracted symbols, nested via `parentId` |
+| POST | `/projects/:id/codebase-index/reindex` | session | Always re-runs indexing, even if the commit is unchanged |
 
 `ai-service` also exposes `POST /requirements/analyze`, `POST /prd/generate`,
-`POST /architecture/generate`, `POST /epics/generate`, and `POST /tasks/generate` directly
-(called by the Node API, not the browser) and `GET /health`. The repository endpoints above
-never call `ai-service` — the Node API talks to the real GitHub REST API directly.
+`POST /architecture/generate`, `POST /epics/generate`, `POST /tasks/generate`, and
+`POST /parsing/parse` directly (called by the Node API, not the browser) and `GET /health`.
+The repository and codebase-index endpoints above never call `ai-service` for GitHub access —
+the Node API talks to the real GitHub REST API directly, and separately sends each fetched
+file's content to `ai-service`'s parser.
 
 ## Database schema
 
@@ -356,15 +390,50 @@ row per project (not a versioned artifact at all — connecting again replaces t
 of adding a new version), because a GitHub connection is state, not generated content worth a
 history — see `docs/GITHUB_INTEGRATION_PHASE_PLAN.md` for the full reasoning.
 `encrypted_token` is AES-256-GCM ciphertext, never the plaintext PAT; `token_last_4` is the
-only token-derived value ever returned by the API. See `api/prisma/schema.prisma` for the
-exact fields, and its header comment for how later entities (`code_chunks`, `conversations`,
-`reviews`, `review_findings`, `feedback`) will attach once those phases start.
+only token-derived value ever returned by the API. `codebase_indexes` (id, project_id →
+projects `ON DELETE CASCADE`, **unique on `project_id` alone**, repository_connection_id →
+repository_connections `ON DELETE RESTRICT`, branch, commit_sha, status
+(`pending`/`indexing`/`completed`/`failed`), truncated, file_count, parsed_file_count,
+failed_file_count, started_at, completed_at, error, timestamps) — same single-row-per-project
+shape as `repository_connections`, not a versioned artifact: reindexing replaces the row's
+files/symbols wholesale rather than adding a new version. `indexed_files` (id, index_id →
+codebase_indexes `ON DELETE CASCADE`, path, language, size_bytes, content_hash, parse_status
+(`parsed`/`unsupported`/`parse_error`/`skipped_binary`/`skipped_too_large`/
+`skipped_index_limit`), parse_error, created_at; unique on `(index_id, path)`) — one row per
+file *considered* during an index run, not just successfully parsed ones, so a skip is always a
+real, visible reason rather than a silently dropped file; `content_hash` reuses the git blob
+SHA GitHub's own tree API already computes rather than hashing fetched bytes again, and no
+source file content is ever stored. `symbols` (id, file_id → indexed_files `ON DELETE CASCADE`,
+name, type, start_line, end_line, parent_id → symbols `ON DELETE SET NULL` (self-referencing,
+for nested symbols), signature) — `type`/`signature` are plain strings rather than enums since
+the set of symbol kinds already spans three unrelated language grammars and is meant to grow.
+See `api/prisma/schema.prisma` for the exact fields, and its header comment for how later
+entities (`code_chunks`, `conversations`, `reviews`, `review_findings`, `feedback`) will attach
+once those phases start.
 
 ## Known limitations
 
-- No repository ingestion, code indexing/retrieval, codebase Q&A, or code review yet — the
-  GitHub connection stores only owner/repo/branch/status metadata and never clones, lists
-  files from, or reads content out of the connected repository — see "What works today" above.
+- No embeddings, vector storage, retrieval/semantic search, codebase Q&A, or code review yet —
+  Phase 7 builds the structured index (files + extracted symbols) those features would consume,
+  but nothing consumes it yet — see "What works today" above.
+- Codebase indexing runs synchronously within one HTTP request — there is no background job
+  queue anywhere in this codebase. It's bounded by a 500-file cap and a 300 KB per-file cap so
+  a single request stays reasonable; a genuinely large repository will hit these caps rather
+  than indexing everything, and files beyond a cap are recorded with a real
+  `skipped_index_limit`/`skipped_too_large` status rather than silently dropped. A background
+  worker is the natural fix and is future work.
+- Only three languages are parsed — Python, TypeScript, JavaScript. Every other extension is
+  recorded as `unsupported`, never silently omitted from the file list.
+- Symbol extraction covers class/interface/type_alias/function/method declarations only, not
+  every AST node (e.g. not import statements, decorators as standalone symbols, or
+  object-literal methods).
+- Disconnecting a repository does not cascade-delete its codebase index — the two are
+  independent rows once created. Deciding whether a disconnect should also clear the index is a
+  product decision left for later, not addressed in Phase 7.
+- No automatic re-verification of GitHub access happens before indexing; a token that was valid
+  at last verification but has since been revoked surfaces as a real `GITHUB_INVALID_CREDENTIALS`
+  failure from the indexing call itself, the same way it would from any other GitHub-calling
+  endpoint.
 - GitHub authentication supports only a user-supplied personal access token — not OAuth and
   not a GitHub App installation. Both were evaluated and rejected for this phase: OAuth needs
   a registered OAuth App (Client ID/Secret) and a reachable public callback URL; a GitHub App
@@ -418,16 +487,18 @@ exact fields, and its header comment for how later entities (`code_chunks`, `con
 
 ## Future work
 
-Repository ingestion (cloning and reading the connected repository's actual content),
-Tree-sitter AST indexing, hybrid (BM25 + vector + RRF + reranking) retrieval, cited codebase
-Q&A, and the bug/security/performance/quality review pipeline — per the full product
-specification. See [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
+A background job queue for indexing (removing the synchronous-request size/file caps),
+embeddings and a vector store, hybrid (BM25 + vector + RRF + reranking) retrieval over the
+Phase 7 index, cited codebase Q&A, and the bug/security/performance/quality review pipeline —
+per the full product specification. See
+[docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
 [docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
-[docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md), and
-[docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md) for
-what's been verified so far and how it was verified.
+[docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md),
+[docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md), and
+[docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md) for what's been
+verified so far and how it was verified.
 
 ## License
 
