@@ -350,7 +350,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     `37 passed` (the `tests/` package's own suite requires live api/ai-service processes, which
     were stopped by this point — already verified above against both local dev and the
     Dockerized stack, so this is expected, not a regression).
-- Commit: `<pending>` — "chore: verify architecture phase against a clean-volume Docker rebuild".
+- Commit: `ef0d964` — "chore: verify architecture phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
 (pending)
