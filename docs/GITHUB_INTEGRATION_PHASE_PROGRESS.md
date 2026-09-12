@@ -58,7 +58,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Wrote `docs/GITHUB_INTEGRATION_PHASE_PLAN.md` and this progress file; added a pointer from
   `docs/EPICS_TASKS_PHASE_PROGRESS.md` to both, mirroring the pointer chain every prior phase
   established.
-- Commit: `<pending>` — "docs: Phase 6 (GitHub Integration) plan and progress tracker".
+- Commit: `168c147` — "docs: Phase 6 (GitHub Integration) plan and progress tracker".
 
 ### 2. Prisma schema and migration
 (pending)
