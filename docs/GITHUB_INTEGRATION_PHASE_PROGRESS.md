@@ -92,7 +92,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - `pnpm exec eslint .` → clean.
   - `pnpm exec vitest run` → `111 passed (111)` — all pre-existing tests (Foundation + Phases
     2–5) still pass unchanged.
-- Commit: `<pending>` — "feat(api): add repository_connections data model and migration".
+- Commit: `aacc141` — "feat(api): add repository_connections data model and migration".
 
 ### 3. GitHub client and service
 (pending)
