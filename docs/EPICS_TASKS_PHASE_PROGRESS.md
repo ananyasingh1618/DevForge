@@ -334,7 +334,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     `afterAll` deleted its seeded user).
   - Killed both manually-started processes by exact PID; confirmed ports 4000/8001 free
     afterward with no orphaned children this time.
-- Commit: `<pending>` — "test(api,frontend,tests): add epic and task generation, versioning, and comparison coverage".
+- Commit: `8d31ed2` — "test(api,frontend,tests): add epic and task generation, versioning, and comparison coverage".
 
 ### 7. Docker verification
 (pending)
