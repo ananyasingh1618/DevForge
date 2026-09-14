@@ -14,7 +14,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 4. Retrieval-to-answer service
 - [x] 5. Q&A API
 - [x] 6. Frontend Codebase Q&A
-- [ ] 7. Security and prompt-injection protection
+- [x] 7. Security and prompt-injection protection
 - [ ] 8. Remaining tests, Docker verification, documentation
 
 ## Per-milestone log
@@ -247,7 +247,80 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `148041e` — "feat(frontend): add Codebase Q&A page".
 
 ### 7. Security and prompt-injection protection
-_Not started._
+- Structural protections were already built into Milestones 3–4 (the citation-safety schema
+  design, the untrusted-data/no-tools system prompt, `search()`'s existing ownership/(branch,
+  commit) scoping, `askQuestionSchema` accepting no caller-supplied branch/commit at all). This
+  milestone adds dedicated, deterministic tests proving each — mapped explicitly to the task's
+  own Milestone 7 checklist, since several of those items can only be *structurally* guaranteed,
+  not proven against a live model without paid credentials:
+  - **Malicious instructions inside source files / prompt injection in comments** →
+    `TestFormatContext::test_malicious_source_content_is_included_as_literal_inert_text_not_executed_or_interpolated`
+    (`ai-service/tests/test_qa.py`): a source whose content contains
+    `"IGNORE ALL PREVIOUS INSTRUCTIONS..."` plus Python-format-string-shaped placeholders
+    (`{system_prompt}`, `{os.environ}`) is proven to survive byte-for-byte inside the context
+    block — never interpolated, evaluated, or specially parsed. This is the deterministic half
+    of "treat repository content as untrusted data": that the pipeline gives injected text no
+    execution power. Whether the live model itself actually declines to follow it is a real
+    LLM call this environment cannot make without a paid key — the system prompt instructs it
+    to (see below), and that instruction is what a real Anthropic key would exercise in
+    production, consistent with every other LLM-behavior guarantee in this codebase never
+    being proven against a live model in the normal test suite.
+  - **Attempts to reveal the system prompt / API keys / GitHub tokens** →
+    `TestSystemPrompt`'s four assertions confirm the actual system prompt text instructs
+    against both (untrusted-data treatment, never revealing secrets/credentials, never
+    inventing citations). Separately, the Q&A service (Milestone 4) never reads
+    `RepositoryConnection.encryptedToken` at all — only already-fetched `CodeChunk` content —
+    so there is no code path for a token to reach a prompt, log line, or response body; this
+    was verified live in Milestone 5's manual check (`grep`-checked the raw response for
+    `ghp_`) and gets a dedicated automated assertion in Milestone 8's Supertest suite.
+  - **Cross-project / cross-branch / cross-commit retrieval** → `askQuestionSchema`
+    structurally accepts no `branch`/`commit` field at all (unlike `/search`'s optional
+    validation-only fields) — a question always answers against whatever the project's
+    *current* index is, with no way for a caller to even request a different one. Cross-project
+    isolation is inherited from `search()`'s own existing ownership scoping (Phase 8) and gets
+    its own dedicated Supertest case in Milestone 8's broader suite (two independently indexed
+    projects, confirming neither's citations ever reference the other's chunks).
+  - **Unauthorized question-history access** → `getQuestion`'s `where: { id: questionId,
+    projectId }` scoping (Milestone 4) makes a foreign project's question id 404 regardless of
+    whether the id itself is known — a dedicated Supertest case (another project's question id,
+    requested through a project the caller *does* own) lives in Milestone 8's suite, alongside
+    the standard ownership-403-as-404 cases every other endpoint already has.
+  - **Excessively long questions** → `test_answer_rejects_excessively_long_question_with_400`
+    (ai-service, a 2001-character question) plus the equivalent already-existing Node-side
+    `askQuestionSchema` 2000-char cap (unit-testable at the Node Supertest layer in Milestone 8).
+  - **Excessively large retrieved context / duplicate evidence** →
+    `api/src/lib/qaSourceSelection.test.ts` (new, 9 cases): overlap-removal keeps only the
+    higher-scored of two overlapping-line-range results in the same file (and correctly does
+    *not* treat identical line ranges in *different* files as overlapping); `MAX_SOURCES`
+    is never exceeded, keeping the highest-scored results when capping; `MAX_CONTEXT_CHARS` is
+    never exceeded across combined content once more than one source is available, while still
+    always keeping at least one source even if it alone exceeds the budget; determinism
+    regardless of input order; empty-input handling.
+  - **Empty or malformed provider responses** →
+    `test_answer_surfaces_malformed_provider_response_as_502` (ai-service router level) and
+    `TestAnthropicQaProviderCitationFiltering::test_drops_out_of_range_and_invalid_cited_source_numbers`
+    (direct provider-level test against a monkeypatched Anthropic client, proving
+    `cited_source_numbers` values like `99`, `-1`, and `0` — all outside the real, given range —
+    are silently dropped rather than trusted, the defense-in-depth half of the citation-safety
+    mechanism). The Node-side equivalent (`answerQuestionViaAiService`'s response-shape
+    validation) already exists from Milestone 4; a dedicated malformed-response Supertest case
+    is added in Milestone 8.
+  - Also added: `test_answer_rejects_empty_sources_with_400` and
+    `test_answer_rejects_excessively_many_sources_with_400` (ai-service's own `sources` 1–20
+    length bound), `TestFormatContext`'s remaining format/determinism/multi-source-numbering
+    cases (context formatting was itself one of the task's named "AI-service/provider tests"
+    requirements).
+- Commands run and results:
+  - `python -m pytest -q tests/test_qa.py`: 20/20 passed on the first try.
+  - `python -m pytest -q` (full ai-service suite): 86/86 (66 prior + 20 new).
+  - `npx vitest run src/lib/qaSourceSelection.test.ts`: 9/9 passed after fixing one test's own
+    arithmetic (the assertion, not the implementation — computed the wrong expected minimum
+    kept score on the first pass, a mistake in the test itself, corrected before this log entry
+    was written).
+  - `npm run typecheck` / `npm run lint` (api): clean.
+  - `npm run test` (full `api/` suite): 213/213 (204 prior + 9 new).
+- Commit: `<pending>` — "test(api,ai-service): add Q&A security and prompt-injection
+  protection tests".
 
 ### 8. Remaining tests, Docker verification, documentation
 _Not started._
