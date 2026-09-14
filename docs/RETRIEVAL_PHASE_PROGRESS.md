@@ -14,7 +14,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 4. Retrieval service and API
 - [x] 5. Frontend Code Search page
 - [x] 6. Tests
-- [ ] 7. Docker verification
+- [x] 7. Docker verification
 - [ ] 8. Documentation
 
 ## Per-milestone log
@@ -353,7 +353,50 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `01c44cf` — "test(api,ai-service,frontend,tests): add retrieval test coverage".
 
 ### 7. Docker verification
-_Not started._
+- The only Docker config change this phase made (`VOYAGE_API_KEY` pass-through in
+  `docker-compose.yml`) was already committed in Milestone 3; confirmed via `git diff` that
+  nothing else in Docker config had changed since before starting this milestone.
+- Commands run and results:
+  - `docker compose down -v` (full volume wipe, including the standalone dev Postgres left
+    running from prior milestones) then `docker compose up -d --build` for a genuinely clean
+    rebuild of all four services.
+  - Watched the `ai-service` build log directly: `pip install -r requirements.txt` installed
+    `httpx-0.28.1` alongside the already-confirmed tree-sitter wheels, no compiler invoked, no
+    build failure.
+  - All four containers reached `healthy`; confirmed all 8 migrations — including
+    `20260914165206_add_code_chunks_and_embeddings` — auto-applied from the `api` container's
+    own startup logs.
+  - Verified `POST /embeddings/generate` directly against the containerized `ai-service` with
+    no `VOYAGE_API_KEY` set in the host shell: real 503 `PROVIDER_NOT_CONFIGURED`, naming the
+    real missing variable.
+  - Verified `POST /projects/:id/search` through the containerized `api` (no
+    `GITHUB_TOKEN_ENCRYPTION_KEY`/`VOYAGE_API_KEY` set, deliberately — this is Docker's real,
+    honest unconfigured state, not a simulation of it): registered a user, created a project,
+    confirmed the real 400 `NO_COMPLETED_INDEX`.
+  - **Re-verified all six prior phases' real dependency-chain behavior through this same
+    containerized stack**, not assumed intact: `POST .../repository/connect` still returns 503
+    `GITHUB_INTEGRATION_NOT_CONFIGURED`; `POST .../codebase-index/start` still returns 400
+    `NO_REPOSITORY_CONNECTED`; `POST .../requirements/analyze` still returns 503
+    `AI_PROVIDER_UNAVAILABLE`; and `.../prd/generate`, `.../architecture/generate`,
+    `.../epics/generate`, `.../tasks/generate` each still return their real, honest
+    `NO_ACTIVE_*` dependency-chain error — none of Phase 8's changes altered any of these.
+  - `cd tests && pnpm test` against the running Docker stack: 10/10 passed, including the new
+    `retrieval.test.ts`.
+  - `docker compose logs api` / `docker compose logs ai-service`, grepped for `ghp_` and
+    Voyage-key-shaped strings: none found in either service's logs.
+  - Playwright against the Dockerized frontend (`http://localhost:4173`): registered, created a
+    project, clicked "Search", and confirmed the "Code search" page renders its
+    "No repository connected" gate correctly — screenshot read back directly.
+  - Deleted all scratch users/projects created during this verification via the running
+    container's Postgres, then `docker compose down` (without `-v`) and restored the local-dev
+    baseline: brought the standalone `postgres` service back up, recreated `devforge_test` and
+    applied all 8 migrations to it via `scripts/setup-test-db.sh`, confirmed `devforge` itself
+    needed no further migration. Re-ran `npm run test` in `api/` against the restored local dev
+    database: 204/204 passed. Confirmed no orphaned `tsx watch`/`uvicorn`/`vite` processes and
+    that only `devforge-postgres-1` remains running in Docker.
+  - `git status --porcelain` after all of the above: clean — this milestone required no file
+    changes.
+- Commit: `<pending>` — "chore: verify retrieval phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
 _Not started._
