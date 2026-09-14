@@ -35,7 +35,7 @@ embeddings are reused from Phase 8 completely unchanged.
 
 Deliverables: `docs/CODE_REVIEW_PHASE_PLAN.md`, this progress log.
 
-Commit: `<pending>`
+Commit: `16870a6`
 
 ## Milestone 2 — Review data model
 
