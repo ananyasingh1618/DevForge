@@ -172,7 +172,46 @@ Commit: `c090d63`
 
 ## Milestone 7 — Security, quality, and false-positive controls
 
-`<pending>`
+Most of this milestone's structural protections (citation-safety schema, untrusted-data system
+prompt, per-finding evidence requirement, malicious-source-content inertness, system-prompt
+content assertions) were already built and tested directly in Milestone 3's `test_review.py` (28
+tests) — following Q&A's own precedent of testing an agent's security-relevant pure functions
+alongside its router tests rather than deferring them. This milestone adds the remaining,
+previously-uncovered pieces:
+
+- Extracted `services/codeReview.ts`'s inline citation-re-validation logic into
+  `lib/reviewFindingFiltering.ts`'s `filterValidFindings()` — a pure function, directly unit-
+  tested (8 new cases in `reviewFindingFiltering.test.ts`): out-of-range/non-integer source
+  numbers dropped from a finding while the finding itself is kept if anything valid remains, a
+  finding left with zero valid citations dropped entirely (the "invented source numbers"/
+  "invented paths"/"invented line ranges" requirements — a finding can only reference a real,
+  Node-owned source, never a fabricated one), duplicate citations within one finding
+  deduplicated, determinism.
+- Added `build_user_message()` to the `ai-service` review provider (extracted for testability,
+  matching `format_context`'s own precedent) and 2 new tests: a malicious review **scope**
+  (distinct from malicious *source* content, already covered in Milestone 3 — a scope comes from
+  the requesting user, not the repository, so it needed its own inertness proof) is shown to be
+  embedded as literal, inert text, never interpreted as an instruction to fix code, execute
+  commands, commit, or open a PR.
+- Added a structural test proving the underlying Anthropic client call never receives a `tools`
+  parameter — independent of what the system prompt instructs, the model has no channel through
+  which to execute code or call anything, directly satisfying "the model must not execute code,
+  call arbitrary tools, modify files, or perform GitHub actions."
+
+Invalid severity/category values, malformed provider output, empty findings, and duplicate-
+evidence handling were already covered in Milestones 2–4 (Pydantic enum enforcement,
+`AIResponseInvalidError`, the empty-findings-is-valid design, and `selectSources()`'s existing
+overlap dedup, reused unchanged). Cross-project/branch/commit retrieval isolation and
+unauthorized review-history access are enforced structurally by `requireOwnedProject()` and
+`retrievalService.search()`'s own existing checks (already exercised by `retrieval.test.ts` and
+`qa.test.ts`); dedicated Supertest coverage proving the same for the review routes specifically
+is added in Milestone 8's comprehensive test suite, matching where Phase 9's own equivalent
+coverage (`qa.test.ts`) landed.
+
+Full suites green: `ai-service` 117 passed (86 + 31), `api` 239 passed (231 + 8); `tsc --noEmit`
+and `eslint .` both clean.
+
+Commit: `085626f`
 
 ## Milestone 8 — Tests, Docker, documentation
 
