@@ -15,7 +15,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 5. Q&A API
 - [x] 6. Frontend Codebase Q&A
 - [x] 7. Security and prompt-injection protection
-- [ ] 8. Remaining tests, Docker verification, documentation
+- [~] 8. Remaining tests, Docker verification, documentation
 
 ## Per-milestone log
 
@@ -323,4 +323,62 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   protection tests".
 
 ### 8. Remaining tests, Docker verification, documentation
-_Not started._
+
+**Part A — remaining tests (this entry). Docker verification and documentation follow as
+their own log entries below once complete.**
+
+- **`api/src/routes/qa.test.ts`** (new, 18 cases): auth (401 on all three endpoints) and
+  ownership (404 for another user's project, on all three); validation (blank question,
+  missing field, over-length question, non-string question); prerequisites with no provider
+  call when they fail (`NO_COMPLETED_INDEX` with `fetch` never called; `GITHUB_INTEGRATION_NOT_CONFIGURED`
+  with `fetch` never called); retrieval-before-provider ordering (a real-shaped GitHub 401
+  during chunk-building never reaches the — also effectively unconfigured — Q&A provider, and
+  persists no `Question`); the full happy path (connect, index, ask — verifying the returned
+  answer, `branch`/`commit`, and a cited source's file/symbol/lines, then independently
+  re-fetching the same question via `GET .../qa/:id` and confirming the list via `GET .../qa`);
+  a `cited_source_numbers: []` case confirming a source sent as evidence but *not* cited is
+  correctly marked `cited: false`, not silently omitted; empty retrieval result (an
+  insufficient-evidence answer returned with the Q&A provider endpoint never called — asserted
+  via `fetchSpy.toHaveBeenCalledTimes(1)`, that one call being only the query embedding);
+  `AI_PROVIDER_UNAVAILABLE` (no `ANTHROPIC_API_KEY`), `EMBEDDING_PROVIDER_UNAVAILABLE` (no
+  `VOYAGE_API_KEY`), `AI_SERVICE_ERROR` (a genuine Q&A provider failure), `AI_RESPONSE_INVALID`
+  (a malformed provider response) — all four distinguishable, real error codes; no raw GitHub
+  token anywhere in a successful Q&A response body; and project isolation (a question id from
+  one project 404s both through the other project directly and through a project the second
+  user does own).
+- **`frontend/src/pages/CodebaseQa.test.tsx`** (new, 13 cases): the `no-repository` gate
+  (confirming the index and Q&A endpoints are never called); the `no-index` gate (including an
+  index that exists but hasn't reached `completed`), asserting its real "Go to Settings" link
+  `href`; the empty state's three example questions, and that clicking one fills the input; the
+  page's read-only disclaimer text; the loading state's single honest message, held open via an
+  unresolved promise until explicitly resolved, then showing the real result; the results state
+  rendering a prior answer's question/answer/file/symbol/lines/`cited` badge/branch+commit; an
+  `insufficientEvidence` note rendering distinctly; asking a follow-up question and confirming
+  both the original and the new answer remain visible (not a chat thread — literally two
+  independent history entries); a real ask-error rendering inline while the empty state remains
+  shown (no fabricated answer); a distinct history-*load* error; and a dedicated "no secret
+  leakage" test asserting the entire rendered page's text content never matches a
+  token/key-shaped pattern (`ghp_...`, `sk-ant-...`).
+- **`tests/qa.test.ts`** (new, 1 case): real-HTTP integration test — register, create a
+  project, and confirm the honest `NO_COMPLETED_INDEX` response from a genuinely running API
+  process, and that nothing is persisted from the blocked attempt. Like `tests/retrieval.test.ts`,
+  needs no real credentials for any of GitHub/Anthropic/Voyage and does not need `ai-service`
+  running at all.
+- Commands run and results:
+  - `npx vitest run src/routes/qa.test.ts`: 18/18 passed on the first try.
+  - `npm run typecheck` / `npm run lint` (api): clean.
+  - `npm run test` (full `api/` suite): 231/231 (213 prior + 18 new).
+  - `npx vitest run src/pages/CodebaseQa.test.tsx`: 13/13 passed on the first try.
+  - `npm run typecheck` / `npm run lint` (frontend): clean.
+  - `npm run test` (full frontend suite): 87/87 (74 prior + 13 new).
+  - `npx tsc --noEmit` (`tests/`): clean.
+  - `npm run test` (`tests/`, against the real local dev stack — Postgres, `api`, `ai-service`
+    all genuinely running): 11/11 (10 prior + 1 new).
+  - Combined total across all four suites so far: **415 tests** (231 api + 86 ai-service + 87
+    frontend + 11 tests/) — recomputed and double-checked (`231+86+87+11 = 415`) before writing
+    this line; this total will be restated in the phase's closing section once Docker
+    verification and documentation (parts B and C of this milestone) are also done, in case
+    either surfaces anything requiring one more test.
+  - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
+    servers; the sibling VoxMind `uvicorn` process was the only one left running, untouched.
+- Commit: `<pending>` — "test(api,frontend,tests): add comprehensive Q&A test coverage".
