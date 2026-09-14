@@ -21,14 +21,12 @@
 // code_chunks directly rather than duplicating path/line/content data; see
 // docs/QA_PHASE_PLAN.md for the citation-safety design (the model never
 // outputs a file path or line number itself).
-// Future entities (reviews, review_findings, feedback) are intentionally not
-// modeled yet — see docs/QA_PHASE_PLAN.md, docs/RETRIEVAL_PHASE_PLAN.md,
-// docs/CODEBASE_INDEX_PHASE_PLAN.md, docs/GITHUB_INTEGRATION_PHASE_PLAN.md,
-// docs/EPICS_TASKS_PHASE_PLAN.md, docs/ARCHITECTURE_PHASE_PLAN.md,
-// docs/PRD_PHASE_PLAN.md, docs/REQUIREMENTS_PHASE_PLAN.md and
-// docs/FOUNDATION_PROGRESS.md for how they will attach to `projects` /
-// `repository_connections` / `codebase_indexes` / `code_chunks` once those
-// phases start.
+// Phase 10 (AI Code Review) adds: code_reviews, code_review_sources,
+// code_review_findings, code_review_finding_sources — a read-only review
+// layer over Phase 8 retrieval, structurally the same shape as Phase 9's
+// Q&A (retrieval -> structured-output provider -> citation validation ->
+// persistence) but with evidence owned by the review (shared across many
+// findings) rather than by one answer; see docs/CODE_REVIEW_PHASE_PLAN.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -93,6 +91,7 @@ model Project {
   codebaseIndex        CodebaseIndex?
   codeChunks           CodeChunk[]
   questions            Question[]
+  codeReviews          CodeReview[]
 
   @@index([ownerId])
   @@map("projects")
@@ -303,6 +302,7 @@ model CodebaseIndex {
   files                IndexedFile[]
   codeChunks           CodeChunk[]
   questions            Question[]
+  codeReviews          CodeReview[]
 
   @@index([repositoryConnectionId])
   @@map("codebase_indexes")
@@ -393,12 +393,13 @@ model CodeChunk {
   endLine         Int      @map("end_line")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  codebaseIndex CodebaseIndex  @relation(fields: [codebaseIndexId], references: [id], onDelete: Cascade)
-  file          IndexedFile    @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  symbol        Symbol?        @relation(fields: [symbolId], references: [id], onDelete: Cascade)
-  embeddings    Embedding[]
-  answerSources AnswerSource[]
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  codebaseIndex     CodebaseIndex      @relation(fields: [codebaseIndexId], references: [id], onDelete: Cascade)
+  file              IndexedFile        @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  symbol            Symbol?            @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  embeddings        Embedding[]
+  answerSources     AnswerSource[]
+  codeReviewSources CodeReviewSource[]
 
   @@unique([codebaseIndexId, commitSha, contentHash])
   @@index([projectId])
@@ -495,4 +496,149 @@ model AnswerSource {
   @@unique([answerId, chunkId])
   @@index([answerId])
   @@map("answer_sources")
+}
+
+enum CodeReviewStatus {
+  pending
+  completed
+  failed
+}
+
+// One row per code-review run against a project's indexed codebase (see
+// docs/CODE_REVIEW_PHASE_PLAN.md). Not a versioned artifact like the
+// requirements/PRD/architecture/epic/task tables — each review is its own
+// independent, append-only history entry, matching Question's own "one row
+// per request" shape rather than RepositoryConnection's "replaced state"
+// shape. `branch`/`commitSha` are denormalized from the owning
+// CodebaseIndex at creation time (same precedent as Question/CodeChunk) so
+// a past review's indexed state remains visible after a later reindex.
+// `status` starts "pending" once evidence exists and the row is persisted
+// (before the provider call), then becomes "completed" or "failed" —
+// deliberately more durable than Phase 9's Question/Answer split; see the
+// plan doc's "Provider failure behavior" section for why.
+model CodeReview {
+  id              String           @id @default(uuid())
+  projectId       String           @map("project_id")
+  codebaseIndexId String           @map("codebase_index_id")
+  scope           String
+  branch          String
+  commitSha       String           @map("commit_sha")
+  status          CodeReviewStatus @default(pending)
+  summary         String?
+  findingCount    Int              @default(0) @map("finding_count")
+  model           String?
+  error           String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  completedAt     DateTime?        @map("completed_at")
+
+  project       Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  codebaseIndex CodebaseIndex       @relation(fields: [codebaseIndexId], references: [id], onDelete: Cascade)
+  sources       CodeReviewSource[]
+  findings      CodeReviewFinding[]
+
+  @@index([projectId])
+  @@map("code_reviews")
+}
+
+// One row per source chunk actually sent to the review provider as evidence
+// for one review — not just the ones a finding ends up citing (mirrors
+// AnswerSource's "every source sent, not just cited ones" shape). Owned by
+// the review itself (not by any one finding), since one shared evidence set
+// backs every finding in a review — unlike Q&A, where one answer has its
+// own private evidence set. References CodeChunk directly rather than
+// duplicating its path/lines/content, so a reindex's cascade deletion of
+// superseded CodeChunk rows correctly removes this detailed evidence too,
+// while the parent CodeReview's and CodeReviewFinding's own text survive
+// (same documented, accepted limitation as AnswerSource).
+model CodeReviewSource {
+  id          String @id @default(uuid())
+  reviewId    String @map("review_id")
+  chunkId     String @map("chunk_id")
+  sourceOrder Int    @map("source_order")
+  score       Float
+
+  review       CodeReview                @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  chunk        CodeChunk                 @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  findingLinks CodeReviewFindingSource[]
+
+  @@unique([reviewId, chunkId])
+  @@index([reviewId])
+  @@map("code_review_sources")
+}
+
+enum CodeReviewFindingSeverity {
+  critical
+  high
+  medium
+  low
+  info
+}
+
+enum CodeReviewFindingCategory {
+  bug
+  security
+  reliability
+  performance
+  maintainability
+  validation
+  error_handling
+  testing
+  architecture
+  other
+}
+
+enum CodeReviewFindingConfidence {
+  high
+  medium
+  low
+}
+
+// One row per finding within a review. Never stores a file path, symbol
+// name, or line number directly — those are always resolved through
+// CodeReviewFindingSource -> CodeReviewSource -> CodeChunk, the same
+// citation-safety split AnswerSource established for Q&A (see the plan
+// doc's "Evidence and citation rules"). `actionable` records whether the
+// finding came with a concrete recommendation the user could act on versus
+// a more general observation; it is informational only — DevForge never
+// acts on it itself.
+model CodeReviewFinding {
+  id             String                      @id @default(uuid())
+  reviewId       String                      @map("review_id")
+  title          String
+  description    String
+  severity       CodeReviewFindingSeverity
+  category       CodeReviewFindingCategory
+  confidence     CodeReviewFindingConfidence
+  recommendation String
+  actionable     Boolean                     @default(true)
+  createdAt      DateTime                    @default(now()) @map("created_at")
+
+  review  CodeReview                @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  sources CodeReviewFindingSource[]
+
+  @@index([reviewId])
+  @@map("code_review_findings")
+}
+
+// Many-to-many join between a finding and the review's shared sources it
+// actually cites — a finding may cite several sources, and a source may
+// support several findings, which AnswerSource's one-answer-to-many-sources
+// shape didn't need to express but a review-with-many-findings does. Every
+// row here corresponds to a real, in-range cited_source_number the provider
+// returned (validated at both the ai-service and Node layers before
+// persistence — see the plan doc); a finding left with zero valid citations
+// after filtering is dropped entirely, never persisted with an empty
+// sources list.
+model CodeReviewFindingSource {
+  id        String @id @default(uuid())
+  findingId String @map("finding_id")
+  sourceId  String @map("source_id")
+
+  finding CodeReviewFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  source  CodeReviewSource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([findingId, sourceId])
+  @@index([findingId])
+  @@index([sourceId])
+  @@map("code_review_finding_sources")
 }
