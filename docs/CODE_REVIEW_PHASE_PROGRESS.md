@@ -295,4 +295,4 @@ migration needed, since its volume was never wiped) → `npm run test` at the re
 passed, `frontend` 101 passed. No orphaned `tsx`/`uvicorn`/`vite` processes remained afterward
 except VoxMind's own (PID 16012, untouched throughout).
 
-Commit: `<pending>` (docs-only; no source changes in this part)
+Commit: `72beff0` (docs-only; no source changes in this part)
