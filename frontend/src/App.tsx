@@ -7,6 +7,7 @@ import { Projects } from "./pages/Projects.js";
 import { ProjectNew } from "./pages/ProjectNew.js";
 import { ProjectOverview } from "./pages/ProjectOverview.js";
 import { ProjectSettings } from "./pages/ProjectSettings.js";
+import { CodeSearch } from "./pages/CodeSearch.js";
 
 export function App() {
   return (
@@ -44,6 +45,14 @@ export function App() {
           element={
             <RequireAuth>
               <ProjectSettings />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/projects/:id/search"
+          element={
+            <RequireAuth>
+              <CodeSearch />
             </RequireAuth>
           }
         />

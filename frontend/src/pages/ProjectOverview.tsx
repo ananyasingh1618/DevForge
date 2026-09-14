@@ -13,16 +13,18 @@ import { getProjectRequest } from "../services/projectsApi.js";
 import type { Project } from "../types/project.js";
 
 // Requirements (Phase 2), PRD (Phase 3), Architecture (Phase 4), Epics &
-// Tasks (Phase 5), GitHub repository connection (Phase 6), and AST parsing &
+// Tasks (Phase 5), GitHub repository connection (Phase 6), AST parsing &
 // codebase indexing (Phase 7 — file/symbol extraction, browsable in
-// Settings) are implemented, not listed here anymore. Retrieval (embeddings,
-// semantic search over the index Phase 7 built) and everything downstream of
-// it remain genuinely unbuilt, so those stay below with descriptions
-// reflecting only what's actually still missing.
+// Settings), and retrieval/semantic search (Phase 8 — code chunking,
+// embeddings, ranked search, browsable via the "Search" link above) are
+// implemented, not listed here anymore. Codebase Q&A (synthesizing an answer
+// from what retrieval finds) and code review remain genuinely unbuilt, so
+// those stay below with descriptions reflecting only what's actually still
+// missing.
 const upcomingCapabilities = [
   {
     title: "Codebase Q&A",
-    description: "Cited, evidence-backed answers about the connected repository via retrieval.",
+    description: "Cited, evidence-backed answers synthesized from Code Search's results.",
   },
   {
     title: "Reviews",
@@ -80,12 +82,20 @@ export function ProjectOverview() {
             <Link to="/projects" className="text-sm text-text-muted hover:text-text">
               &larr; Projects
             </Link>
-            <Link
-              to={`/projects/${state.project.id}/settings`}
-              className="text-sm text-text-muted hover:text-text"
-            >
-              Settings
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link
+                to={`/projects/${state.project.id}/search`}
+                className="text-sm text-text-muted hover:text-text"
+              >
+                Search
+              </Link>
+              <Link
+                to={`/projects/${state.project.id}/settings`}
+                className="text-sm text-text-muted hover:text-text"
+              >
+                Settings
+              </Link>
+            </div>
           </div>
           <div className="mt-2 flex items-start justify-between gap-4">
             <div>

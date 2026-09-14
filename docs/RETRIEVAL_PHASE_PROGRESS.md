@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Database (code chunks + embeddings)
 - [x] 3. Chunking service and embedding agent
 - [x] 4. Retrieval service and API
-- [ ] 5. Frontend Code Search page
+- [x] 5. Frontend Code Search page
 - [ ] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
@@ -235,7 +235,48 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `c93949c` — "feat(api): add semantic search retrieval service and API endpoint".
 
 ### 5. Frontend Code Search page
-_Not started._
+- **`frontend/src/types/retrieval.ts`** / **`frontend/src/services/retrievalApi.ts`** (new):
+  types and an `apiRequest`-based `searchRequest()`, matching every other feature's
+  types/service-file convention exactly.
+- **`frontend/src/pages/CodeSearch.tsx`** (new): a dedicated page at `/projects/:id/search`
+  (not another `ProjectSettings` section — search is a distinct, repeatable workflow, not a
+  one-time configuration action, so it gets its own route, linked from `ProjectOverview` the
+  same way `/settings` already is). Fetches the project, then the repository connection, then
+  the codebase index in sequence to pick the right gate: `no-repository` and `no-index` each
+  render the established `EmptyState` pattern with a "Go to Settings" link (satisfying "Provide
+  a link or control to the indexing section"); `ready` renders `SearchForm` — a query input,
+  optional branch/commit inputs, a result-limit input, and a `Search` button. Results render as
+  a list of cards (file path, symbol name/type badge, location, language, branch@commit,
+  score, and the chunk's own source as a `<pre>` snippet); an empty (but successful) response
+  renders the real `EmptyState` "No matching code found" rather than silently showing nothing;
+  a real API error renders inline, never a fabricated empty-results state standing in for a
+  failure.
+- **`frontend/src/App.tsx`**: added the `/projects/:id/search` route.
+- **`frontend/src/pages/ProjectOverview.tsx`**: added a "Search" link next to "Settings";
+  updated `upcomingCapabilities`' comment and Codebase Q&A's description to correctly attribute
+  retrieval as now-implemented (Phase 8) and Q&A as what still consumes it.
+- Commands run and results:
+  - `npm run typecheck`, `npm run lint`, `npm run build`: all clean (same pre-existing
+    `useAuth.tsx` warning as every prior phase, unrelated to this one).
+  - `npm run test` (frontend): 67/67 — unchanged from before this milestone, confirming the
+    `ProjectOverview` edits didn't break its existing "Not yet implemented" count assertion
+    (still 2: Codebase Q&A, Reviews).
+  - Manual Playwright verification against the real (unconfigured, then locally-configured
+    with a never-committed key) dev stack, screenshots read back directly: confirmed the
+    "Search" link navigates to `/projects/:id/search` and shows the `no-repository` gate with
+    no connection; confirmed, after directly inserting a `RepositoryConnection` + a
+    `completed` `CodebaseIndex` (same throwaway-script technique as Milestone 4's manual
+    check, pointing at the real public repo `octocat/Hello-World`), the `ready` state's full
+    search form renders; confirmed submitting a query genuinely reaches GitHub and shows the
+    real 401 `GITHUB_INVALID_CREDENTIALS` message inline, never a fabricated result.
+  - The `results`/`empty` states could not be exercised live without a real GitHub PAT and a
+    real `VOYAGE_API_KEY` — deferred to Milestone 6's deterministic, mocked-fetch RTL tests,
+    matching exactly how Phase 7's Milestone 5 handled the same constraint for its own
+    "indexed" state.
+  - Deleted the scratch project/user and confirmed no orphaned `tsx watch`/`vite`/`uvicorn`
+    processes remained afterward; the sibling VoxMind `uvicorn` process was the only one left
+    running, untouched.
+- Commit: `<pending>` — "feat(frontend): add Code Search page".
 
 ### 6. Tests
 _Not started._
