@@ -137,7 +137,38 @@ Commit: `b25ef8a`
 
 ## Milestone 6 — Frontend Code Review
 
-`<pending>`
+Added `types/codeReview.ts`, `services/codeReviewApi.ts`, and `pages/CodeReview.tsx` at
+`/projects/:id/reviews`, mirroring `CodebaseQa.tsx`'s structure exactly: Blocked (no repository /
+no completed index, with a link to Settings), Empty (explaining what code review does, with the
+task's own three example scopes as clickable buttons), Loading (a label describing the real
+retrieval → context → analysis → validation steps, never implying code is being changed),
+Results (summary, scope, branch/commit, finding count, and per-finding severity/category/
+confidence badges, description, recommendation, and trusted source citations), and Error states.
+A `FilterBar` filters displayed findings by severity/category/confidence (a simple client-side
+filter over already-loaded data, not a full issue-management system, per the task's "keep it
+simple" instruction). Every state carries an explicit "Read-only — DevForge does not modify your
+code" disclaimer in the page header. `ProjectOverview.tsx`'s now-empty "Planned capabilities"
+section (code review was its last remaining entry) is removed entirely rather than left rendering
+with nothing in it, and a "Reviews" link is added alongside "Search" and "Q&amp;A";
+`ProjectOverview.test.tsx` updated accordingly (now asserts all three nav links resolve to their
+real hrefs and that no "Not yet implemented" badge remains anywhere on the page).
+
+`tsc -b` and `eslint .` both clean in `frontend`; full Vitest suite unchanged at 87 passed (no new
+frontend test file yet — per the same precedent Phase 9 set, comprehensive `CodeReview.test.tsx`
+coverage is added in Milestone 8 alongside the rest of this phase's test suite, not here).
+
+Browser-verified live via Playwright against a real running stack (`vite` + `tsx src/server.ts`,
+a real Postgres database, no ai-service credentials): registered a user, created a project,
+confirmed the "Reviews" nav link is present and the old "Planned capabilities" grid is gone;
+visited `/reviews` with no repository connected and confirmed the Blocked state; connected a fake
+`RepositoryConnection`/`CodebaseIndex` (same `octocat/Hello-World` + fake-PAT technique as
+Milestone 5) and confirmed the ready/Empty state renders the form and all three example scopes;
+clicked an example and "Run review," and confirmed a real, unmocked GitHub `401` surfaced in the
+UI as a clean, readable error message with no stack trace, raw payload, or secret ever appearing
+on the page. Cleaned up all scratch users/projects/connections and confirmed no orphaned `tsx`/
+`vite` processes remained afterward, except VoxMind's own (PID 16012, untouched throughout).
+
+Commit: `c090d63`
 
 ## Milestone 7 — Security, quality, and false-positive controls
 
