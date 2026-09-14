@@ -252,3 +252,47 @@ Full suites: `api` 258 passed (231 + 8 from Milestone 7 + 19 new), `frontend` 10
 against a live stack during Part B's Docker verification below.
 
 Commit: `48d54bf`
+
+### Part B — Docker verification
+
+Full volume-wiped rebuild: `docker compose down -v` (removed the standalone dev postgres
+container and its volume) → `docker compose up -d --build` (rebuilt all four images: `postgres`,
+`api`, `frontend`, `ai-service`). All four services came up healthy. The `api` container's
+startup log confirms all 10 migrations applied automatically in order, ending with
+`20260914182740_add_code_review`, followed by `DevForge API listening on port 4000 (production)`.
+
+Verified live against the fully Dockerized stack (no source-code changes in this part):
+- `GET /health` (api), `GET /health` (ai-service), and the frontend's root all return `200`.
+- `POST /review/analyze` against ai-service directly, unconfigured, returns a real `503
+  PROVIDER_NOT_CONFIGURED` naming "AI code review" and `ANTHROPIC_API_KEY`.
+- Through the Node API, with no repository connected: `POST /projects/:id/reviews` returns
+  `400 NO_COMPLETED_INDEX`.
+- Re-verified the equivalent honest-failure chain for every prior phase through the same live
+  stack: Q&A (`NO_COMPLETED_INDEX`), retrieval (`NO_COMPLETED_INDEX`), GitHub connect with
+  `GITHUB_TOKEN_ENCRYPTION_KEY` unset (`503 GITHUB_INTEGRATION_NOT_CONFIGURED`), requirements
+  analysis with no `ANTHROPIC_API_KEY` (`503 AI_PROVIDER_UNAVAILABLE`) — all still honest, none
+  regressed by this phase's changes.
+- With a fake `RepositoryConnection`/`CodebaseIndex` inserted directly into the Dockerized
+  Postgres (same `octocat/Hello-World` + fake-PAT technique as every prior phase) and
+  `GITHUB_TOKEN_ENCRYPTION_KEY` still unset in the container: `POST /projects/:id/reviews`
+  correctly returns `503 GITHUB_INTEGRATION_NOT_CONFIGURED` once a completed index exists (the
+  next real check in the chain), not a stale `NO_COMPLETED_INDEX`.
+- `docker compose logs api` / `logs ai-service` checked for the fake PAT, any `sk-ant-`-shaped
+  string, and any raw password/key value — none found.
+- Playwright, against the production-built frontend container at `localhost:4173`: registered a
+  user, created a project, clicked "Reviews," and confirmed the Blocked ("No repository
+  connected") state renders correctly with its read-only disclaimer — screenshot saved.
+- `tests/` suite (`npm test`, `API_URL=http://localhost:4000`) run live against the Docker stack:
+  12 passed (11 pre-existing + the new `codeReview.test.ts`), including the real,
+  credential-free `NO_COMPLETED_INDEX` review path.
+- All scratch users/projects/connections cleaned up afterward.
+
+Restoration: `docker compose down` (no `-v`, preserving the migrated `devforge_postgres_data`
+volume) → `docker compose up -d postgres` (standalone dev database only) →
+`scripts/setup-test-db.sh` (recreated `devforge_test`, all 10 migrations applied) →
+`prisma migrate status` on `devforge` confirms "Database schema is up to date!" (no further
+migration needed, since its volume was never wiped) → `npm run test` at the repo root: `api` 258
+passed, `frontend` 101 passed. No orphaned `tsx`/`uvicorn`/`vite` processes remained afterward
+except VoxMind's own (PID 16012, untouched throughout).
+
+Commit: `<pending>` (docs-only; no source changes in this part)
