@@ -319,7 +319,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     was written).
   - `npm run typecheck` / `npm run lint` (api): clean.
   - `npm run test` (full `api/` suite): 213/213 (204 prior + 9 new).
-- Commit: `<pending>` — "test(api,ai-service): add Q&A security and prompt-injection
+- Commit: `f175e20` — "test(api,ai-service): add Q&A security and prompt-injection
   protection tests".
 
 ### 8. Remaining tests, Docker verification, documentation
