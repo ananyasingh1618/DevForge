@@ -11,6 +11,7 @@ import { epicsRouter } from "./routes/epics.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { repositoryRouter } from "./routes/repository.js";
 import { codebaseIndexRouter } from "./routes/codebaseIndex.js";
+import { retrievalRouter } from "./routes/retrieval.js";
 import { AppError } from "./lib/errors.js";
 import { env } from "./env.js";
 
@@ -36,6 +37,7 @@ export function createApp() {
   app.use(tasksRouter);
   app.use(repositoryRouter);
   app.use(codebaseIndexRouter);
+  app.use(retrievalRouter);
 
   // Unmatched routes become a structured 404 rather than Express's default HTML page.
   app.use((_req, _res, next) => {

@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Inspect and plan
 - [x] 2. Database (code chunks + embeddings)
 - [x] 3. Chunking service and embedding agent
-- [ ] 4. Retrieval service and API
+- [x] 4. Retrieval service and API
 - [ ] 5. Frontend Code Search page
 - [ ] 6. Tests
 - [ ] 7. Docker verification
@@ -177,7 +177,62 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   generation".
 
 ### 4. Retrieval service and API
-_Not started._
+- **`api/src/lib/similarity.ts`** (new): `cosineSimilarity(a, b)` — a plain, dependency-free
+  pure function (throws on mismatched vector lengths rather than silently returning a
+  meaningless score).
+- **`api/src/schemas/retrieval.ts`** (new): `searchRequestSchema` (`query` 1–2000 chars,
+  optional `branch`/`commit`, `limit` 1–50 defaulting to 10) and `projectIdParamSchema`.
+- **`api/src/services/retrieval.ts`** (new): `search(ownerId, projectId, input)` —
+  `requireOwnedProject`, then resolves the project's `CodebaseIndex` (must exist and be
+  `status: "completed"`, else 400 `NO_COMPLETED_INDEX`), validates any caller-supplied
+  `branch`/`commit` against the index's actual current values (else 400
+  `INDEX_COMMIT_MISMATCH`, naming the real branch/commit), checks the repository connection
+  and `isGithubIntegrationConfigured()` (else 503 `GITHUB_INTEGRATION_NOT_CONFIGURED` — the
+  same code `services/repository.ts`/`services/codebaseIndex.ts` already use), lazily builds
+  `CodeChunk` rows (skipped entirely if any already exist for this `(codebaseIndexId,
+  commitSha)`) by re-fetching each parsed file's content via `githubClient.getBlob` and running
+  Milestone 3's `chunkFile()`, lazily embeds any chunk missing an `Embedding` for the current
+  model (batched `EMBED_BATCH_SIZE = 32` chunks per `generateEmbeddingsViaAiService` call),
+  embeds the query itself (`input_type: "query"`), and ranks every persisted chunk embedding
+  for this index/commit/model by cosine similarity, returning the top `limit` with file path,
+  symbol name/type, snippet, location, language, branch/commit, and score. `CodeChunk` rows
+  persist via `createMany({ skipDuplicates: true })` so a chunk whose `(index, commit,
+  contentHash)` already exists (concurrent request, or two files producing byte-identical
+  chunk text) is silently deduplicated rather than erroring the whole batch — same for
+  `Embedding` rows on `(chunk, model)`.
+- **`api/src/controllers/retrieval.ts`** / **`api/src/routes/retrieval.ts`** (new): `POST
+  /projects/:projectId/search`, under `requireAuth`, registered in `api/src/app.ts`.
+- Commands run and results:
+  - `npm run typecheck` / `npm run lint`: clean on the first pass.
+  - Manual live verification, in this order, cleaning up all created data and stopping every
+    manually-started process afterward: booted `ai-service` and `api` (unconfigured) against
+    the real local Postgres; registered a user, created a project; confirmed `POST
+    .../search` with no index at all returns 400 `NO_COMPLETED_INDEX`. Generated a local,
+    never-committed `GITHUB_TOKEN_ENCRYPTION_KEY`, restarted the API with it configured, and
+    directly inserted (via a throwaway script, not through the real connect/index flow, since
+    no real PAT exists) a verified `RepositoryConnection` + a `completed` `CodebaseIndex` +
+    one `parsed` `IndexedFile` — all pointing at the real public repo `octocat/Hello-World`,
+    reusing its actual, real commit SHA and README blob SHA. Confirmed a mismatched `branch`
+    and a mismatched `commit` in the request body both correctly return 400
+    `INDEX_COMMIT_MISMATCH`, naming the real indexed branch/commit in the message. Confirmed a
+    matching-branch/commit search request genuinely reaches GitHub and fails with a real 401
+    `GITHUB_INVALID_CREDENTIALS` (the connection's token is validly-encrypted but
+    intentionally fake) — confirming `buildChunksForIndex` really calls `getBlob`. Confirmed
+    the raw response contains no `ghp_` substring, and confirmed directly against the database
+    that **zero** `CodeChunk` rows were persisted from the failed attempt (the whole
+    file-processing loop throws before its single `createMany` call, so a mid-loop GitHub
+    failure leaves no partial chunk data behind — the same all-or-nothing-per-attempt shape
+    Phase 7's own `buildIndex` already has, not a new gap this phase introduces). Deleted the
+    scratch project/user afterward.
+  - The full happy path (real chunks persisted, real embeddings generated, real ranked
+    results) could not be exercised live without both a real GitHub PAT and a real
+    `VOYAGE_API_KEY` — neither exists in this environment. Deferred to Milestone 6's
+    deterministic, mocked-fetch Supertest tests, matching exactly how Phase 7's Milestone 4
+    handled the same constraint.
+  - `npm run test` (full `api/` suite): 174/174 passed, confirming no regression.
+  - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
+    servers; the sibling VoxMind `uvicorn` process was the only one left running, untouched.
+- Commit: `<pending>` — "feat(api): add semantic search retrieval service and API endpoint".
 
 ### 5. Frontend Code Search page
 _Not started._
