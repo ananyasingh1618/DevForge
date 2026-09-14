@@ -428,7 +428,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     sections read consistently as one document, not just as isolated diffs).
   - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
     suite was already green as of Milestone 7's final Docker-and-local-restoration check.
-- Commit: `<pending>` — "docs: update README for Phase 8 (Retrieval & Semantic Search)".
+- Commit: `72ea79a` — "docs: update README for Phase 8 (Retrieval & Semantic Search)".
 
 ## Phase 8 (Retrieval & Semantic Search): complete
 
