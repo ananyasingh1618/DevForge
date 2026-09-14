@@ -51,7 +51,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   milestone breakdown written to `docs/QA_PHASE_PLAN.md`.
 - Confirmed Docker (`devforge-postgres-1` only) and no orphaned processes before starting;
   confirmed the sibling VoxMind `uvicorn` process is running and untouched.
-- Commit: `<pending>` — "docs: Phase 9 (Codebase Q&A) plan and progress tracker".
+- Commit: `2b44c85` — "docs: Phase 9 (Codebase Q&A) plan and progress tracker".
 
 ### 2. Database (Question, Answer, AnswerSource)
 _Not started._
