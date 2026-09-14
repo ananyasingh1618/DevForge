@@ -20,12 +20,23 @@ class AppError(Exception):
 
 
 class ProviderNotConfiguredError(AppError):
-    def __init__(self, feature: str = "requirements analysis") -> None:
+    """Raised by any agent's get_provider() when its required API key is
+    unset. `env_var`/`provider_name` default to the original (and still most
+    common) case, Anthropic — Phase 8's embedding agent passes both
+    explicitly so the message names the actual missing key (VOYAGE_API_KEY),
+    never a copy-pasted-wrong "ANTHROPIC_API_KEY"."""
+
+    def __init__(
+        self,
+        feature: str = "requirements analysis",
+        env_var: str = "ANTHROPIC_API_KEY",
+        provider_name: str = "No LLM provider",
+    ) -> None:
         super().__init__(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "PROVIDER_NOT_CONFIGURED",
-            "No LLM provider is configured. Set ANTHROPIC_API_KEY in the ai-service "
-            f"environment to enable {feature}.",
+            f"{provider_name} is configured. Set {env_var} in the ai-service environment to "
+            f"enable {feature}.",
         )
 
 

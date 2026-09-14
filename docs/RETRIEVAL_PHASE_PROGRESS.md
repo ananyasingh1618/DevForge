@@ -10,7 +10,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Inspect and plan
 - [x] 2. Database (code chunks + embeddings)
-- [ ] 3. Chunking service and embedding agent
+- [x] 3. Chunking service and embedding agent
 - [ ] 4. Retrieval service and API
 - [ ] 5. Frontend Code Search page
 - [ ] 6. Tests
@@ -103,7 +103,78 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `01fae82` — "feat(api): add code_chunk and embedding data model and migration".
 
 ### 3. Chunking service and embedding agent
-_Not started._
+- **`ai-service/app/agents/embeddings/`** (new): `provider.py` — `EmbeddingProvider` ABC +
+  `VoyageEmbeddingProvider` (real `httpx.post` to `https://api.voyageai.com/v1/embeddings`,
+  `voyage-code-3`, 1024 dimensions, `input_type` "document"/"query" passed through for Voyage's
+  asymmetric embedding), `get_provider()` reading `VOYAGE_API_KEY` at call time. `schemas.py` —
+  `EmbedRequest`/`EmbedResponse`, kept separate from `app/schemas.py` for the same reason
+  `app/parsing/schemas.py` is (not an LLM `output_format`). `router.py` — `POST
+  /embeddings/generate`, registered in `main.py` alongside the six existing routers.
+- **`ai-service/app/errors.py`**: generalized `ProviderNotConfiguredError` to accept `env_var`/
+  `provider_name` (defaulting to the original `ANTHROPIC_API_KEY`/"No LLM provider" values, so
+  every existing call site's message is byte-for-byte unchanged) instead of hardcoding
+  "ANTHROPIC_API_KEY" — the embeddings agent needed its real missing variable
+  (`VOYAGE_API_KEY`) named accurately, not a copy-pasted-wrong message. Confirmed no existing
+  test asserts the message text (only the `error.code`, via `grep`), so this was safe.
+  **`ai-service/app/lib/provider_config.py`**: added `get_voyage_api_key(feature)`, mirroring
+  `get_anthropic_api_key` exactly.
+- **`ai-service/requirements.txt`**: added `httpx==0.28.1` as a direct dependency (already
+  present transitively via `anthropic`, pinned to the exact version already resolved so this
+  changes nothing at install time — just makes the dependency explicit for a module that now
+  imports it directly).
+- **`docker-compose.yml`**: added `VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}` to `ai-service`'s
+  environment, mirroring `ANTHROPIC_API_KEY`'s existing pass-through exactly. **Corrects a
+  wrong precedent named in this phase's own plan doc**: the plan said this would mirror
+  `GITHUB_TOKEN_ENCRYPTION_KEY` being deliberately *omitted* from `docker-compose.yml` — but on
+  reflection `VOYAGE_API_KEY` is a real external provider credential a user might actually
+  have, exactly like `ANTHROPIC_API_KEY`, not an internally-generated encryption key like
+  `GITHUB_TOKEN_ENCRYPTION_KEY`. Mirroring the pass-through pattern (rather than the omission
+  pattern) is the more consistent choice; noted here rather than silently diverging from the
+  plan doc's stated reasoning.
+- **`api/src/lib/chunking.ts`** (new): pure, network/DB-free `chunkFile()` — one chunk per
+  Phase 7 `Symbol` (oversized symbols split via a deterministic line-windowing function with a
+  4000-char budget and ~200-char trailing-line overlap between consecutive pieces, never
+  splitting mid-line), a whole-file windowed fallback for a parsed file with zero symbols.
+  `contentHash` is `sha256` of the chunk's own text (Node's built-in `crypto`, matching
+  `githubTokenCrypto.ts`'s own use of the same module).
+- **Found and fixed a real off-by-one during manual verification**: `content.split("\n")` on
+  newline-terminated content (true for essentially every real source file) emits one phantom
+  trailing empty-string element, which — unguarded — made the whole-file fallback path report
+  `endLine` one past the file's actual last line. Fixed by trimming exactly one trailing empty
+  element when `content` ends with `"\n"`, before either chunking path runs; symbol-based
+  chunking was never affected (Phase 7's tree-sitter-derived `endLine` values never reach past
+  the file's real last line in the first place).
+- **`api/src/lib/aiServiceClient.ts`**: added `generateEmbeddingsViaAiService(texts,
+  inputType)`, deliberately not reusing the existing `postToAiService` helper — a distinct
+  `EMBEDDING_PROVIDER_UNAVAILABLE` code (not `AI_PROVIDER_UNAVAILABLE`, since the real missing
+  configuration is `VOYAGE_API_KEY`, not `ANTHROPIC_API_KEY`) and a batch-in/vectors-out shape
+  that doesn't fit `postToAiService`'s single-content-object assumption.
+- Commands run and results:
+  - `pip install -r requirements.txt`, then `python -m pytest -q`: 52/52 existing ai-service
+    tests still pass after the `ProviderNotConfiguredError` signature change (no new test added
+    yet — deferred to Milestone 6, matching every prior phase's own Milestone 3).
+  - Booted `uvicorn main:app` on a scratch port with no `VOYAGE_API_KEY` set: `POST
+    /embeddings/generate` correctly returned 503 `PROVIDER_NOT_CONFIGURED` with the accurate
+    "Set VOYAGE_API_KEY..." message, and an empty `texts` array correctly returned a real
+    FastAPI 400 `VALIDATION_ERROR`.
+  - Restarted with a fake, never-real `VOYAGE_API_KEY`: got a genuine 502 `AI_PROVIDER_ERROR`
+    with message "Authentication with the embedding provider failed: Provided API key is
+    invalid." — confirming the call really reaches `https://api.voyageai.com` (the same
+    "real endpoint, fake credential, real rejection" check used for every external dependency
+    adopted in this project) — and confirmed via `ps aux` that no orphaned `uvicorn` process
+    was left after stopping it.
+  - Ran a throwaway script (not committed) exercising `chunkFile()` directly: a small
+    TypeScript fixture with a class containing a nested method plus a top-level function
+    (confirmed independent, correctly-ranged chunks for all three, including the nested one);
+    a synthetic ~20,000-character single-symbol file (confirmed it split into 6 overlapping
+    pieces, each ≤ ~4000 chars, with real line overlap between consecutive pieces); a
+    symbol-less Python file (confirmed the whole-file fallback, and confirmed the endLine
+    off-by-one fix); and a determinism check (identical input produced byte-identical output
+    across two calls).
+  - `npm run typecheck` / `npm run lint` (api): clean, both before and after the off-by-one
+    fix.
+- Commit: `<pending>` — "feat(api,ai-service): add code chunking and Voyage AI embedding
+  generation".
 
 ### 4. Retrieval service and API
 _Not started._

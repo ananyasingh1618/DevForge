@@ -552,3 +552,66 @@ export async function parseFileViaAiService(path: string, content: string): Prom
     })),
   };
 }
+
+export type EmbeddingBatch = {
+  model: string;
+  dimensions: number;
+  embeddings: number[][];
+};
+
+/**
+ * Calls ai-service's Voyage-backed embedding endpoint for a batch of texts
+ * and returns the model identity, dimensions, and vectors in input order —
+ * or throws an AppError. Deliberately its own function rather than reusing
+ * postToAiService: `EMBEDDING_PROVIDER_UNAVAILABLE` is a distinct code from
+ * every generate call's `AI_PROVIDER_UNAVAILABLE` (different real feature,
+ * different configuration requirement — VOYAGE_API_KEY, not
+ * ANTHROPIC_API_KEY), and the request/response shape (a text batch in,
+ * vectors out) doesn't fit postToAiService's single-content-object
+ * assumption.
+ */
+export async function generateEmbeddingsViaAiService(
+  texts: string[],
+  inputType: "document" | "query",
+): Promise<EmbeddingBatch> {
+  let res: Response;
+  try {
+    res = await fetch(`${env.AI_SERVICE_URL}/embeddings/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texts, input_type: inputType }),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    throw new AppError(
+      502,
+      "EMBEDDING_SERVICE_UNREACHABLE",
+      "Could not reach the AI service's embedding endpoint. Confirm it is running and AI_SERVICE_URL is correct.",
+    );
+  }
+
+  const body = (await res.json().catch(() => null)) as
+    | (AiErrorBody & { model?: string; dimensions?: number; embeddings?: number[][] })
+    | null;
+
+  if (!res.ok) {
+    if (res.status === 503 && body?.error?.code === "PROVIDER_NOT_CONFIGURED") {
+      throw new AppError(
+        503,
+        "EMBEDDING_PROVIDER_UNAVAILABLE",
+        body.error.message ?? "The embedding provider is not configured.",
+      );
+    }
+    throw new AppError(
+      502,
+      "EMBEDDING_SERVICE_ERROR",
+      body?.error?.message ?? `The AI service's embedding endpoint returned an unexpected ${res.status} response.`,
+    );
+  }
+
+  if (!body?.model || !body.dimensions || !body.embeddings) {
+    throw new AppError(502, "EMBEDDING_SERVICE_ERROR", "The AI service returned no embeddings.");
+  }
+
+  return { model: body.model, dimensions: body.dimensions, embeddings: body.embeddings };
+}

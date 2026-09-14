@@ -82,6 +82,11 @@ services:
       # requests — the same honest "not configured" behavior as local dev,
       # never a fabricated result.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Same optional pass-through pattern as ANTHROPIC_API_KEY above, for
+      # Voyage AI (embedding generation, Phase 8). Unset -> a real 503
+      # PROVIDER_NOT_CONFIGURED for /embeddings/generate, never a fabricated
+      # vector.
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
     ports:
       - "8001:8001"
     healthcheck:

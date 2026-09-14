@@ -254,12 +254,14 @@ symbols requiring a split, and a symbol-less file's fallback windowing — all d
 ## Docker verification strategy (Milestone 7)
 
 Same volume-wiped rebuild as Phases 6–7, plus: confirm `POST /embeddings/generate` reaches the
-containerized `ai-service` and returns the honest 503 with no `VOYAGE_API_KEY` passed through
-(mirroring `ANTHROPIC_API_KEY`'s existing pass-through pattern exactly — `VOYAGE_API_KEY` is
-deliberately *not* added to `docker-compose.yml`, matching how `GITHUB_TOKEN_ENCRYPTION_KEY`
-was deliberately left unset there too), and confirm `POST /projects/:id/search` reaches that
-same honest unconfigured/no-index path through the full containerized stack without ever
-claiming a real semantic search succeeded.
+containerized `ai-service` and returns the honest 503 with no `VOYAGE_API_KEY` set in the host
+shell (`docker-compose.yml` *does* pass `VOYAGE_API_KEY` through, exactly like
+`ANTHROPIC_API_KEY` — corrected during Milestone 3 from this plan's original statement that it
+would be omitted like `GITHUB_TOKEN_ENCRYPTION_KEY`; see
+docs/RETRIEVAL_PHASE_PROGRESS.md's Milestone 3 entry for why the pass-through pattern is the
+more consistent choice for a real external provider credential), and confirm `POST
+/projects/:id/search` reaches that same honest unconfigured/no-index path through the full
+containerized stack without ever claiming a real semantic search succeeded.
 
 ## Explicit limitations (documented up front)
 
