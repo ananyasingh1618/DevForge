@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. Chunking service and embedding agent
 - [x] 4. Retrieval service and API
 - [x] 5. Frontend Code Search page
-- [ ] 6. Tests
+- [x] 6. Tests
 - [ ] 7. Docker verification
 - [ ] 8. Documentation
 
@@ -279,7 +279,78 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `c5418d7` — "feat(frontend): add Code Search page".
 
 ### 6. Tests
-_Not started._
+- **`api/src/lib/similarity.test.ts`** (new, 6 cases): identical/orthogonal/opposite vectors,
+  an arbitrary-vector bound check, a zero-vector safe-return (no divide-by-zero), and a
+  mismatched-length throw.
+- **`api/src/lib/chunking.test.ts`** (new, 11 cases): one chunk per symbol with the symbol's own
+  line range; a nested symbol's content is independent of its enclosing class while the
+  enclosing chunk still contains it; distinct `contentHash` per chunk and stable across reruns;
+  language carried onto every chunk; determinism; an oversized symbol split into multiple
+  budget-respecting, line-overlapping pieces with full line coverage; a single line that alone
+  exceeds the budget still emitted whole; the overlap constant genuinely producing more than
+  one piece; the symbol-less whole-file fallback (including the exact trailing-newline
+  off-by-one fix from Milestone 3, now covered by a regression test); and an empty file
+  handled without throwing.
+- **`ai-service/tests/test_embeddings.py`** (new, 14 cases): router-level (mirroring every
+  other agent's test file exactly) — validation errors (empty texts, invalid `input_type`), the
+  real, unmocked 503 `PROVIDER_NOT_CONFIGURED` against this environment's genuinely unset
+  `VOYAGE_API_KEY`, success via `FakeEmbeddingProvider`, default `input_type`, and both
+  `ProviderRequestError`/`AIResponseInvalidError` surfacing as 502. Provider-level (this is the
+  one agent whose real implementation talks HTTP directly rather than through the `anthropic`
+  SDK, so it gets its own direct coverage against a monkeypatched `httpx.post` — mirroring how
+  Phase 7's tree-sitter parsing logic got its own direct, non-router-level tests): vectors
+  returned in request order even when the wire response is out of order; a wrong-dimension
+  vector and a wrong-count response both rejected as `AIResponseInvalidError`; 401/429 mapped
+  to the correct `ProviderRequestError` messages; a network failure mapped to "Could not
+  reach...".
+- **`api/src/routes/retrieval.test.ts`** (new, 13 cases): auth (401) and ownership (404);
+  validation (empty query, over-limit `limit`); `NO_COMPLETED_INDEX` with no index at all;
+  `INDEX_COMMIT_MISMATCH` for both a wrong branch and a wrong commit, asserting the real
+  indexed branch/commit appear in the message; `GITHUB_INTEGRATION_NOT_CONFIGURED` with the
+  encryption key unset, asserting `fetch` is never called; the full happy path — connect,
+  index, then search, verifying the lazy-built chunk/embedding are persisted and the returned
+  result's file/symbol/location/language/branch/score are all correct (score ≈ 1 for an
+  intentionally identical query/chunk vector pair); reuse on a second search asserted via a
+  `fetchSpy.toHaveBeenCalledTimes(1)` (only the query gets embedded — no re-fetch, no
+  re-embedding of the already-embedded chunk); a genuinely empty index still embeds the query
+  and returns `results: []`, not an error; `EMBEDDING_PROVIDER_UNAVAILABLE` when ai-service
+  reports its own `PROVIDER_NOT_CONFIGURED`; and project isolation — two independently indexed
+  projects' chunk ids never collide, and one project owner's search request against the *other*
+  project's id is a 404 well before any chunk is ever considered. One test (the empty-index
+  case) initially failed — my first draft didn't include a mocked response for the
+  always-runs query-embedding call, and the reused last-mock-response fallback produced a
+  malformed embed response, surfacing as a real 502; not a service bug, a fixed test-fixture
+  gap.
+- **`frontend/src/pages/CodeSearch.test.tsx`** (new, 7 cases): the `no-repository` gate
+  (asserting the index endpoint is never called in that state); the `no-index` gate, asserting
+  its "Go to Settings" link's real `href`; the ready state's form fields; submitting sends the
+  query plus branch/commit/limit exactly as typed; results render file path, symbol
+  type+name, location, score, and the chunk's own snippet; a genuinely empty result set renders
+  the real `EmptyState`, not silently nothing; and a real API error renders inline while never
+  rendering the empty-results copy in its place. Needed wrapping in `AuthProvider` (with
+  `authApi.meRequest` mocked) since `AppShell` — reused by every page in this codebase —
+  calls `useAuth()` internally; this is the same requirement `ProjectOverview.test.tsx` already
+  satisfies, just not yet needed by any of this phase's other test files since none of them
+  render a full page component.
+- **`tests/retrieval.test.ts`** (new, 1 case): real-HTTP integration test — register, create a
+  project, and confirm the honest `NO_COMPLETED_INDEX` response from a genuinely running API
+  process for a project with no repository connected and no index ever built. Like
+  `tests/codebaseIndex.test.ts`, needs no real GitHub credentials and does not need
+  `ai-service` running at all.
+- Commands run and results:
+  - `npm run typecheck` / `npm run lint` (api, frontend): clean.
+  - `npm run test` (api): 204/204 (174 prior + 17 chunking/similarity + 13 retrieval route
+    tests).
+  - `python -m pytest -q` (ai-service): 66/66 (52 prior + 14 new).
+  - `npm run test` (frontend): 74/74 (67 prior + 7 new).
+  - `npm run test` (`tests/`): 10/10 (9 prior + 1 new) — run against the real local dev stack
+    (Postgres, `api`, `ai-service` all genuinely running).
+  - Combined total across all four suites: **354 tests** (204 api + 66 ai-service + 74
+    frontend + 10 tests/) — recomputed and double-checked before writing this line.
+  - Confirmed no orphaned `tsx watch`/`uvicorn` processes remained after stopping the
+    manually-started servers; the sibling VoxMind `uvicorn` process was the only one left
+    running, untouched.
+- Commit: `<pending>` — "test(api,ai-service,frontend,tests): add retrieval test coverage".
 
 ### 7. Docker verification
 _Not started._
