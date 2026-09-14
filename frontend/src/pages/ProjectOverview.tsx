@@ -15,17 +15,15 @@ import type { Project } from "../types/project.js";
 // Requirements (Phase 2), PRD (Phase 3), Architecture (Phase 4), Epics &
 // Tasks (Phase 5), GitHub repository connection (Phase 6), AST parsing &
 // codebase indexing (Phase 7 — file/symbol extraction, browsable in
-// Settings), and retrieval/semantic search (Phase 8 — code chunking,
-// embeddings, ranked search, browsable via the "Search" link above) are
-// implemented, not listed here anymore. Codebase Q&A (synthesizing an answer
-// from what retrieval finds) and code review remain genuinely unbuilt, so
-// those stay below with descriptions reflecting only what's actually still
+// Settings), retrieval/semantic search (Phase 8 — code chunking, embeddings,
+// ranked search, browsable via the "Search" link above), and codebase Q&A
+// (Phase 9 — a grounded, read-only Q&A layer over Phase 8 retrieval,
+// browsable via the "Q&A" link above; it answers from retrieved evidence,
+// it does not modify code or take any repository action) are implemented,
+// not listed here anymore. Code review remains genuinely unbuilt, so it
+// stays below with a description reflecting only what's actually still
 // missing.
 const upcomingCapabilities = [
-  {
-    title: "Codebase Q&A",
-    description: "Cited, evidence-backed answers synthesized from Code Search's results.",
-  },
   {
     title: "Reviews",
     description: "AI-assisted PR/diff review: bugs, security, performance and quality findings.",
@@ -88,6 +86,12 @@ export function ProjectOverview() {
                 className="text-sm text-text-muted hover:text-text"
               >
                 Search
+              </Link>
+              <Link
+                to={`/projects/${state.project.id}/qa`}
+                className="text-sm text-text-muted hover:text-text"
+              >
+                Q&amp;A
               </Link>
               <Link
                 to={`/projects/${state.project.id}/settings`}

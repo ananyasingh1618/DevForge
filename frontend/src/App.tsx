@@ -8,6 +8,7 @@ import { ProjectNew } from "./pages/ProjectNew.js";
 import { ProjectOverview } from "./pages/ProjectOverview.js";
 import { ProjectSettings } from "./pages/ProjectSettings.js";
 import { CodeSearch } from "./pages/CodeSearch.js";
+import { CodebaseQa } from "./pages/CodebaseQa.js";
 
 export function App() {
   return (
@@ -53,6 +54,14 @@ export function App() {
           element={
             <RequireAuth>
               <CodeSearch />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/projects/:id/qa"
+          element={
+            <RequireAuth>
+              <CodebaseQa />
             </RequireAuth>
           }
         />

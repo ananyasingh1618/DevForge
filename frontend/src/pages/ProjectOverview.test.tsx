@@ -70,16 +70,17 @@ describe("ProjectOverview page", () => {
     expect(await screen.findByText("DevForge")).toBeInTheDocument();
     expect(screen.getByText("AI software engineering platform")).toBeInTheDocument();
     // Requirements (Phase 2), PRD (Phase 3), Architecture (Phase 4), Epics &
-    // Tasks (Phase 5), and codebase indexing (Phase 7) are implemented and
-    // must not appear in the "Not yet implemented" grid alongside genuinely
-    // unbuilt capabilities.
+    // Tasks (Phase 5), codebase indexing (Phase 7), retrieval (Phase 8), and
+    // codebase Q&A (Phase 9) are implemented and must not appear in the
+    // "Not yet implemented" grid alongside genuinely unbuilt capabilities.
     expect(await screen.findByText("No requirements yet")).toBeInTheDocument();
     expect(await screen.findByText("Requirements needed first")).toBeInTheDocument();
     expect(await screen.findByText("PRD needed first")).toBeInTheDocument();
     expect(await screen.findByText("Architecture needed first")).toBeInTheDocument();
     expect(await screen.findByText("Epics needed first")).toBeInTheDocument();
-    expect(screen.getAllByText("Not yet implemented")).toHaveLength(2);
-    expect(screen.getByText("Codebase Q&A")).toBeInTheDocument();
+    expect(screen.getAllByText("Not yet implemented")).toHaveLength(1);
+    expect(screen.getByText("Reviews")).toBeInTheDocument();
+    expect(screen.queryByText("Codebase Q&A")).not.toBeInTheDocument();
     expect(screen.queryByText("Repository indexing")).not.toBeInTheDocument();
   });
 

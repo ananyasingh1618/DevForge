@@ -13,7 +13,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 3. Q&A provider (ai-service)
 - [x] 4. Retrieval-to-answer service
 - [x] 5. Q&A API
-- [ ] 6. Frontend Codebase Q&A
+- [x] 6. Frontend Codebase Q&A
 - [ ] 7. Security and prompt-injection protection
 - [ ] 8. Remaining tests, Docker verification, documentation
 
@@ -197,7 +197,54 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `cc7f68b` — "feat(api): add codebase Q&A API endpoints".
 
 ### 6. Frontend Codebase Q&A
-_Not started._
+- **`frontend/src/types/qa.ts`** / **`frontend/src/services/qaApi.ts`** (new): types and
+  `apiRequest`-based service functions matching every other feature's conventions exactly.
+- **`frontend/src/pages/CodebaseQa.tsx`** (new): a dedicated page at `/projects/:id/qa` (not
+  another Settings section — same reasoning as `CodeSearch`'s own page vs. section decision),
+  gated the same way `CodeSearch` gates on connection + completed index. States: `no-repository`
+  / `no-index` (link to Settings), `ready` (question form + `QaPanel`). Within `QaPanel`:
+  `loading` (a single honest message — "Searching the indexed codebase, assembling context, and
+  generating an answer…" — describing the real steps that really happen sequentially within one
+  request, never a fabricated multi-stage progress UI DevForge doesn't actually have), `empty`
+  (no questions asked yet, with the task's own three example questions as clickable buttons that
+  fill the input), `results` (a history list, newest first, each showing the question, answer,
+  an `insufficientEvidence` note when set, sources with a `cited` badge/file path/symbol/line
+  range/score, and branch/commit — "ask a follow-up question" is just the same form, submitting
+  another independent question, matching the plan's explicit "not a chat thread" design), and
+  `error` (the real API error message inline, never a fabricated empty-results state standing
+  in for a failure). The page header includes an explicit "Read-only" disclaimer matching the
+  task's own documentation requirement, visible on every state, not just in written docs.
+- **`frontend/src/App.tsx`**: added the `/projects/:id/qa` route.
+- **`frontend/src/pages/ProjectOverview.tsx`**: added a "Q&A" link next to "Search"/"Settings";
+  removed "Codebase Q&A" from `upcomingCapabilities` (now implemented) and reworded the
+  surrounding comment — only "Reviews" remains genuinely unbuilt. Updated
+  **`ProjectOverview.test.tsx`**'s assertion accordingly (the "Not yet implemented" count moved
+  from 2 to 1, and added explicit assertions that "Codebase Q&A" no longer appears there while
+  "Reviews" still does).
+- Commands run and results:
+  - `npm run typecheck`, `npm run lint`, `npm run build`: all clean (same pre-existing
+    `useAuth.tsx` warning as every prior phase, unrelated to this one).
+  - `npm run test` (frontend): 74/74 — unchanged from before this milestone (the
+    `ProjectOverview.test.tsx` update kept the suite green rather than adding a new failure).
+  - Manual Playwright verification against the real (unconfigured, then locally-configured with
+    a never-committed key) dev stack, screenshots read back directly: confirmed the "Q&A" link
+    navigates to `/projects/:id/qa` and shows the `no-repository` gate with the read-only
+    disclaimer visible; confirmed, after directly inserting a `RepositoryConnection` + a
+    `completed` `CodebaseIndex` (same throwaway-script technique as every prior milestone's
+    manual check, pointing at `octocat/Hello-World`), the `empty` state renders with all three
+    clickable example questions; confirmed clicking an example question and submitting
+    genuinely reaches GitHub and shows the real 401 "The GitHub token is invalid or expired."
+    message inline, with the empty-history state still correctly shown afterward (no fabricated
+    entry was added for the failed attempt, matching the service never persisting a `Question`
+    row when `search()` fails).
+  - The `results` state (a real answer with real citations) could not be exercised live without
+    a real GitHub PAT and a real `ANTHROPIC_API_KEY` — deferred to Milestone 8's deterministic,
+    mocked-fetch RTL tests, matching exactly how Phase 8's Milestone 5 handled the same
+    constraint for its own results state.
+  - Deleted the scratch project/user and confirmed no orphaned `tsx watch`/`vite`/`uvicorn`
+    processes remained afterward; the sibling VoxMind `uvicorn` process was the only one left
+    running, untouched.
+- Commit: `<pending>` — "feat(frontend): add Codebase Q&A page".
 
 ### 7. Security and prompt-injection protection
 _Not started._
