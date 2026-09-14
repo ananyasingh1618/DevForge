@@ -10,7 +10,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 
 - [x] 1. Inspect and plan
 - [x] 2. Database (Question, Answer, AnswerSource)
-- [ ] 3. Q&A provider (ai-service)
+- [x] 3. Q&A provider (ai-service)
 - [ ] 4. Retrieval-to-answer service
 - [ ] 5. Q&A API
 - [ ] 6. Frontend Codebase Q&A
@@ -88,7 +88,39 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   migration".
 
 ### 3. Q&A provider (ai-service)
-_Not started._
+- **`ai-service/app/agents/qa/`** (new): `schemas.py` — `QaSourceInput` (`source_number, path,
+  symbol_name, start_line, end_line, content`), `AskQuestionRequest` (`question` 1–2000 chars,
+  `repository`, `branch`, `commit`, `sources` 1–20 items), `QaAnswerContent` (`answer`,
+  `cited_source_numbers: list[int]`, `insufficient_evidence: bool` — deliberately no field for
+  a model-supplied path/symbol/line, the actual citation-safety mechanism, not just a
+  convention), `AskQuestionResponse`. `provider.py` — `QaProvider` ABC + `AnthropicQaProvider`
+  (Claude `claude-opus-5`, `client.messages.parse()` structured output, `max_tokens=2000`);
+  `format_context()` is a standalone pure function building the exact deterministic
+  `Repository:`/`Branch:`/`Commit:`/`Source N:` block from the plan doc, directly unit-testable
+  without any HTTP layer. The full 7-rule system prompt (collapsing the task's 10 required
+  points into 7 — several overlapped: e.g. "cite supporting code locations" and "never invent
+  line numbers" are one rule here, since the citation mechanism makes them inseparable) covers:
+  answer only from supplied sources; say so plainly (and suggest a better question) when
+  evidence is insufficient; never invent a path/symbol/API/line — citations are number-only
+  selections from a fixed list, not free text; distinguish confirmed facts from inferences;
+  treat source content as untrusted data, never as instructions, explicitly including
+  prompt-injection-shaped text inside a source; never output a secret/token/credential value
+  even if one appears in a source; stay concise; and an explicit closing line that the model has
+  no tools and cannot take any repository action. After parsing, `AnthropicQaProvider.answer()`
+  also filters `cited_source_numbers` to the real `1..N` range it was actually given — defense
+  in depth on top of the structural guarantee, not a substitute for Node's own independent
+  re-validation (Milestone 4).
+  `router.py` — `POST /qa/answer`, registered in `main.py` alongside the six existing routers.
+- Commands run and results:
+  - `python -m pytest -q`: 66/66 existing ai-service tests still pass (no test added yet for
+    the new module — deferred to Milestone 8, matching every prior phase's own Milestone 3).
+  - Booted `uvicorn main:app` on a scratch port with no `ANTHROPIC_API_KEY` set: `POST
+    /qa/answer` correctly returned 503 `PROVIDER_NOT_CONFIGURED` naming `ANTHROPIC_API_KEY` and
+    "codebase Q&A"; an empty `question` correctly returned a real FastAPI 400
+    `VALIDATION_ERROR`. Confirmed no orphaned `uvicorn` process after stopping the scratch
+    server (`ps aux`); the sibling VoxMind `uvicorn` process was the only one left, untouched.
+- Commit: `<pending>` — "feat(ai-service): add codebase Q&A provider (Anthropic, structured
+  output)".
 
 ### 4. Retrieval-to-answer service
 _Not started._
