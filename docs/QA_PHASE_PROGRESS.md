@@ -15,7 +15,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 5. Q&A API
 - [x] 6. Frontend Codebase Q&A
 - [x] 7. Security and prompt-injection protection
-- [~] 8. Remaining tests, Docker verification, documentation
+- [x] 8. Remaining tests, Docker verification, documentation
 
 ## Per-milestone log
 
@@ -427,3 +427,84 @@ their own log entries below once complete.**
     changes.
 - Commit: `ac28860` — "chore: verify codebase Q&A phase against a clean-volume Docker
   rebuild".
+
+**Part C — documentation.**
+
+- **`README.md`**: updated the status banner, overview, "What works today" (new "Codebase Q&A"
+  bullet, explicit about its read-only nature; the "planned capability" line now names only
+  "Reviews"), architecture diagram (added Claude-backed Q&A to the ai-service branch and the
+  Node-side "send question + numbered top-ranked chunks to the Q&A endpoint" flow), tech stack
+  (updated the ai-service row, added a "Codebase Q&A" row explaining the citation-safety
+  design), repository structure (updated ai-service's description, added the two new doc
+  files), prerequisites and the `ANTHROPIC_API_KEY` env-var description (now also covers Q&A —
+  no new env var was needed, Q&A reuses the existing key), Docker verification note and example
+  command, tests section (updated the "no test claims..." sentence and doc-pointer list), API
+  summary (3 new `/qa` endpoints, updated the `ai-service` direct-endpoint note), database
+  schema (added `questions`/`answers`/`answer_sources`, explaining the citation-safety split),
+  known limitations (added 5 Q&A-specific limitations — read-only, not a conversation,
+  synchronous with an 8-source/16,000-char cap, single branch/commit with no override, evidence
+  lost on reindex — and updated the old Phase 8 "no Q&A yet" bullet, which is now wrong, plus
+  the LLM-provider-count bullet to include `qa`), and future work (removed "cited codebase Q&A"
+  as a future item — implemented — and added true multi-turn conversation as what's still
+  missing about it).
+- **`ai-service/README.md`**: added `POST /qa/answer` to the implemented-endpoints list with a
+  citation-safety sentence, and corrected the old "Codebase Q&A... not implemented" sentence.
+- **`frontend/README.md`**: checked, no change needed — still phase-agnostic, same finding as
+  every prior phase's own Milestone 8.
+- Commands run and results:
+  - Read every changed README section back after editing to confirm no stray Phase-8-only
+    phrasing remained (e.g. confirmed "Known limitations" no longer claims Q&A doesn't exist,
+    and confirmed the architecture diagram, tech stack, API summary, and database schema
+    sections read consistently as one document, not just as isolated diffs); fixed one stray
+    trailing-whitespace formatting nit found during this read-back.
+  - No code changed this part, so no test/typecheck/lint re-run was needed; the full suite was
+    already green as of Part B's final Docker-and-local-restoration check.
+- Commit: `<pending>` — "docs: update README for Phase 9 (Codebase Q&A)".
+
+## Phase 9 (Codebase Q&A): complete
+
+All 8 milestones are done and independently verified (see each entry above for exact commands
+and results). A grounded, read-only Q&A layer over Phase 8 retrieval — retrieving relevant
+code (never the whole repository), deduplicating overlapping evidence, and grounding a
+Claude-written answer in only that evidence, with citations the model can only *select* from a
+fixed, real, Node-numbered source list and can never invent — is implemented and tested end to
+end.
+
+This phase added **61 new tests**: 27 api (9 `qaSourceSelection.test.ts` + 18 `qa.test.ts`
+Supertest), 20 ai-service (`test_qa.py`), 13 frontend (`CodebaseQa.test.tsx`), and 1 real-HTTP
+integration test (`tests/qa.test.ts`). Combined with every prior phase's suite, the full
+repository now has **415 tests passing together, not just individually**: 231 api (204 prior +
+27 new) + 86 ai-service (66 prior + 20 new) + 87 frontend (74 prior + 13 new) + 11 tests/ (10
+prior + 1 new) = 415 — recomputed and double-checked (`231+86+87+11 = 415`) immediately before
+writing this section, the same arithmetic-care lesson recorded in every prior phase's own
+closing section.
+
+The central Milestone 1 design decision — a citation mechanism where Claude's structured output
+can only select a source *number* from a fixed, Node-built list, never emit a file path, symbol
+name, or line number itself — was made explicit and reasoned through before any schema or
+prompt was written, and is enforced at two independent layers (the `ai-service` provider's own
+out-of-range filtering, and Node's separate re-validation before persisting). Retrieval-before-
+any-LLM-call is a structural guarantee, not an ordering convention: `askQuestion` calls Phase
+8's `search()` directly, so there is no code path to the Claude call that doesn't first go
+through `search()`'s own real success path — verified both by manual live testing (a real
+GitHub 401 during evidence-gathering never reaches the Claude call) and by an automated test.
+Prompt-injection protection is proven at the one layer a deterministic test actually can prove
+it at: `format_context()` embeds arbitrarily malicious-shaped source content as inert, literal
+text, never interpolated or executed, and the system prompt itself instructs Claude to treat
+repository content as untrusted data and never reveal secrets — the live model's own compliance
+with that instruction is not something this test suite claims to have proven, consistent with
+every other LLM-behavior guarantee in this codebase never being demonstrated against a live
+model without real, paid credentials. The system is demonstrable, with an honest "no repository
+connected"/"no completed index"/"not configured" path throughout since this environment has no
+`GITHUB_TOKEN_ENCRYPTION_KEY`, `VOYAGE_API_KEY`, or `ANTHROPIC_API_KEY`, and with genuinely
+verified real-GitHub-API failure paths exercised for real — no real, valid GitHub, Voyage, or
+Anthropic credentials were used or required anywhere in this phase's verification, and no
+fabricated answer was ever claimed, including in the containerized Docker environment. Project,
+branch, and commit isolation, and question-history authorization, are enforced end to end and
+directly tested. No later or out-of-scope DevForge feature (automatic code generation,
+automatic task execution, code modification, code review, GitHub issue/PR creation, GitHub
+Actions integration, repository chat history/long-term memory, multi-repository conversations,
+additional LLM providers, agentic tool execution, autonomous repository browsing, a new vector
+database, a new embedding provider) was implemented, scaffolded with fake behavior, or claimed
+as working anywhere in this phase — see the root README's "Known limitations" and "Future work"
+sections, which remain the authoritative statement of what's left.

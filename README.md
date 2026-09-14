@@ -5,23 +5,27 @@ AI Software Engineering & Codebase Intelligence Platform.
 > **Current status: Foundation phase + Phase 2 (Requirements Analysis) + Phase 3 (PRD
 > Generation) + Phase 4 (Architecture Generation) + Phase 5 (Epics & Tasks Generation) +
 > Phase 6 (GitHub Integration) + Phase 7 (AST Parsing & Codebase Indexing) + Phase 8
-> (Retrieval & Semantic Search) complete.** This repository implements authentication, a
-> project workspace, AI-assisted requirements analysis, AI-assisted PRD generation,
-> AI-assisted architecture generation, AI-assisted epic/task generation, a secure GitHub
-> repository connection, tree-sitter-backed AST parsing and codebase indexing, and semantic
-> code search (chunking the indexed codebase along symbol boundaries, embedding it via Voyage
-> AI, and ranking results by cosine similarity), end to end, with tests and a working Docker
-> Compose stack. Codebase Q&A and AI code review are part of the full product specification
-> but are **not yet implemented** — nothing in this repository simulates or fakes those
-> capabilities. See [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
+> (Retrieval & Semantic Search) + Phase 9 (Codebase Q&A) complete.** This repository
+> implements authentication, a project workspace, AI-assisted requirements analysis,
+> AI-assisted PRD generation, AI-assisted architecture generation, AI-assisted epic/task
+> generation, a secure GitHub repository connection, tree-sitter-backed AST parsing and
+> codebase indexing, semantic code search (chunking the indexed codebase along symbol
+> boundaries, embedding it via Voyage AI, and ranking results by cosine similarity), and a
+> grounded, **read-only** codebase Q&A layer over that retrieval, end to end, with tests and a
+> working Docker Compose stack. AI code review is part of the full product specification but
+> is **not yet implemented** — nothing in this repository simulates or fakes it, and Codebase
+> Q&A never modifies code, opens pull requests, creates GitHub issues, or runs GitHub Actions —
+> see "Known limitations" below. See
+> [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 > [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 > [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
 > [docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
 > [docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md),
 > [docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md),
-> [docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md), and
-> [docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md) for the detailed,
-> verified log of every milestone that built each phase.
+> [docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md),
+> [docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md), and
+> [docs/QA_PHASE_PROGRESS.md](docs/QA_PHASE_PROGRESS.md) for the detailed, verified log of
+> every milestone that built each phase.
 
 ## Overview
 
@@ -37,9 +41,11 @@ added the fourth and fifth — turning a project's active architecture version i
 set of epics, and its active epic version into a versioned set of tasks; Phase 6 added the
 first non-AI capability — securely connecting a GitHub repository to a project; Phase 7 built
 on that connection — fetching the repository's source, parsing supported files into an AST,
-and extracting symbols into a persisted, browsable index; Phase 8 builds on that index —
+and extracting symbols into a persisted, browsable index; Phase 8 built on that index —
 chunking it along symbol boundaries, embedding the chunks, and ranking them by similarity
-against a natural-language query — the groundwork codebase Q&A and code review will build on.
+against a natural-language query; Phase 9 builds on that retrieval — grounding a Claude-written
+answer in only the retrieved evidence, with real, Node-verified citations, never the model's
+own free-text claim of a file/line — the groundwork code review will build on.
 
 ## What works today
 
@@ -118,9 +124,25 @@ against a natural-language query — the groundwork codebase Q&A and code review
   mismatch. Same honesty guarantee as every other AI capability: no completed index, no
   `GITHUB_TOKEN_ENCRYPTION_KEY`, or no `VOYAGE_API_KEY` each produce a clear, real error —
   never fabricated results.
-- A project overview page that shows real project data and honestly labels every remaining
-  planned capability (Codebase Q&A, Reviews) as **Not yet implemented** rather than presenting
-  a stub as working.
+- **Codebase Q&A**: from a project's Codebase Q&A page, ask a natural-language question about
+  a fully indexed repository and get a grounded answer — read-only, never modifying code,
+  opening a pull request, filing a GitHub issue, or running a GitHub Action. DevForge retrieves
+  relevant code via Phase 8 search (never the whole repository), deduplicates overlapping
+  evidence, sends the question plus up to 8 numbered source excerpts to Claude, and returns the
+  answer with citations. The model's structured output can only *select*, by number, which of
+  those already-real sources it drew from — it never outputs a file path, symbol name, or line
+  number itself, so a citation can never be invented. Retrieved code is treated as untrusted
+  data: the system prompt instructs Claude to ignore any instruction-like text found inside it
+  and never repeat a secret/credential value even if one appears in a source. A genuinely empty
+  evidence set skips the Claude call entirely and returns a real, local "insufficient evidence"
+  answer. Every question and its evidence are saved and listable per project — not a chat
+  thread, a simple history of independently-answered questions. Same honesty guarantee as
+  every other AI capability: no completed index, no `GITHUB_TOKEN_ENCRYPTION_KEY`, no
+  `VOYAGE_API_KEY`, or no `ANTHROPIC_API_KEY` each produce a clear, real error — never a
+  fabricated answer.
+- A project overview page that shows real project data and honestly labels the one remaining
+  planned capability (Reviews) as **Not yet implemented** rather than presenting a stub as
+  working.
 - Opaque, server-side sessions: a random token lives only in an httpOnly cookie; only its
   SHA-256 hash is ever persisted.
 - The full stack (Postgres, API, frontend, and the AI service) runs via a single
@@ -131,11 +153,11 @@ against a natural-language query — the groundwork codebase Q&A and code review
 ```
 React + TypeScript (Vite)                 Python/FastAPI AI service
         |                                    requirements analysis + PRD generation +
-        | fetch, credentials: include         architecture generation + epic/task generation
-        v                                     (Anthropic Claude, claude-opus-5);
+        | fetch, credentials: include         architecture generation + epic/task generation +
+        v                                     codebase Q&A (Anthropic Claude, claude-opus-5);
 Node/Express API  ------------------------->   + tree-sitter source parsing (no LLM call);
         |            fetch (AI_SERVICE_URL)    + Voyage AI embedding generation (no LLM call);
-        |                                       codebase Q&A/review not implemented
+        |                                       code review not implemented
         |----------------------------------> GitHub REST API (api.github.com)
         |            fetch, encrypted PAT      repository metadata, branches, access
         |                                      verification, file tree + blob content
@@ -147,16 +169,19 @@ Node/Express API  ------------------------->   + tree-sitter source parsing (no 
 The Node API and the Python AI service are separate processes/containers — the architecture
 principle from the full spec ("keep application CRUD/orchestration separate from AI-heavy
 processing") holds: the Node API validates, persists, and enforces ownership; the AI service
-does the LLM calls and returns structured, schema-validated content, and also does
-tree-sitter-backed source parsing (Phase 7) and Voyage-AI-backed embedding generation
-(Phase 8) — neither an LLM call, but both specialized-library/external-API concerns kept out
-of the Node process. GitHub connectivity and file retrieval are Node API concerns only
-(there's no AI involved in verifying repository access or fetching a file tree), so the Node
-API calls the GitHub REST API directly rather than routing through `ai-service`; it sends each
-fetched file's content to `ai-service`'s parser to extract symbols, chunks the parsed result
-itself (pure string-slicing, no AI needed), sends the chunk text to `ai-service`'s embedding
-endpoint, and ranks the returned vectors by cosine similarity computed in the Node process
-itself — not in Postgres, and not via pgvector (see "Database schema" below).
+does the LLM calls (requirements/PRD/architecture/epic/task generation, and now codebase Q&A)
+and returns structured, schema-validated content, and also does tree-sitter-backed source
+parsing (Phase 7) and Voyage-AI-backed embedding generation (Phase 8) — neither an LLM call,
+but both specialized-library/external-API concerns kept out of the Node process. GitHub
+connectivity and file retrieval are Node API concerns only (there's no AI involved in
+verifying repository access or fetching a file tree), so the Node API calls the GitHub REST
+API directly rather than routing through `ai-service`; it sends each fetched file's content to
+`ai-service`'s parser to extract symbols, chunks the parsed result itself (pure string-slicing,
+no AI needed), sends the chunk text to `ai-service`'s embedding endpoint, ranks the returned
+vectors by cosine similarity computed in the Node process itself (not in Postgres, and not via
+pgvector — see "Database schema" below), and for Q&A sends the question plus a fixed, numbered
+list of the top-ranked chunks to `ai-service`'s Q&A endpoint — Claude only ever selects among
+that list by number, never emitting a path or line itself.
 
 ## Tech stack
 
@@ -173,11 +198,12 @@ itself — not in Postgres, and not via pgvector (see "Database schema" below).
 | Validation | Zod (Node), Pydantic (ai-service) | Request bodies, route params, and environment variables validated the same way in each language |
 | AI provider | Anthropic Claude (`claude-opus-5`), via `client.messages.parse()` structured outputs | No provider was configured before Phase 2; documented choice in `docs/REQUIREMENTS_PHASE_PLAN.md` — first-party SDK, strict structured-output support |
 | Testing | Vitest, Supertest, pytest, React Testing Library, Playwright (ad hoc manual verification) | One test runner style per language |
-| AI service | Python/FastAPI | Its own process/container; requirements analysis, PRD generation, architecture generation, epic/task generation, tree-sitter source parsing, and Voyage AI embedding generation are implemented |
+| AI service | Python/FastAPI | Its own process/container; requirements analysis, PRD generation, architecture generation, epic/task generation, codebase Q&A, tree-sitter source parsing, and Voyage AI embedding generation are implemented |
 | GitHub integration | Personal access token (user-supplied), native `fetch` against the GitHub REST API, AES-256-GCM token encryption via Node's built-in `crypto` | Smallest secure option — no OAuth App/GitHub App registration or callback infrastructure needed; no new dependency for a thin HTTP boundary. Documented choice in `docs/GITHUB_INTEGRATION_PHASE_PLAN.md` |
 | AST parsing | tree-sitter (`tree-sitter`, `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`), inside `ai-service` | Genuinely multi-language from one API, ships prebuilt `manylinux` wheels (confirmed for the existing `python:3.12-slim` image before adopting it — no compiler needed), and belongs next to the other "worker for the Node API" concern rather than a second parser stack in Node. Documented choice in `docs/CODEBASE_INDEX_PHASE_PLAN.md` |
 | Embeddings | Voyage AI (`voyage-code-3`, a code-retrieval-specific model), called directly over `httpx` from `ai-service` | Anthropic has no embeddings API and recommends Voyage as its embeddings partner — confirmed the real endpoint (a fake key gets a genuine 401, not a network failure) before adopting it. Gated by an optional `VOYAGE_API_KEY`, mirroring `ANTHROPIC_API_KEY` exactly. Documented choice in `docs/RETRIEVAL_PHASE_PLAN.md` |
 | Vector storage & ranking | Plain PostgreSQL `Float[]` columns; cosine similarity computed in the Node API | No new datastore, no pgvector extension/image change, no raw SQL — this project's per-project chunk-count scale doesn't need ANN indexing. Documented choice (and the pgvector/external-vector-DB/local-index alternatives it was weighed against) in `docs/RETRIEVAL_PHASE_PLAN.md` |
+| Codebase Q&A | Anthropic Claude (`claude-opus-5`) structured output, gated by the same `ANTHROPIC_API_KEY` as every other generation agent — reused, not duplicated | The structured answer schema has no field for a model-supplied file path, symbol, or line number — only a numeric selection from the fixed, real source list Node already built from Phase 8 retrieval, making citation hallucination structurally impossible rather than merely prompt-discouraged. Documented in `docs/QA_PHASE_PLAN.md` |
 | Local/dev orchestration | Docker Compose | Postgres, API, frontend, ai-service, each with a healthcheck |
 
 ## Repository structure
@@ -187,9 +213,10 @@ devforge/
   frontend/       React + TypeScript client
   api/             Node/Express application API + Prisma schema/migrations
   ai-service/      Python/FastAPI AI service (requirements analysis + PRD generation +
-                    architecture generation + epic/task generation + tree-sitter source
-                    parsing — see ai-service/app/parsing/ — + Voyage AI embedding generation —
-                    see ai-service/app/agents/embeddings/)
+                    architecture generation + epic/task generation + codebase Q&A — see
+                    ai-service/app/agents/qa/ — + tree-sitter source parsing — see
+                    ai-service/app/parsing/ — + Voyage AI embedding generation — see
+                    ai-service/app/agents/embeddings/)
   tests/           Cross-cutting integration tests (real HTTP, not in-process)
   evaluation/       Review evaluation — empty until that phase exists
   docs/            FOUNDATION_PROGRESS.md, REQUIREMENTS_PHASE_PLAN.md,
@@ -198,8 +225,9 @@ devforge/
                     EPICS_TASKS_PHASE_PLAN.md, EPICS_TASKS_PHASE_PROGRESS.md,
                     GITHUB_INTEGRATION_PHASE_PLAN.md, GITHUB_INTEGRATION_PHASE_PROGRESS.md,
                     CODEBASE_INDEX_PHASE_PLAN.md, CODEBASE_INDEX_PHASE_PROGRESS.md,
-                    RETRIEVAL_PHASE_PLAN.md, RETRIEVAL_PHASE_PROGRESS.md — the verified
-                    milestone-by-milestone log for each phase
+                    RETRIEVAL_PHASE_PLAN.md, RETRIEVAL_PHASE_PROGRESS.md, QA_PHASE_PLAN.md,
+                    QA_PHASE_PROGRESS.md — the verified milestone-by-milestone log for each
+                    phase
   scripts/         Local dev/setup scripts (test-database bootstrap)
   docker-compose.yml
 ```
@@ -213,8 +241,8 @@ devforge/
 - Docker (for Postgres locally, or the full stack)
 - Python 3.12 (only if running `ai-service` outside Docker)
 - An Anthropic API key, **optional** — only needed to make requirements analysis, PRD
-  generation, architecture generation, and epic/task generation actually return content
-  instead of a clear "not configured" error. Get one at
+  generation, architecture generation, epic/task generation, and codebase Q&A actually return
+  content instead of a clear "not configured" error. Get one at
   [console.anthropic.com](https://console.anthropic.com).
 - A GitHub personal access token, **optional** — only needed if you want to actually connect a
   repository; generate one at [github.com/settings/tokens](https://github.com/settings/tokens)
@@ -237,7 +265,7 @@ where) and fill in real values. Never commit a real `.env` file.
 | `FRONTEND_ORIGIN` | `api/.env` | Allowed CORS origin for credentialed requests |
 | `AI_SERVICE_URL` | `api/.env` | Base URL of the ai-service (default `http://localhost:8001`) |
 | `VITE_API_URL` | `frontend/.env` | API base URL the browser calls (baked in at build time) |
-| `ANTHROPIC_API_KEY` | `ai-service` environment (shell env, or Docker Compose's own env — not a committed file) | Enables real requirements analysis, PRD generation, architecture generation, and epic/task generation. Unset → every analyze/generate request returns a clear 503, never fake content |
+| `ANTHROPIC_API_KEY` | `ai-service` environment (shell env, or Docker Compose's own env — not a committed file) | Enables real requirements analysis, PRD generation, architecture generation, epic/task generation, and codebase Q&A. Unset → every analyze/generate/ask request returns a clear 503, never fake content |
 | `GITHUB_TOKEN_ENCRYPTION_KEY` | `api/.env` (or shell env — not a committed file) | A base64-encoded 32-byte key used to encrypt (AES-256-GCM) a connected repository's personal access token at rest. **Optional** — the API still starts and every other feature still works with this unset; only connecting a repository is gated. Generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Unset → connecting returns a clear 503 `GITHUB_INTEGRATION_NOT_CONFIGURED`, never a fake connection |
 | `VOYAGE_API_KEY` | `ai-service` environment (shell env, or Docker Compose's own env — not a committed file) | Enables real embedding generation for code search. **Optional** — the ai-service still starts and every other feature still works with this unset; only `POST /embeddings/generate` (and, transitively, code search) is gated. Unset → a clear 503 `PROVIDER_NOT_CONFIGURED`, never a fabricated vector |
 
@@ -281,12 +309,12 @@ gated by a healthcheck so dependents wait for their dependencies to actually be 
 just started. Verified end to end from a volume-wiped clean start (`docker compose down -v
 && docker compose up -d --build`), including the api-container → ai-service-container network
 call over the Docker-internal hostname for requirements analysis, PRD generation, architecture
-generation, epic/task generation, source parsing (confirmed `pip install` really did pull
-prebuilt `tree-sitter` wheels into the container — no compiler needed), and embedding
+generation, epic/task generation, codebase Q&A, source parsing (confirmed `pip install` really
+did pull prebuilt `tree-sitter` wheels into the container — no compiler needed), and embedding
 generation (confirmed `httpx` installed cleanly alongside them), and (separately) the
 api-container's own outbound calls to the real GitHub REST API for repository connections,
 codebase indexing, and code search — the API container starts and stays healthy whether or not
-`GITHUB_TOKEN_ENCRYPTION_KEY`/`VOYAGE_API_KEY` are set:
+`GITHUB_TOKEN_ENCRYPTION_KEY`/`VOYAGE_API_KEY`/`ANTHROPIC_API_KEY` are set:
 
 | Service | URL | Health |
 |---|---|---|
@@ -316,17 +344,20 @@ pnpm lint
 
 No test in this repository claims a real LLM call succeeded unless a real, configured
 `ANTHROPIC_API_KEY` was actually used for that run, no test claims a repository was actually
-connected or indexed unless real, valid, user-supplied GitHub credentials were used, and no
-test claims a real semantic search succeeded unless a real, configured `VOYAGE_API_KEY` was
-actually used (none of these was, anywhere in this repository's test suite) — see
+connected or indexed unless real, valid, user-supplied GitHub credentials were used, no test
+claims a real semantic search succeeded unless a real, configured `VOYAGE_API_KEY` was
+actually used, and no test claims a real codebase Q&A answer was generated by a real Claude
+call unless a real, configured `ANTHROPIC_API_KEY` was actually used for that run (none of
+these was, anywhere in this repository's test suite) — see
 [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
 [docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
 [docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md),
 [docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md),
-[docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md), and
-[docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md) for exactly which tests
-use a test double and which exercise a real "not configured"/real-API failure path.
+[docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md),
+[docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md), and
+[docs/QA_PHASE_PROGRESS.md](docs/QA_PHASE_PROGRESS.md) for exactly which tests use a test
+double and which exercise a real "not configured"/real-API failure path.
 
 ## API summary
 
@@ -384,14 +415,19 @@ failure.
 | GET | `/projects/:id/codebase-index/files/:fileId/symbols` | session | List a file's extracted symbols, nested via `parentId` |
 | POST | `/projects/:id/codebase-index/reindex` | session | Always re-runs indexing, even if the commit is unchanged |
 | POST | `/projects/:id/search` | session | Semantic search — body `{ query, branch?, commit?, limit? }`; lazily chunks/embeds the current completed index on first use, reused on every later search against the same commit (400 `NO_COMPLETED_INDEX` if no repository/index, 400 `INDEX_COMMIT_MISMATCH` if `branch`/`commit` don't match the current index, 503 `GITHUB_INTEGRATION_NOT_CONFIGURED`/`EMBEDDING_PROVIDER_UNAVAILABLE` if unconfigured) |
+| POST | `/projects/:id/qa` | session | Ask a question — body `{ question }` (1–2000 chars); retrieves via `/search` first (400 `NO_COMPLETED_INDEX` if no repository/completed index), then answers with Claude grounded only in the retrieved evidence (503 `AI_PROVIDER_UNAVAILABLE`/`EMBEDDING_PROVIDER_UNAVAILABLE`/`GITHUB_INTEGRATION_NOT_CONFIGURED` if unconfigured; a genuinely empty evidence set returns a real "insufficient evidence" answer with no Claude call at all) |
+| GET | `/projects/:id/qa` | session | List past questions for this project, newest first, each with its answer and evidence |
+| GET | `/projects/:id/qa/:questionId` | session | Get one question with its full answer and evidence; 404 if it doesn't belong to this project |
 
 `ai-service` also exposes `POST /requirements/analyze`, `POST /prd/generate`,
 `POST /architecture/generate`, `POST /epics/generate`, `POST /tasks/generate`,
-`POST /parsing/parse`, and `POST /embeddings/generate` directly (called by the Node API, not
-the browser) and `GET /health`. The repository, codebase-index, and search endpoints above
-never call `ai-service` for GitHub access — the Node API talks to the real GitHub REST API
-directly, and separately sends each fetched file's content to `ai-service`'s parser and each
-resulting chunk's text to `ai-service`'s embedding endpoint.
+`POST /parsing/parse`, `POST /embeddings/generate`, and `POST /qa/answer` directly (called by
+the Node API, not the browser) and `GET /health`. The repository, codebase-index, search, and
+Q&A endpoints above never call `ai-service` for GitHub access — the Node API talks to the real
+GitHub REST API directly, and separately sends each fetched file's content to `ai-service`'s
+parser, each resulting chunk's text to `ai-service`'s embedding endpoint, and — for Q&A — the
+question plus a fixed, numbered list of the top-ranked retrieved chunks to `ai-service`'s Q&A
+endpoint.
 
 ## Database schema
 
@@ -449,21 +485,58 @@ reindex's wholesale `indexed_files` replacement cascades away any chunks tied to
 superseded commit. `embeddings` (id, chunk_id → code_chunks `ON DELETE CASCADE`, model,
 dimensions, vector `Float[]`, created_at; **unique on `(chunk_id, model)`**) — one row per
 (chunk, embedding model) pair; `vector` is a plain PostgreSQL array, not pgvector — similarity
-ranking is computed in the Node API, not the database (see "Tech stack" above for why). See
+ranking is computed in the Node API, not the database (see "Tech stack" above for why).
+`questions` (id, project_id → projects `ON DELETE CASCADE`, codebase_index_id →
+codebase_indexes `ON DELETE CASCADE`, question, branch, commit_sha, created_at) — one row per
+question asked, denormalizing branch/commit like `code_chunks` already does; not a
+conversation/chat thread — each question is answered independently, grounded fresh against
+whatever the project's current index is at ask time. `answers` (id, question_id → questions
+`ON DELETE CASCADE`, **unique on `question_id`** — one answer per question, answer,
+insufficient_evidence, model, created_at) — `model` is `"none"` when `insufficient_evidence`
+is true, since no Claude call happens for a genuinely empty evidence set. `answer_sources` (id,
+answer_id → answers `ON DELETE CASCADE`, chunk_id → code_chunks `ON DELETE CASCADE`,
+**unique on `(answer_id, chunk_id)`**, source_order, cited, score) — one row per source chunk
+actually sent as evidence, not just the ones the model cited (`cited` records that separately);
+references `code_chunks` directly rather than duplicating its path/lines/content, so a Phase 8
+reindex's cascade deletion of superseded chunks correctly removes old Q&A evidence detail too,
+while the parent answer's own text and `insufficient_evidence` flag survive (a known
+limitation: old Q&A history's evidence detail doesn't survive a reindex, only its answer text
+does). Never a file path, symbol name, or line number the model itself produced — see
+`docs/QA_PHASE_PLAN.md` for the citation-safety design this split makes possible. See
 `api/prisma/schema.prisma` for the exact fields, and its header comment for how later entities
-(`conversations`, `reviews`, `review_findings`, `feedback`) will attach once those phases
-start.
+(`reviews`, `review_findings`, `feedback`) will attach once those phases start.
 
 ## Known limitations
 
-- No codebase Q&A or code review yet — Phase 8 builds ranked retrieval (chunks + embeddings +
-  similarity search) over the Phase 7 index, but nothing synthesizes an answer or a review
-  finding from those results yet — see "What works today" above.
-- Codebase indexing and code search both run synchronously within one HTTP request — there is
-  no background job queue anywhere in this codebase. Indexing is bounded by a 500-file cap and
-  a 300 KB per-file cap; files beyond a cap are recorded with a real
-  `skipped_index_limit`/`skipped_too_large` status rather than silently dropped. A background
-  worker is the natural fix for both and is future work.
+- No code review yet — Phase 9's Q&A synthesizes an answer from retrieved evidence, but nothing
+  produces a bug/security/performance/quality finding from that same evidence yet — see "What
+  works today" above.
+- **Codebase Q&A is read-only.** It never modifies code, opens a pull request, creates a
+  GitHub issue, runs a GitHub Action, or takes any other action on the repository — it only
+  reads already-indexed evidence and returns a grounded answer. It also cannot answer about
+  anything outside what Phase 8 retrieval actually finds and passes it — it has no ability to
+  browse the repository on its own, follow a reference to a file that wasn't retrieved, or run
+  code.
+- Codebase Q&A is not a conversation — each question is answered independently. There is no
+  multi-turn context: DevForge does not remember an earlier question when answering a later
+  one, even within the same visible history list. A "follow-up question" is simply another
+  independent question.
+- Codebase indexing, code search, and codebase Q&A all run synchronously within one HTTP
+  request — there is no background job queue anywhere in this codebase. Indexing is bounded by
+  a 500-file cap and a 300 KB per-file cap; files beyond a cap are recorded with a real
+  `skipped_index_limit`/`skipped_too_large` status rather than silently dropped. Q&A is bounded
+  to at most 8 evidence sources and 16,000 combined characters of code context (after
+  deduplicating overlapping evidence), so a very broad question may not surface every relevant
+  location — only the highest-scored, non-overlapping ones within that budget. A background
+  worker is the natural fix for all of this and is future work.
+- Q&A answers exactly one `(branch, commitSha)` per project — the same one `/search` and
+  indexing already use — with no way to ask about a different branch or commit; there is no
+  caller-supplied override at all on the `POST /qa` endpoint (unlike `/search`'s
+  validation-only `branch`/`commit` fields).
+- Disconnecting a repository, or reindexing to a new commit, does not preserve old Q&A
+  answers' detailed evidence (their underlying `code_chunks` rows are cascade-deleted) — the
+  answer's own text and "insufficient evidence" flag remain, but the specific file/line
+  citations behind it do not.
 - Only three languages are parsed and therefore searchable — Python, TypeScript, JavaScript.
   Every other extension is recorded as `unsupported` during indexing and never chunked.
 - Symbol extraction covers class/interface/type_alias/function/method declarations only, not
@@ -500,9 +573,10 @@ start.
   GitHub API at verification time and not re-checked against any other source.
 - No webhook, polling, or automatic re-verification of a connection — verification only
   happens on an explicit user action (connect, or "Reverify access").
-- Requirements analysis, PRD generation, architecture generation, epic generation, and task
-  generation each support one LLM provider (Anthropic). Each has its own provider abstraction
-  (`ai-service/app/agents/{requirements,prd,architecture,epics,tasks}/provider.py`), sharing
+- Requirements analysis, PRD generation, architecture generation, epic generation, task
+  generation, and codebase Q&A each support one LLM provider (Anthropic). Each has its own
+  provider abstraction
+  (`ai-service/app/agents/{requirements,prd,architecture,epics,tasks,qa}/provider.py`), sharing
   only the genuinely identical piece — the `ANTHROPIC_API_KEY` read and
   `ProviderNotConfiguredError` raise, in `ai-service/app/lib/provider_config.py` — so a second
   provider could be added without touching any router, but no second provider is implemented.
@@ -541,20 +615,21 @@ start.
 
 ## Future work
 
-A background job queue for indexing and search (removing the synchronous-request size/file
-caps and the first-search latency), hybrid (BM25 + vector + RRF + reranking) retrieval and an
-ANN-backed vector store (e.g. pgvector) in place of today's linear-scan `Float[]` ranking,
-cited codebase Q&A synthesized from Phase 8's retrieval results, and the
-bug/security/performance/quality review pipeline — per the full product specification. See
-[docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
+A background job queue for indexing, search, and Q&A (removing the synchronous-request
+size/file/evidence caps and the first-use latency), hybrid (BM25 + vector + RRF + reranking)
+retrieval and an ANN-backed vector store (e.g. pgvector) in place of today's linear-scan
+`Float[]` ranking, true multi-turn conversation for Codebase Q&A (today each question is
+answered independently), and the bug/security/performance/quality review pipeline — per the
+full product specification. See [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
 [docs/ARCHITECTURE_PHASE_PROGRESS.md](docs/ARCHITECTURE_PHASE_PROGRESS.md),
 [docs/EPICS_TASKS_PHASE_PROGRESS.md](docs/EPICS_TASKS_PHASE_PROGRESS.md),
 [docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md](docs/GITHUB_INTEGRATION_PHASE_PROGRESS.md),
-[docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md), and
-[docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md) for what's been verified
-so far and how it was verified.
+[docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md),
+[docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md), and
+[docs/QA_PHASE_PROGRESS.md](docs/QA_PHASE_PROGRESS.md) for what's been verified so far and how
+it was verified.
 
 ## License
 
