@@ -296,3 +296,51 @@ passed, `frontend` 101 passed. No orphaned `tsx`/`uvicorn`/`vite` processes rema
 except VoxMind's own (PID 16012, untouched throughout).
 
 Commit: `72beff0` (docs-only; no source changes in this part)
+
+### Part C — documentation
+
+Updated the root `README.md` across every relevant section: the status banner (Phase 10
+complete), the overview paragraph, a new "AI code review" bullet in "What works today" plus an
+updated project-overview bullet (the "Not yet implemented" grid no longer exists — every
+originally-planned capability is now built), the architecture diagram and its explanation, a
+new "AI code review" tech-stack row, the repository structure listing (`ai-service/app/agents/
+review/`, `docs/CODE_REVIEW_PHASE_PLAN.md`/`CODE_REVIEW_PHASE_PROGRESS.md`), the prerequisites
+and environment-variable sections (no new variable — code review reuses `ANTHROPIC_API_KEY` and
+`VOYAGE_API_KEY` unchanged), the Docker section, the Tests section, three new rows in the API
+summary table plus an updated closing paragraph, four new entities in the Database schema
+section, Known limitations (removed the stale "no code review yet" bullet, added code-review-
+specific limitations — read-only scope, no conversation/iteration, synchronous with the shared
+evidence cap, single branch/commit, evidence lost on reindex, and the prompt-level-not-
+independently-verified nature of its false-positive controls), and Future work (added a
+background job queue's applicability to review, an eval harness for finding quality, and a
+branch/commit override as explicit future work). Updated `ai-service/README.md` to document
+`POST /review/analyze` and its citation-safety/no-tool-use guarantees. Confirmed
+`frontend/README.md` needs no change (phase-agnostic, consistent with every prior phase's
+finding). Verified every `docs/*.md` link referenced from the new README text resolves to a
+real file, and that no stray trailing whitespace was introduced.
+
+Commit: `4040211`
+
+## Phase 10 (AI Code Review): complete
+
+All 8 milestones (with Milestone 8 split into Parts A/B/C, matching Phase 9's own precedent for
+combined test/Docker/documentation work) are implemented, tested, Docker-verified, and
+documented. 73 new tests this phase: 27 api (8 `reviewFindingFiltering.test.ts` + 19
+`codeReview.test.ts`) + 31 ai-service (`test_review.py`) + 14 frontend
+(`CodeReview.test.tsx`) + 1 tests/ (`codeReview.test.ts`), for full-repository totals of 488
+total: 258 api + 117 ai-service + 101 frontend + 12 tests/, all green, verified again in a
+final `npm run test` sanity run after the Docker rebuild's restoration. `tsc`/`eslint` (both
+packages), `ruff`-equivalent pytest collection, and Prisma's own migration-status check are all
+clean. The central design decision this phase reused, rather than reinvented, Phase 9's
+citation-safety mechanism — a finding can only select a source number from a fixed, Node-
+numbered list, never emit a path/symbol/line itself — applied to a *list* of findings sharing
+one evidence set, which is the one genuinely new data-modeling problem this phase had to solve
+(a `CodeReviewFindingSource` many-to-many join, where Q&A's `AnswerSource` only ever needed a
+one-to-many shape). The other genuinely new design decision — persisting a `CodeReview` row
+before the provider call so a provider failure updates a real "failed" row rather than leaving
+an orphan — is a direct, deliberate fix for a latent gap in Phase 9's own `Question`/`Answer`
+split, discovered while designing this phase and documented rather than silently carried
+forward or fixed retroactively in Phase 9's own code (out of this phase's scope). VoxMind (PID
+16012, port 8000) was never touched at any point in this phase — confirmed via `ps aux` before,
+during, and after every Docker/process operation. Phase 11 was not started, per the task's own
+explicit "Stop after Phase 10" instruction.
