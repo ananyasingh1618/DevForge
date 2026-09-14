@@ -109,7 +109,31 @@ Commit: `7db8bf1`
 
 ## Milestone 5 — Code Review API
 
-`<pending>`
+Added `controllers/codeReview.ts` (`create`/`list`/`getOne`, thin pass-throughs to
+`services/codeReview.ts`, matching `controllers/qa.ts` exactly) and `routes/codeReview.ts`
+(`POST /projects/:projectId/reviews`, `GET /projects/:projectId/reviews`, `GET
+/projects/:projectId/reviews/:reviewId`, all behind `requireAuth`), registered in `app.ts`.
+
+Manually verified live against a real, running API server and a real Postgres database (no
+mocking):
+- Unauthenticated `GET /projects/:id/reviews` -> real `401 UNAUTHENTICATED`.
+- `POST` with a blank (`"   "`) scope -> real `400 VALIDATION_ERROR` ("Scope must not be blank"),
+  no CodeReview row created.
+- `POST`/`GET` with no repository connected -> real `400 NO_COMPLETED_INDEX` (propagated
+  unchanged from `search()`), `GET /reviews` list stays empty.
+- With a fake `RepositoryConnection`/`CodebaseIndex` inserted for the real public repo
+  `octocat/Hello-World` (validly-encrypted-but-fake PAT, same technique used in every prior
+  phase) and `GITHUB_TOKEN_ENCRYPTION_KEY` configured but no `VOYAGE_API_KEY`/`ANTHROPIC_API_KEY`:
+  `POST /projects/:id/reviews` made a real, unmocked call to the real GitHub API and got back a
+  real `401 GITHUB_INVALID_CREDENTIALS` — proving genuine GitHub reachability, not a fabricated
+  success. `GET /reviews` afterward still showed zero reviews, and `ai-service`'s own log showed
+  no request to `/review/analyze` at any point — confirming, live, that retrieval genuinely runs
+  and genuinely fails before any LLM call is attempted, and that a blocked attempt never
+  persists a `CodeReview` row.
+- Cleaned up all scratch users/projects/connections afterward; confirmed no orphaned `tsx`/
+  `uvicorn` processes remained except VoxMind's own (PID 16012, untouched throughout).
+
+Commit: `b25ef8a`
 
 ## Milestone 6 — Frontend Code Review
 
