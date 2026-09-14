@@ -15,7 +15,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 5. Frontend Code Search page
 - [x] 6. Tests
 - [x] 7. Docker verification
-- [ ] 8. Documentation
+- [x] 8. Documentation
 
 ## Per-milestone log
 
@@ -399,4 +399,75 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `326732a` — "chore: verify retrieval phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
-_Not started._
+- **`README.md`**: updated the status banner, overview, "What works today" (new "Semantic code
+  search" bullet), architecture diagram (added the embedding-generation branch to ai-service
+  and the Node-side chunk-then-embed-then-rank flow; annotated Postgres as storing `Float[]`
+  vectors, not pgvector), tech stack (updated the ai-service row, added "Embeddings" and
+  "Vector storage & ranking" rows), repository structure (updated ai-service's description,
+  added the two new doc files, corrected `evaluation/`'s description since retrieval is no
+  longer purely future work), prerequisites (new optional Voyage AI key note), environment
+  variables (new `VOYAGE_API_KEY` row), Docker verification note and example command (Voyage
+  key pass-through), tests section (updated the "no test claims..." sentence and doc-pointer
+  list), API summary (`POST /projects/:id/search`, updated the `ai-service` direct-endpoint
+  note), database schema (added `code_chunks`/`embeddings`), known limitations (reworded the
+  old Phase 7 "no embeddings/retrieval yet" bullet — it's now implemented — and added the 5
+  limitations from `docs/RETRIEVAL_PHASE_PLAN.md`: synchronous search, one branch/commit only,
+  linear-scan vector search, first-search latency, no re-verification before chunking), and
+  future work (removed "embeddings and a vector store" — implemented; reworded retrieval-related
+  items to reflect what Phase 8 actually built vs. what's still missing: a background job
+  queue, hybrid/ANN retrieval, and codebase Q&A synthesized from Phase 8's results).
+- **`ai-service/README.md`**: added a sentence and example env var for `POST
+  /embeddings/generate`, explicit that it needs `VOYAGE_API_KEY`, not `ANTHROPIC_API_KEY`, and
+  corrected the old "Embeddings... not implemented" sentence.
+- **`frontend/README.md`**: checked, no change needed — still phase-agnostic, same finding as
+  Phases 6 and 7's own Milestone 8.
+- Commands run and results:
+  - Read every changed README section back after editing to confirm no stray Phase-7-only
+    phrasing remained (e.g. confirmed "Known limitations" no longer claims embeddings/retrieval
+    don't exist, and confirmed the architecture diagram, tech stack, and database schema
+    sections read consistently as one document, not just as isolated diffs).
+  - No code changed this milestone, so no test/typecheck/lint re-run was needed; the full
+    suite was already green as of Milestone 7's final Docker-and-local-restoration check.
+- Commit: `<pending>` — "docs: update README for Phase 8 (Retrieval & Semantic Search)".
+
+## Phase 8 (Retrieval & Semantic Search): complete
+
+All 8 milestones are done and independently verified (see each entry above for exact commands
+and results). Semantic code search over a connected, indexed repository — chunking the Phase 7
+AST index along symbol boundaries, embedding those chunks via Voyage AI, and ranking them by
+cosine similarity against a natural-language query — is implemented and tested end to end.
+
+This phase added **83 new tests**: 30 api (17 `chunking.test.ts`/`similarity.test.ts` +
+13 `retrieval.test.ts`), 14 ai-service (`test_embeddings.py`), 7 frontend
+(`CodeSearch.test.tsx`), and 1 real-HTTP integration test (`tests/retrieval.test.ts`). Combined
+with every prior phase's suite, the full repository now has **354 tests passing together, not
+just individually**: 204 api (174 prior + 30 new) + 66 ai-service (52 prior + 14 new) + 74
+frontend (67 prior + 7 new) + 10 tests/ (9 prior + 1 new) = 354 — recomputed and double-checked
+(`204+66+74+10 = 354`) immediately before writing this section, the same arithmetic-care lesson
+recorded in every prior phase's own closing section.
+
+The two central Milestone 1 design decisions — plain PostgreSQL `Float[]` columns with
+in-process cosine similarity instead of pgvector/an external vector database/a local embedded
+index, and Voyage AI's `voyage-code-3` (Anthropic's own recommended embeddings partner, since
+Claude itself has no embeddings API) instead of a local embedding model — were made explicit
+and reasoned through in Milestone 1, with both the `Float[]` array support and the real Voyage
+endpoint confirmed reachable before committing to either. One design correction was made and
+recorded rather than silently diverging from the plan: `VOYAGE_API_KEY` is passed through
+`docker-compose.yml` exactly like `ANTHROPIC_API_KEY` (a real external provider credential a
+user might have), not omitted like `GITHUB_TOKEN_ENCRYPTION_KEY` (an internally-generated
+encryption key) as the plan doc had originally, incorrectly, stated it would mirror. One real
+off-by-one bug (a phantom trailing line from `content.split("\n")` inflating a whole-file
+fallback chunk's `endLine`) was found during manual verification and is now covered by a
+regression test. The system is demonstrable, with an honest "no repository connected"/"no
+completed index"/"not configured" path throughout since this environment has no
+`GITHUB_TOKEN_ENCRYPTION_KEY` or `VOYAGE_API_KEY`, and with genuinely verified real-GitHub-API
+and real-Voyage-API failure paths (invalid credentials) exercised for real — no real, valid
+GitHub or Voyage credentials were used or required anywhere in this phase's verification, and
+no fabricated search result was ever claimed, including in the containerized Docker
+environment. Project isolation (one project's search never returning another's chunks) is
+enforced end to end and directly tested. No later DevForge feature (codebase Q&A, chat with
+the repository, code review, automatic code generation, automatic task execution, GitHub
+issue/PR creation, GitHub Actions integration, additional LLM providers) was implemented,
+scaffolded with fake behavior, or claimed as working anywhere in this phase — see the root
+README's "Known limitations" and "Future work" sections, which remain the authoritative
+statement of what's left.
