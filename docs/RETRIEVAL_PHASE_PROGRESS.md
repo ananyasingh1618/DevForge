@@ -232,7 +232,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - `npm run test` (full `api/` suite): 174/174 passed, confirming no regression.
   - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
     servers; the sibling VoxMind `uvicorn` process was the only one left running, untouched.
-- Commit: `<pending>` — "feat(api): add semantic search retrieval service and API endpoint".
+- Commit: `c93949c` — "feat(api): add semantic search retrieval service and API endpoint".
 
 ### 5. Frontend Code Search page
 _Not started._
