@@ -119,7 +119,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     "codebase Q&A"; an empty `question` correctly returned a real FastAPI 400
     `VALIDATION_ERROR`. Confirmed no orphaned `uvicorn` process after stopping the scratch
     server (`ps aux`); the sibling VoxMind `uvicorn` process was the only one left, untouched.
-- Commit: `<pending>` — "feat(ai-service): add codebase Q&A provider (Anthropic, structured
+- Commit: `d8772da` — "feat(ai-service): add codebase Q&A provider (Anthropic, structured
   output)".
 
 ### 4. Retrieval-to-answer service
