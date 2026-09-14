@@ -471,3 +471,8 @@ issue/PR creation, GitHub Actions integration, additional LLM providers) was imp
 scaffolded with fake behavior, or claimed as working anywhere in this phase — see the root
 README's "Known limitations" and "Future work" sections, which remain the authoritative
 statement of what's left.
+
+**Phase 9 (Codebase Q&A) progress is tracked separately** in
+[docs/QA_PHASE_PLAN.md](QA_PHASE_PLAN.md) and
+[docs/QA_PHASE_PROGRESS.md](QA_PHASE_PROGRESS.md) — this file remains the historical record of
+Phase 8 only and is not updated further.
