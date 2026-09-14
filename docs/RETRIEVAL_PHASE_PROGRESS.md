@@ -276,7 +276,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - Deleted the scratch project/user and confirmed no orphaned `tsx watch`/`vite`/`uvicorn`
     processes remained afterward; the sibling VoxMind `uvicorn` process was the only one left
     running, untouched.
-- Commit: `<pending>` — "feat(frontend): add Code Search page".
+- Commit: `c5418d7` — "feat(frontend): add Code Search page".
 
 ### 6. Tests
 _Not started._
