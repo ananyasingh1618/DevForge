@@ -84,7 +84,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   failed once under full-suite parallel load and passed cleanly in isolation and on a second
   full-suite run — the same pre-existing parallel-worker flakiness documented in Phase 6/7's
   own progress docs, unrelated to this milestone's schema-only change.)
-- Commit: `<pending>` — "feat(api): add question, answer, and answer_source data model and
+- Commit: `9d5024f` — "feat(api): add question, answer, and answer_source data model and
   migration".
 
 ### 3. Q&A provider (ai-service)
