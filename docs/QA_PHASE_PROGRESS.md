@@ -381,4 +381,4 @@ their own log entries below once complete.**
     either surfaces anything requiring one more test.
   - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
     servers; the sibling VoxMind `uvicorn` process was the only one left running, untouched.
-- Commit: `<pending>` — "test(api,frontend,tests): add comprehensive Q&A test coverage".
+- Commit: `43a807c` — "test(api,frontend,tests): add comprehensive Q&A test coverage".
