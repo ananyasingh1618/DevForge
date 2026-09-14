@@ -12,7 +12,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 2. Database (Question, Answer, AnswerSource)
 - [x] 3. Q&A provider (ai-service)
 - [x] 4. Retrieval-to-answer service
-- [ ] 5. Q&A API
+- [x] 5. Q&A API
 - [ ] 6. Frontend Codebase Q&A
 - [ ] 7. Security and prompt-injection protection
 - [ ] 8. Remaining tests, Docker verification, documentation
@@ -163,7 +163,38 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `79d73fd` — "feat(api): add codebase Q&A retrieval-to-answer service".
 
 ### 5. Q&A API
-_Not started._
+- **`api/src/controllers/qa.ts`** / **`api/src/routes/qa.ts`** (new): `POST
+  /projects/:projectId/qa` (`ask`), `GET /projects/:projectId/qa` (`list`), `GET
+  /projects/:projectId/qa/:questionId` (`getOne`), all under `requireAuth`, registered in
+  `api/src/app.ts` alongside every other feature router.
+- Commands run and results:
+  - `npm run typecheck` / `npm run lint`: clean.
+  - Manual live verification, in this order, cleaning up all created data and stopping every
+    manually-started process afterward: booted `ai-service` and `api` (unconfigured) against
+    the real local Postgres; registered a user, created a project; confirmed `POST .../qa`
+    with no index at all returns 400 `NO_COMPLETED_INDEX`; confirmed `GET .../qa` with no
+    questions asked yet returns `{ questions: [] }`; confirmed `GET .../qa/:questionId` for a
+    nonexistent id returns 404 `NOT_FOUND`. Generated a local, never-committed
+    `GITHUB_TOKEN_ENCRYPTION_KEY`, restarted the API with it configured, and directly inserted
+    (via the same throwaway-script technique Phase 8's own Milestone 4 used, since no real PAT
+    exists) a verified `RepositoryConnection` + a `completed` `CodebaseIndex` pointing at the
+    real public repo `octocat/Hello-World`. Asked a question: confirmed it genuinely reaches
+    GitHub (via `search()`'s own blob refetch) and fails with a real 401
+    `GITHUB_INVALID_CREDENTIALS` — never reaching the (also unconfigured) Claude call, which
+    would have surfaced as a distinctly different 503 `AI_PROVIDER_UNAVAILABLE` had the code
+    reached it — confirming retrieval-before-provider ordering for real, not just by code
+    inspection. Confirmed the raw response contains no `ghp_` substring, and confirmed
+    directly against the database that **zero** `Question` rows were persisted from the failed
+    attempt (the service creates the `Question` row only after `search()` has already
+    succeeded). Deleted the scratch project/user afterward.
+  - The full happy path (a real grounded answer with real citations) could not be exercised
+    live without both a real GitHub PAT and a real `ANTHROPIC_API_KEY` — neither exists in this
+    environment. Deferred to Milestone 8's deterministic, mocked-fetch Supertest tests, matching
+    exactly how Phase 7/8's own equivalent milestones handled the same constraint.
+  - `npm run test` (full `api/` suite): 204/204 passed, confirming no regression.
+  - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
+    servers; the sibling VoxMind `uvicorn` process was the only one left running, untouched.
+- Commit: `<pending>` — "feat(api): add codebase Q&A API endpoints".
 
 ### 6. Frontend Codebase Q&A
 _Not started._
