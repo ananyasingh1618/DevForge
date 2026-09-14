@@ -53,7 +53,7 @@ beforeEach(() => {
 });
 
 describe("ProjectOverview page", () => {
-  it("renders the project and the not-yet-implemented capability list", async () => {
+  it("renders the project and links to every implemented capability", async () => {
     mockedProjectsApi.getProjectRequest.mockResolvedValue({
       project: {
         id: "p1",
@@ -70,18 +70,24 @@ describe("ProjectOverview page", () => {
     expect(await screen.findByText("DevForge")).toBeInTheDocument();
     expect(screen.getByText("AI software engineering platform")).toBeInTheDocument();
     // Requirements (Phase 2), PRD (Phase 3), Architecture (Phase 4), Epics &
-    // Tasks (Phase 5), codebase indexing (Phase 7), retrieval (Phase 8), and
-    // codebase Q&A (Phase 9) are implemented and must not appear in the
-    // "Not yet implemented" grid alongside genuinely unbuilt capabilities.
+    // Tasks (Phase 5), codebase indexing (Phase 7), retrieval (Phase 8),
+    // codebase Q&A (Phase 9), and code review (Phase 10) are all
+    // implemented now — nothing remains in a "Not yet implemented" grid.
     expect(await screen.findByText("No requirements yet")).toBeInTheDocument();
     expect(await screen.findByText("Requirements needed first")).toBeInTheDocument();
     expect(await screen.findByText("PRD needed first")).toBeInTheDocument();
     expect(await screen.findByText("Architecture needed first")).toBeInTheDocument();
     expect(await screen.findByText("Epics needed first")).toBeInTheDocument();
-    expect(screen.getAllByText("Not yet implemented")).toHaveLength(1);
-    expect(screen.getByText("Reviews")).toBeInTheDocument();
-    expect(screen.queryByText("Codebase Q&A")).not.toBeInTheDocument();
-    expect(screen.queryByText("Repository indexing")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not yet implemented")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reviews" })).toHaveAttribute(
+      "href",
+      "/projects/p1/reviews",
+    );
+    expect(screen.getByRole("link", { name: "Q&A" })).toHaveAttribute("href", "/projects/p1/qa");
+    expect(screen.getByRole("link", { name: "Search" })).toHaveAttribute(
+      "href",
+      "/projects/p1/search",
+    );
   });
 
   it("shows a not-found message for a 404 (missing or someone else's project)", async () => {

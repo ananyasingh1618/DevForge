@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AppShell } from "../components/AppShell.js";
-import { Card } from "../components/Card.js";
 import { ErrorState, LoadingState } from "../components/StateViews.js";
 import { RequirementsSection } from "../components/RequirementsSection.js";
 import { PrdSection } from "../components/PrdSection.js";
@@ -16,19 +15,15 @@ import type { Project } from "../types/project.js";
 // Tasks (Phase 5), GitHub repository connection (Phase 6), AST parsing &
 // codebase indexing (Phase 7 — file/symbol extraction, browsable in
 // Settings), retrieval/semantic search (Phase 8 — code chunking, embeddings,
-// ranked search, browsable via the "Search" link above), and codebase Q&A
+// ranked search, browsable via the "Search" link above), codebase Q&A
 // (Phase 9 — a grounded, read-only Q&A layer over Phase 8 retrieval,
-// browsable via the "Q&A" link above; it answers from retrieved evidence,
-// it does not modify code or take any repository action) are implemented,
-// not listed here anymore. Code review remains genuinely unbuilt, so it
-// stays below with a description reflecting only what's actually still
-// missing.
-const upcomingCapabilities = [
-  {
-    title: "Reviews",
-    description: "AI-assisted PR/diff review: bugs, security, performance and quality findings.",
-  },
-] as const;
+// browsable via the "Q&A" link above), and AI code review (Phase 10 — a
+// read-only review layer over Phase 8 retrieval, browsable via the
+// "Reviews" link above; it reports findings and recommendations grounded
+// in retrieved evidence, it does not modify code or take any repository
+// action) are all implemented. Nothing remains planned-but-unbuilt at this
+// point, so the "Planned capabilities" section that used to list them here
+// has been removed rather than left permanently empty.
 
 type LoadState =
   | { status: "loading" }
@@ -94,6 +89,12 @@ export function ProjectOverview() {
                 Q&amp;A
               </Link>
               <Link
+                to={`/projects/${state.project.id}/reviews`}
+                className="text-sm text-text-muted hover:text-text"
+              >
+                Reviews
+              </Link>
+              <Link
                 to={`/projects/${state.project.id}/settings`}
                 className="text-sm text-text-muted hover:text-text"
               >
@@ -138,22 +139,6 @@ export function ProjectOverview() {
             <TaskSection projectId={state.project.id} />
           </div>
 
-          <h2 className="mt-10 text-sm font-medium text-text-muted">
-            Planned capabilities for this project
-          </h2>
-          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {upcomingCapabilities.map((capability) => (
-              <Card key={capability.title} className="opacity-80">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-medium text-text">{capability.title}</h3>
-                  <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-text-muted">
-                    Not yet implemented
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-text-muted">{capability.description}</p>
-              </Card>
-            ))}
-          </div>
         </div>
       )}
     </AppShell>
