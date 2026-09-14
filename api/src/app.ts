@@ -13,6 +13,7 @@ import { repositoryRouter } from "./routes/repository.js";
 import { codebaseIndexRouter } from "./routes/codebaseIndex.js";
 import { retrievalRouter } from "./routes/retrieval.js";
 import { qaRouter } from "./routes/qa.js";
+import { codeReviewRouter } from "./routes/codeReview.js";
 import { AppError } from "./lib/errors.js";
 import { env } from "./env.js";
 
@@ -40,6 +41,7 @@ export function createApp() {
   app.use(codebaseIndexRouter);
   app.use(retrievalRouter);
   app.use(qaRouter);
+  app.use(codeReviewRouter);
 
   // Unmatched routes become a structured 404 rather than Express's default HTML page.
   app.use((_req, _res, next) => {
