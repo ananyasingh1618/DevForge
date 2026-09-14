@@ -9,7 +9,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 ## Milestones
 
 - [x] 1. Inspect and plan
-- [ ] 2. Database (code chunks + embeddings)
+- [x] 2. Database (code chunks + embeddings)
 - [ ] 3. Chunking service and embedding agent
 - [ ] 4. Retrieval service and API
 - [ ] 5. Frontend Code Search page
@@ -63,7 +63,44 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   tracker".
 
 ### 2. Database (code chunks + embeddings)
-_Not started._
+- Added `CodeChunk` (project/codebaseIndex/file/symbol relations, branch, commitSha,
+  chunkIndex, content, contentHash, language, startLine, endLine) and `Embedding` (chunk
+  relation, model, dimensions, `vector Float[]`) models exactly as designed in
+  `docs/RETRIEVAL_PHASE_PLAN.md`, plus `Project.codeChunks`, `CodebaseIndex.codeChunks`,
+  `IndexedFile.codeChunks`, `Symbol.codeChunks` back-relations.
+  `@@unique([codebaseIndexId, commitSha, contentHash])` on `CodeChunk` and
+  `@@unique([chunkId, model])` on `Embedding` are the direct schema answers to "no duplicate
+  chunks" and "no duplicate embeddings for the same chunk+model".
+- `npx prisma format` + `npx prisma validate` passed on the first try — no relation-field
+  errors this time (learned from Phase 7's Milestone 2 miss: added both sides of every new
+  relation up front).
+- `npx prisma migrate dev --name add_code_chunks_and_embeddings` generated and applied
+  `prisma/migrations/20260914165206_add_code_chunks_and_embeddings/migration.sql`. Read the
+  generated SQL back and confirmed: `vector` is a real `DOUBLE PRECISION[]` column (not a
+  JSON blob), `code_chunks_codebase_index_id_commit_sha_content_hash_key` and
+  `embeddings_chunk_id_model_key` are real unique indexes, and every FK (`project_id`,
+  `codebase_index_id`, `file_id`, `symbol_id`, `chunk_id`) is `ON DELETE CASCADE` — so a Phase
+  7 reindex's wholesale `IndexedFile` deletion correctly cascades away any chunks/embeddings
+  tied to the superseded commit, rather than orphaning them.
+- `npx prisma generate` regenerated the client cleanly; `npm run typecheck` and `npm run lint`
+  both passed with no errors.
+- Wrote and ran a throwaway verification script (not committed) against the real database:
+  created a user/project/connection/index/file/symbol/chunk/embedding, confirmed
+  `(codebaseIndexId, commitSha, contentHash)` chunk uniqueness is enforced, confirmed
+  `(chunkId, model)` embedding uniqueness is enforced, confirmed a `Float[]` vector round-trips
+  byte-for-byte through Prisma (`[0.1, 0.2, 0.3, 0.4]` in, identical array out), and confirmed
+  deleting the `CodebaseIndex` cascades to delete its chunk and embedding — all assertions
+  passed.
+- **Docker daemon note**: had to `open -a Docker` and wait for it before any of the above,
+  since the standalone dev Postgres container depends on it and wasn't running at the start of
+  this session; confirmed `devforge-postgres-1` came back up healthy automatically once the
+  daemon was ready.
+- Proactively applied the migration to `devforge_test` in this same milestone (`DATABASE_URL=
+  ...devforge_test npx prisma migrate deploy`) rather than waiting to discover the gap when
+  Milestone 6's tests first touch the new tables — the exact gap Phase 7's Milestone 6 hit and
+  had to fix reactively.
+- Ran the full `api/` test suite (`npm run test`): 174/174 passed.
+- Commit: `<pending>` — "feat(api): add code_chunk and embedding data model and migration".
 
 ### 3. Chunking service and embedding agent
 _Not started._

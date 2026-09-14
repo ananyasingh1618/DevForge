@@ -11,13 +11,19 @@
 // indexed_files, symbols — one index row per project (same
 // replaced-state-not-versioned-artifact shape as repository_connections; see
 // docs/CODEBASE_INDEX_PHASE_PLAN.md for why).
-// Future entities (code_chunks, conversations, reviews, review_findings,
-// feedback) are intentionally not modeled yet — see
+// Phase 8 (Retrieval & Semantic Search) adds: code_chunks, embeddings — chunks
+// derived from Phase 7's indexed files/symbols, embedded via Voyage AI and
+// ranked with cosine similarity computed in the Node API over plain
+// PostgreSQL Float[] columns (not pgvector; see docs/RETRIEVAL_PHASE_PLAN.md
+// for why).
+// Future entities (conversations, reviews, review_findings, feedback) are
+// intentionally not modeled yet — see docs/RETRIEVAL_PHASE_PLAN.md,
 // docs/CODEBASE_INDEX_PHASE_PLAN.md, docs/GITHUB_INTEGRATION_PHASE_PLAN.md,
 // docs/EPICS_TASKS_PHASE_PLAN.md, docs/ARCHITECTURE_PHASE_PLAN.md,
 // docs/PRD_PHASE_PLAN.md, docs/REQUIREMENTS_PHASE_PLAN.md and
 // docs/FOUNDATION_PROGRESS.md for how they will attach to `projects` /
-// `repository_connections` / `codebase_indexes` once those phases start.
+// `repository_connections` / `codebase_indexes` / `code_chunks` once those
+// phases start.
 
 generator client {
   provider = "prisma-client-js"
@@ -80,6 +86,7 @@ model Project {
   taskVersions         TaskVersion[]
   repositoryConnection RepositoryConnection?
   codebaseIndex        CodebaseIndex?
+  codeChunks           CodeChunk[]
 
   @@index([ownerId])
   @@map("projects")
@@ -288,6 +295,7 @@ model CodebaseIndex {
   project              Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   repositoryConnection RepositoryConnection @relation(fields: [repositoryConnectionId], references: [id])
   files                IndexedFile[]
+  codeChunks           CodeChunk[]
 
   @@index([repositoryConnectionId])
   @@map("codebase_indexes")
@@ -318,8 +326,9 @@ model IndexedFile {
   parseError  String?         @map("parse_error")
   createdAt   DateTime        @default(now()) @map("created_at")
 
-  index   CodebaseIndex @relation(fields: [indexId], references: [id], onDelete: Cascade)
-  symbols Symbol[]
+  index      CodebaseIndex @relation(fields: [indexId], references: [id], onDelete: Cascade)
+  symbols    Symbol[]
+  codeChunks CodeChunk[]
 
   @@unique([indexId, path])
   @@map("indexed_files")
@@ -341,11 +350,70 @@ model Symbol {
   parentId  String? @map("parent_id")
   signature String?
 
-  file     IndexedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  parent   Symbol?     @relation("SymbolParent", fields: [parentId], references: [id], onDelete: SetNull)
-  children Symbol[]    @relation("SymbolParent")
+  file       IndexedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  parent     Symbol?     @relation("SymbolParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Symbol[]    @relation("SymbolParent")
+  codeChunks CodeChunk[]
 
   @@index([fileId])
   @@index([parentId])
   @@map("symbols")
+}
+
+// One row per code chunk derived from a Phase 7 parsed file/symbol — the
+// unit that gets embedded and ranked for search (see
+// docs/RETRIEVAL_PHASE_PLAN.md). Chunking is pure string-slicing done in the
+// Node API, not ai-service; `symbolId` is null for a whole-file fallback
+// chunk (a parsed file with zero extracted symbols). `branch`/`commitSha`
+// are denormalized from the owning CodebaseIndex at chunking time so a
+// chunk's indexed state is self-describing even if the index is later
+// reindexed to a new commit. `contentHash` (sha256 of the chunk's own text)
+// is the real dedup key — `symbolId` alone can't be, since Postgres unique
+// indexes treat NULL as distinct from NULL.
+model CodeChunk {
+  id              String   @id @default(uuid())
+  projectId       String   @map("project_id")
+  codebaseIndexId String   @map("codebase_index_id")
+  fileId          String   @map("file_id")
+  symbolId        String?  @map("symbol_id")
+  branch          String
+  commitSha       String   @map("commit_sha")
+  chunkIndex      Int      @map("chunk_index")
+  content         String
+  contentHash     String   @map("content_hash")
+  language        String
+  startLine       Int      @map("start_line")
+  endLine         Int      @map("end_line")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  codebaseIndex CodebaseIndex @relation(fields: [codebaseIndexId], references: [id], onDelete: Cascade)
+  file          IndexedFile   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  symbol        Symbol?       @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  embeddings    Embedding[]
+
+  @@unique([codebaseIndexId, commitSha, contentHash])
+  @@index([projectId])
+  @@index([codebaseIndexId, commitSha])
+  @@map("code_chunks")
+}
+
+// One row per (chunk, embedding model) pair — `@@unique([chunkId, model])`
+// is this schema's direct answer to "do not store duplicate embeddings for
+// identical chunks and model versions." `vector` is a plain PostgreSQL
+// `Float[]` column (not pgvector — see docs/RETRIEVAL_PHASE_PLAN.md for why);
+// similarity ranking is computed in the Node API, not in the database.
+model Embedding {
+  id         String   @id @default(uuid())
+  chunkId    String   @map("chunk_id")
+  model      String
+  dimensions Int
+  vector     Float[]
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  chunk CodeChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@unique([chunkId, model])
+  @@index([chunkId])
+  @@map("embeddings")
 }
