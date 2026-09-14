@@ -692,3 +692,148 @@ export async function answerQuestionViaAiService(
     insufficientEvidence: content.insufficient_evidence,
   };
 }
+
+export type ReviewSourceForProvider = {
+  sourceNumber: number;
+  path: string;
+  symbolName: string | null;
+  startLine: number;
+  endLine: number;
+  content: string;
+};
+
+export type ReviewFindingFromAi = {
+  title: string;
+  description: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  category:
+    | "bug"
+    | "security"
+    | "reliability"
+    | "performance"
+    | "maintainability"
+    | "validation"
+    | "error_handling"
+    | "testing"
+    | "architecture"
+    | "other";
+  confidence: "high" | "medium" | "low";
+  recommendation: string;
+  citedSourceNumbers: number[];
+};
+
+export type ReviewFromAi = {
+  summary: string;
+  findings: ReviewFindingFromAi[];
+};
+
+const REVIEW_SEVERITIES = new Set(["critical", "high", "medium", "low", "info"]);
+const REVIEW_CATEGORIES = new Set([
+  "bug",
+  "security",
+  "reliability",
+  "performance",
+  "maintainability",
+  "validation",
+  "error_handling",
+  "testing",
+  "architecture",
+  "other",
+]);
+const REVIEW_CONFIDENCES = new Set(["high", "medium", "low"]);
+
+function isValidReviewFinding(f: unknown): f is {
+  title: unknown;
+  description: unknown;
+  severity: unknown;
+  category: unknown;
+  confidence: unknown;
+  recommendation: unknown;
+  cited_source_numbers: unknown;
+} {
+  if (typeof f !== "object" || f === null) return false;
+  const r = f as Record<string, unknown>;
+  return (
+    typeof r.title === "string" &&
+    r.title.length > 0 &&
+    typeof r.description === "string" &&
+    r.description.length > 0 &&
+    typeof r.severity === "string" &&
+    REVIEW_SEVERITIES.has(r.severity) &&
+    typeof r.category === "string" &&
+    REVIEW_CATEGORIES.has(r.category) &&
+    typeof r.confidence === "string" &&
+    REVIEW_CONFIDENCES.has(r.confidence) &&
+    typeof r.recommendation === "string" &&
+    Array.isArray(r.cited_source_numbers) &&
+    r.cited_source_numbers.every((n) => typeof n === "number")
+  );
+}
+
+/**
+ * Calls ai-service's code-review endpoint and returns validated, camelCase
+ * review content — or throws an AppError. Reuses postToAiService: this is a
+ * genuine Anthropic/ANTHROPIC_API_KEY-gated LLM call, exactly like Q&A's own
+ * call above, so the same PROVIDER_NOT_CONFIGURED -> AI_PROVIDER_UNAVAILABLE
+ * mapping applies unchanged. Every finding is independently re-validated
+ * here (shape, enum membership) even though ai-service's own Pydantic
+ * schema already enforces the same constraints — defense in depth, not
+ * duplicated trust.
+ */
+export async function analyzeReviewViaAiService(
+  scope: string,
+  repository: string,
+  branch: string,
+  commit: string,
+  sources: ReviewSourceForProvider[],
+): Promise<ReviewFromAi> {
+  const body = await postToAiService("/review/analyze", {
+    scope,
+    repository,
+    branch,
+    commit,
+    sources: sources.map((s) => ({
+      source_number: s.sourceNumber,
+      path: s.path,
+      symbol_name: s.symbolName,
+      start_line: s.startLine,
+      end_line: s.endLine,
+      content: s.content,
+    })),
+  });
+
+  if (!body?.content) {
+    throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
+  }
+
+  const content = body.content as { summary?: unknown; findings?: unknown };
+
+  if (typeof content.summary !== "string" || content.summary.length === 0 || !Array.isArray(content.findings)) {
+    throw new AppError(
+      502,
+      "AI_RESPONSE_INVALID",
+      "The AI service's response did not match the expected code review structure.",
+    );
+  }
+
+  if (!content.findings.every(isValidReviewFinding)) {
+    throw new AppError(
+      502,
+      "AI_RESPONSE_INVALID",
+      "The AI service's response contained a malformed finding.",
+    );
+  }
+
+  return {
+    summary: content.summary,
+    findings: (content.findings as Array<Record<string, unknown>>).map((f) => ({
+      title: f.title as string,
+      description: f.description as string,
+      severity: f.severity as ReviewFindingFromAi["severity"],
+      category: f.category as ReviewFindingFromAi["category"],
+      confidence: f.confidence as ReviewFindingFromAi["confidence"],
+      recommendation: f.recommendation as string,
+      citedSourceNumbers: f.cited_source_numbers as number[],
+    })),
+  };
+}
