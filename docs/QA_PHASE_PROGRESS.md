@@ -382,3 +382,48 @@ their own log entries below once complete.**
   - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
     servers; the sibling VoxMind `uvicorn` process was the only one left running, untouched.
 - Commit: `43a807c` — "test(api,frontend,tests): add comprehensive Q&A test coverage".
+
+**Part B — Docker volume-wiped verification.**
+
+- No Docker config changes were needed this phase — confirmed via `git diff` before starting
+  that nothing in `docker-compose.yml`/any `Dockerfile` had changed since Phase 8.
+- Commands run and results:
+  - `docker compose down -v` (full volume wipe, including the standalone dev Postgres left
+    running from prior milestones) then `docker compose up -d --build` for a genuinely clean
+    rebuild of all four services.
+  - All four containers reached `healthy`; confirmed all 9 migrations — including
+    `20260914173809_add_qa_questions_answers` — auto-applied from the `api` container's own
+    startup logs.
+  - Verified `POST /qa/answer` directly against the containerized `ai-service` with no
+    `ANTHROPIC_API_KEY` set in the host shell: real 503 `PROVIDER_NOT_CONFIGURED` naming
+    "codebase Q&A".
+  - Verified `POST /projects/:id/qa` and `GET /projects/:id/qa` through the containerized `api`
+    (no `GITHUB_TOKEN_ENCRYPTION_KEY`/`ANTHROPIC_API_KEY`/`VOYAGE_API_KEY` set, deliberately —
+    Docker's real, honest unconfigured state): registered a user, created a project, confirmed
+    the real 400 `NO_COMPLETED_INDEX` and the real empty `{ questions: [] }` list.
+  - **Re-verified all seven prior phases' real dependency-chain behavior through this same
+    containerized stack**, not assumed intact: `POST .../repository/connect` still returns 503
+    `GITHUB_INTEGRATION_NOT_CONFIGURED`; `POST .../codebase-index/start` still returns 400
+    `NO_REPOSITORY_CONNECTED`; `POST .../search` still returns 400 `NO_COMPLETED_INDEX`; `POST
+    .../requirements/analyze` still returns 503 `AI_PROVIDER_UNAVAILABLE`; and
+    `.../prd/generate`, `.../architecture/generate`, `.../epics/generate`, `.../tasks/generate`
+    each still return their real, honest `NO_ACTIVE_*` dependency-chain error — none of Phase
+    9's changes altered any of these.
+  - `cd tests && pnpm test` against the running Docker stack: 11/11 passed, including the new
+    `qa.test.ts`.
+  - `docker compose logs api` / `docker compose logs ai-service`, grepped for `ghp_` and
+    `sk-ant-`-shaped strings: none found in either service's logs.
+  - Playwright against the Dockerized frontend (`http://localhost:4173`): registered, created a
+    project, clicked "Q&A", and confirmed the "Codebase Q&A" page renders its "No repository
+    connected" gate with the read-only disclaimer visible — screenshot read back directly.
+  - Deleted all scratch users/projects created during this verification via the running
+    container's Postgres, then `docker compose down` (without `-v`) and restored the local-dev
+    baseline: brought the standalone `postgres` service back up, recreated `devforge_test` and
+    applied all 9 migrations to it via `scripts/setup-test-db.sh`, confirmed `devforge` itself
+    needed no further migration. Re-ran `npm run test` in `api/` against the restored local dev
+    database: 231/231 passed. Confirmed no orphaned `tsx watch`/`uvicorn`/`vite` processes and
+    that only `devforge-postgres-1` remains running in Docker.
+  - `git status --porcelain` after all of the above: clean — this part required no file
+    changes.
+- Commit: `<pending>` — "chore: verify codebase Q&A phase against a clean-volume Docker
+  rebuild".
