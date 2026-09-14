@@ -244,7 +244,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - Deleted the scratch project/user and confirmed no orphaned `tsx watch`/`vite`/`uvicorn`
     processes remained afterward; the sibling VoxMind `uvicorn` process was the only one left
     running, untouched.
-- Commit: `<pending>` — "feat(frontend): add Codebase Q&A page".
+- Commit: `148041e` — "feat(frontend): add Codebase Q&A page".
 
 ### 7. Security and prompt-injection protection
 _Not started._
