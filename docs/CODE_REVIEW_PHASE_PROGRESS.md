@@ -86,7 +86,26 @@ Commit: `c1e18ef`
 
 ## Milestone 4 — Retrieval-to-review service
 
-`<pending>`
+Added `analyzeReviewViaAiService` to `lib/aiServiceClient.ts` (reuses `postToAiService`, the same
+`PROVIDER_NOT_CONFIGURED` -> `AI_PROVIDER_UNAVAILABLE` mapping every generate/Q&A call already
+uses; independently re-validates every finding's shape and enum membership before returning),
+`schemas/codeReview.ts` (`createReviewSchema` with an optional, 1–2000-char `scope`), and
+`services/codeReview.ts`'s `createReview()`/`listReviews()`/`getReview()`. `createReview()`
+calls `retrievalService.search()` directly (retrieval-before-any-LLM-call is structurally
+guaranteed the same way it is for Q&A) with the scope (or a fixed default when omitted) as the
+query, reuses `qaSourceSelection.ts`'s `selectSources()` unchanged for dedup/capping, and — once
+evidence exists — persists a `CodeReview` row (`status: "pending"`) and its `CodeReviewSource`
+rows *before* calling the review provider, so a provider-side failure updates that same row to
+`status: "failed"` with a safe error message rather than leaving an orphaned row (the deliberate
+improvement over Phase 9's `Question`/`Answer` split documented in the plan). A genuinely empty
+evidence set skips the provider call entirely, returning a real, local "no relevant code found"
+review (`model: "none"`, zero findings) instead. Every finding's `cited_source_numbers` is
+independently re-validated against the real `1..N` range and any finding left with zero valid
+citations after filtering is dropped before persistence — defense in depth on top of
+`ai-service`'s own identical filtering, mirroring Phase 9's citation re-validation exactly.
+`tsc --noEmit` and `eslint .` both clean; full `api` Vitest suite unchanged at 231 passed.
+
+Commit: `7db8bf1`
 
 ## Milestone 5 — Code Review API
 
