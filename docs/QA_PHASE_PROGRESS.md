@@ -194,7 +194,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - `npm run test` (full `api/` suite): 204/204 passed, confirming no regression.
   - Confirmed no orphaned `tsx watch`/`uvicorn` processes after stopping the manually-started
     servers; the sibling VoxMind `uvicorn` process was the only one left running, untouched.
-- Commit: `<pending>` — "feat(api): add codebase Q&A API endpoints".
+- Commit: `cc7f68b` — "feat(api): add codebase Q&A API endpoints".
 
 ### 6. Frontend Codebase Q&A
 _Not started._
