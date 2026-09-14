@@ -39,7 +39,21 @@ Commit: `16870a6`
 
 ## Milestone 2 — Review data model
 
-`<pending>`
+Added `CodeReview` (one row per review run, `status` pending/completed/failed,
+`branch`/`commitSha` denormalized from the owning `CodebaseIndex`), `CodeReviewSource` (the
+review's shared evidence set — every source sent to the provider, not just cited ones, owned by
+the review rather than by any one finding), `CodeReviewFinding` (title/description/severity/
+category/confidence/recommendation/`actionable`, never a raw path/symbol/line), and
+`CodeReviewFindingSource` (the many-to-many join recording which sources each finding actually
+cites — the mechanism that keeps a finding from being persisted with zero real evidence). All
+cascades verified (`onDelete: Cascade` throughout, matching every table added since Phase 6).
+Migration `20260914182740_add_code_review` generated via `prisma migrate dev --create-only`,
+reviewed by hand, applied to both `devforge` and `devforge_test` via `prisma migrate deploy`
+(proactively applying to the test database immediately, per the lesson recorded in
+`docs/CODEBASE_INDEX_PHASE_PROGRESS.md` about not deferring that step). `tsc --noEmit` clean
+after `prisma generate`.
+
+Commit: `a5b7dd7`
 
 ## Milestone 3 — Review provider
 
