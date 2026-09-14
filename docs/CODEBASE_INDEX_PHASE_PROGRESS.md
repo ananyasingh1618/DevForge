@@ -509,3 +509,8 @@ issue/PR creation, GitHub Actions integration, additional LLM providers) was imp
 scaffolded with fake behavior, or claimed as working anywhere in this phase — see the root
 README's "Known limitations" and "Future work" sections, which remain the authoritative
 statement of what's left.
+
+**Phase 8 (Retrieval & Semantic Search) progress is tracked separately** in
+[docs/RETRIEVAL_PHASE_PLAN.md](RETRIEVAL_PHASE_PLAN.md) and
+[docs/RETRIEVAL_PHASE_PROGRESS.md](RETRIEVAL_PHASE_PROGRESS.md) — this file remains the
+historical record of Phase 7 only and is not updated further.
