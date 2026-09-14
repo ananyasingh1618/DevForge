@@ -57,7 +57,32 @@ Commit: `a5b7dd7`
 
 ## Milestone 3 — Review provider
 
-`<pending>`
+Added `ai-service/app/agents/review/` (`schemas.py`, `provider.py`, `router.py`), mirroring
+`app/agents/qa/` exactly: `ReviewProvider` ABC, `AnthropicReviewProvider` (Claude `claude-opus-5`
+via `client.messages.parse()`, `MAX_REVIEW_TOKENS = 4000`), a pure `format_context()` producing
+the same `Repository:`/`Branch:`/`Commit:`/`Source N:` block Q&A uses, and a 13-rule
+`SYSTEM_PROMPT` covering every instruction the task's own Milestone 3 lists (evidence-only
+review, "potential issue" language under uncertainty, no style/unfamiliar-pattern nitpicks,
+confirmed-vs-potential distinction, numeric-only citation, no invented paths/symbols/lines,
+untrusted-data treatment of both repository content and the review scope itself, no secret/
+system-prompt exposure, no tool/execution capability, no modify/commit/PR/issue/Actions
+capability, empty findings when nothing is supported, no duplicate findings). Findings use
+Pydantic enums for severity/category/confidence (`ReviewFindingSeverity`,
+`ReviewFindingCategory`, `ReviewFindingConfidence`) — an invalid value is a structured-output
+parse failure (`AIResponseInvalidError`), not a free string that could reach the database.
+Citation-safety mechanism: `cited_source_numbers` is the only way a finding references evidence;
+`AnthropicReviewProvider.review()` filters each finding's citations to the real `1..N` range and
+then drops any finding left with zero valid citations — an uncited finding is discarded, not
+persisted with an empty evidence list. `main.py` registers `review_router`. Manually verified via
+a real, unconfigured `uvicorn` run: `POST /review/analyze` returns a real `503
+PROVIDER_NOT_CONFIGURED` naming "AI code review" and `ANTHROPIC_API_KEY`, `/health` unaffected.
+28 new tests added (`tests/test_review.py`, mirroring `tests/test_qa.py`'s structure): validation,
+provider configuration/failure, deterministic context formatting (including the malicious-content-
+is-inert-literal-text test), system-prompt content assertions, and citation-filtering tests
+covering both "some invalid numbers dropped from one finding" and "a finding left with zero valid
+citations is dropped entirely." Full `ai-service` suite: 114 passed (86 pre-existing + 28 new).
+
+Commit: `c1e18ef`
 
 ## Milestone 4 — Retrieval-to-review service
 
