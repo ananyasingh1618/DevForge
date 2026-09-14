@@ -160,7 +160,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - Manual live verification (combined with Milestone 5's endpoints, since the service has no
     caller without them yet) — see Milestone 5's log entry below for the full sequence and
     results.
-- Commit: `<pending>` — "feat(api): add codebase Q&A retrieval-to-answer service".
+- Commit: `79d73fd` — "feat(api): add codebase Q&A retrieval-to-answer service".
 
 ### 5. Q&A API
 _Not started._
