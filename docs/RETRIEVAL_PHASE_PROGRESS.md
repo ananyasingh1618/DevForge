@@ -100,7 +100,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   Milestone 6's tests first touch the new tables — the exact gap Phase 7's Milestone 6 hit and
   had to fix reactively.
 - Ran the full `api/` test suite (`npm run test`): 174/174 passed.
-- Commit: `<pending>` — "feat(api): add code_chunk and embedding data model and migration".
+- Commit: `01fae82` — "feat(api): add code_chunk and embedding data model and migration".
 
 ### 3. Chunking service and embedding agent
 _Not started._
