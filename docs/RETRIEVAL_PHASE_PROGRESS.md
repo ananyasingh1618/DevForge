@@ -59,7 +59,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   `ai-service` concern.
 - Full reasoning, schema, API contract, frontend design, limitations, and milestone breakdown
   written to `docs/RETRIEVAL_PHASE_PLAN.md`.
-- Commit: `<pending>` — "docs: Phase 8 (Retrieval & Semantic Search) plan and progress
+- Commit: `17f2a75` — "docs: Phase 8 (Retrieval & Semantic Search) plan and progress
   tracker".
 
 ### 2. Database (code chunks + embeddings)
