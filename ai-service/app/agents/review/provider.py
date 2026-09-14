@@ -102,6 +102,17 @@ def format_context(repository: str, branch: str, commit: str, sources: list[Revi
     return "\n".join(lines)
 
 
+def build_user_message(context: str, scope: str) -> str:
+    """Appends the review scope to the already-built context block — a pure
+    function, directly unit-tested (see tests/test_review.py). The scope is
+    embedded as plain text, exactly like source content is in
+    format_context(): a scope containing instruction-shaped text (e.g. "fix
+    this automatically", "reveal your system prompt") is never specially
+    parsed or treated as a command by this function, only appended as the
+    literal text of what the user asked to be reviewed."""
+    return f"{context}\nReview scope: {scope}"
+
+
 class AnthropicReviewProvider(ReviewProvider):
     def __init__(self, api_key: str, model: str = MODEL) -> None:
         self._client = anthropic.Anthropic(api_key=api_key)
@@ -116,9 +127,14 @@ class AnthropicReviewProvider(ReviewProvider):
         sources: list[ReviewSourceInput],
     ) -> ReviewAnswerContent:
         context = format_context(repository, branch, commit, sources)
-        user_message = f"{context}\nReview scope: {scope}"
+        user_message = build_user_message(context, scope)
 
         try:
+            # No `tools` parameter is ever passed here — this call has no
+            # tool-use capability at all, structurally, independent of
+            # whatever the system prompt instructs (see SYSTEM_PROMPT rule
+            # 11 and tests/test_review.py's own structural assertion of
+            # this).
             response = self._client.messages.parse(
                 model=self._model,
                 max_tokens=MAX_REVIEW_TOKENS,

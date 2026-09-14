@@ -7,6 +7,7 @@ import {
   type ReviewSourceForProvider,
 } from "../lib/aiServiceClient.js";
 import { MAX_SOURCES, selectSources } from "../lib/qaSourceSelection.js";
+import { filterValidFindings } from "../lib/reviewFindingFiltering.js";
 import type { Prisma } from "@prisma/client";
 
 const DEFAULT_SCOPE =
@@ -216,18 +217,7 @@ export async function createReview(
     throw err;
   }
 
-  // Independently re-validate cited source numbers against the real range
-  // Node itself provided, and drop any finding left with zero valid
-  // citations — defense in depth on top of the same filtering ai-service's
-  // own provider already does; never trust either layer alone.
-  const validFindings = aiReview.findings
-    .map((finding) => ({
-      ...finding,
-      citedSourceNumbers: finding.citedSourceNumbers.filter(
-        (n) => Number.isInteger(n) && n >= 1 && n <= selected.length,
-      ),
-    }))
-    .filter((finding) => finding.citedSourceNumbers.length > 0);
+  const validFindings = filterValidFindings(aiReview.findings, selected.length);
 
   await prisma.$transaction(
     validFindings.map((finding) =>
