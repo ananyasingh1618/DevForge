@@ -350,7 +350,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   - Confirmed no orphaned `tsx watch`/`uvicorn` processes remained after stopping the
     manually-started servers; the sibling VoxMind `uvicorn` process was the only one left
     running, untouched.
-- Commit: `<pending>` — "test(api,ai-service,frontend,tests): add retrieval test coverage".
+- Commit: `01c44cf` — "test(api,ai-service,frontend,tests): add retrieval test coverage".
 
 ### 7. Docker verification
 _Not started._
