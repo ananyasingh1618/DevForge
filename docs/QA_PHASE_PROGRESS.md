@@ -459,7 +459,7 @@ their own log entries below once complete.**
     trailing-whitespace formatting nit found during this read-back.
   - No code changed this part, so no test/typecheck/lint re-run was needed; the full suite was
     already green as of Part B's final Docker-and-local-restoration check.
-- Commit: `<pending>` — "docs: update README for Phase 9 (Codebase Q&A)".
+- Commit: `af68137` — "docs: update README for Phase 9 (Codebase Q&A)".
 
 ## Phase 9 (Codebase Q&A): complete
 
