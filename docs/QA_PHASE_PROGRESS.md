@@ -9,7 +9,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 ## Milestones
 
 - [x] 1. Inspect and plan
-- [ ] 2. Database (Question, Answer, AnswerSource)
+- [x] 2. Database (Question, Answer, AnswerSource)
 - [ ] 3. Q&A provider (ai-service)
 - [ ] 4. Retrieval-to-answer service
 - [ ] 5. Q&A API
@@ -54,7 +54,38 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - Commit: `2b44c85` — "docs: Phase 9 (Codebase Q&A) plan and progress tracker".
 
 ### 2. Database (Question, Answer, AnswerSource)
-_Not started._
+- Added `Question` (project/codebaseIndex relations, question text, denormalized branch/
+  commitSha, timestamp), `Answer` (1:1 with Question via `@unique` FK, answer text,
+  `insufficientEvidence`, `model`), and `AnswerSource` (answer/chunk relations, `sourceOrder`,
+  `cited`, retrieval-time `score`) models exactly as designed in `docs/QA_PHASE_PLAN.md`, plus
+  `Project.questions` and `CodebaseIndex.questions` back-relations and `CodeChunk.answerSources`.
+- `npx prisma format` + `npx prisma validate` passed on the first try (added both sides of
+  every new relation up front, learning fully applied from Phase 7's Milestone 2 miss and
+  Phase 8's own note about it).
+- `npx prisma migrate dev --name add_qa_questions_answers` generated and applied
+  `prisma/migrations/20260914173809_add_qa_questions_answers/migration.sql`. Read the SQL back
+  and confirmed: `answers_question_id_key` is a real unique index (one answer per question),
+  `answer_sources_answer_id_chunk_id_key` is a real unique index (no duplicate evidence rows
+  per answer), and every FK — including `answer_sources.chunk_id` → `code_chunks` — is `ON
+  DELETE CASCADE`.
+- `npx prisma generate` regenerated the client cleanly; `npm run typecheck` and `npm run lint`
+  both passed with no errors.
+- Wrote and ran a throwaway verification script (not committed) against the real database:
+  created a user/project/connection/index/file/chunk/question/answer/source, confirmed the
+  one-answer-per-question uniqueness is enforced, confirmed the one-source-per-(answer,chunk)
+  uniqueness is enforced, confirmed the full Question → Answer → AnswerSource → CodeChunk chain
+  resolves correctly including the `cited` flag, confirmed deleting the underlying `CodeChunk`
+  cascades away only its `AnswerSource` row while the parent `Answer`'s own text/model survive
+  intact (the documented "old evidence detail doesn't survive a reindex, the answer text
+  does" behavior), and confirmed deleting the `Project` cascades away the whole chain — all
+  assertions passed.
+- Proactively applied the migration to `devforge_test` in this same milestone.
+- Ran the full `api/` test suite (`npm run test`): 204/204 passed. (Two `tasks.test.ts` tests
+  failed once under full-suite parallel load and passed cleanly in isolation and on a second
+  full-suite run — the same pre-existing parallel-worker flakiness documented in Phase 6/7's
+  own progress docs, unrelated to this milestone's schema-only change.)
+- Commit: `<pending>` — "feat(api): add question, answer, and answer_source data model and
+  migration".
 
 ### 3. Q&A provider (ai-service)
 _Not started._

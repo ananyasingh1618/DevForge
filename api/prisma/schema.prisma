@@ -16,8 +16,13 @@
 // ranked with cosine similarity computed in the Node API over plain
 // PostgreSQL Float[] columns (not pgvector; see docs/RETRIEVAL_PHASE_PLAN.md
 // for why).
-// Future entities (conversations, reviews, review_findings, feedback) are
-// intentionally not modeled yet — see docs/RETRIEVAL_PHASE_PLAN.md,
+// Phase 9 (Codebase Q&A) adds: questions, answers, answer_sources — a
+// grounded Q&A layer over Phase 8 retrieval. answer_sources references
+// code_chunks directly rather than duplicating path/line/content data; see
+// docs/QA_PHASE_PLAN.md for the citation-safety design (the model never
+// outputs a file path or line number itself).
+// Future entities (reviews, review_findings, feedback) are intentionally not
+// modeled yet — see docs/QA_PHASE_PLAN.md, docs/RETRIEVAL_PHASE_PLAN.md,
 // docs/CODEBASE_INDEX_PHASE_PLAN.md, docs/GITHUB_INTEGRATION_PHASE_PLAN.md,
 // docs/EPICS_TASKS_PHASE_PLAN.md, docs/ARCHITECTURE_PHASE_PLAN.md,
 // docs/PRD_PHASE_PLAN.md, docs/REQUIREMENTS_PHASE_PLAN.md and
@@ -87,6 +92,7 @@ model Project {
   repositoryConnection RepositoryConnection?
   codebaseIndex        CodebaseIndex?
   codeChunks           CodeChunk[]
+  questions            Question[]
 
   @@index([ownerId])
   @@map("projects")
@@ -296,6 +302,7 @@ model CodebaseIndex {
   repositoryConnection RepositoryConnection @relation(fields: [repositoryConnectionId], references: [id])
   files                IndexedFile[]
   codeChunks           CodeChunk[]
+  questions            Question[]
 
   @@index([repositoryConnectionId])
   @@map("codebase_indexes")
@@ -386,11 +393,12 @@ model CodeChunk {
   endLine         Int      @map("end_line")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  codebaseIndex CodebaseIndex @relation(fields: [codebaseIndexId], references: [id], onDelete: Cascade)
-  file          IndexedFile   @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  symbol        Symbol?       @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  codebaseIndex CodebaseIndex  @relation(fields: [codebaseIndexId], references: [id], onDelete: Cascade)
+  file          IndexedFile    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  symbol        Symbol?        @relation(fields: [symbolId], references: [id], onDelete: Cascade)
   embeddings    Embedding[]
+  answerSources AnswerSource[]
 
   @@unique([codebaseIndexId, commitSha, contentHash])
   @@index([projectId])
@@ -416,4 +424,75 @@ model Embedding {
   @@unique([chunkId, model])
   @@index([chunkId])
   @@map("embeddings")
+}
+
+// One row per question asked against a project's indexed codebase (see
+// docs/QA_PHASE_PLAN.md). Not a conversation/chat thread — each question is
+// answered independently, grounded fresh against whatever the current
+// index's (branch, commitSha) is at ask time; `branch`/`commitSha` are
+// denormalized here (matching CodeChunk's own precedent) so a past
+// question's indexed state remains visible even after a later reindex.
+model Question {
+  id              String   @id @default(uuid())
+  projectId       String   @map("project_id")
+  codebaseIndexId String   @map("codebase_index_id")
+  question        String
+  branch          String
+  commitSha       String   @map("commit_sha")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  codebaseIndex CodebaseIndex @relation(fields: [codebaseIndexId], references: [id], onDelete: Cascade)
+  answer        Answer?
+
+  @@index([projectId])
+  @@map("questions")
+}
+
+// Exactly one answer per question. `insufficientEvidence` is set (with
+// `model: "none"`) when retrieval returned nothing usable — the Q&A service
+// never calls Claude in that case, so there is no provider model identity
+// to record. Never stores a file path, symbol name, or line number directly
+// — those live only on the real CodeChunk rows referenced through
+// AnswerSource; see docs/QA_PHASE_PLAN.md for why that split is the
+// citation-safety mechanism, not an incidental normalization choice.
+model Answer {
+  id                   String   @id @default(uuid())
+  questionId           String   @unique @map("question_id")
+  answer               String
+  insufficientEvidence Boolean  @default(false) @map("insufficient_evidence")
+  model                String
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  question Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sources  AnswerSource[]
+
+  @@map("answers")
+}
+
+// One row per source chunk actually sent to the model as evidence for one
+// answer — not just the ones the model ended up citing (`cited` records
+// that separately). `score` is the retrieval-time cosine similarity,
+// preserved even though CodeChunk itself carries no score (scores are
+// query-specific, not a property of the chunk). References CodeChunk
+// directly rather than duplicating its path/lines/content — a reindex's
+// cascade deletion of superseded CodeChunk rows correctly removes the
+// detailed evidence here too, while the parent Answer's own text and
+// `insufficientEvidence` flag remain (documented as a known limitation:
+// old Q&A history's evidence detail doesn't survive a reindex, only its
+// answer text does).
+model AnswerSource {
+  id          String  @id @default(uuid())
+  answerId    String  @map("answer_id")
+  chunkId     String  @map("chunk_id")
+  sourceOrder Int     @map("source_order")
+  cited       Boolean @default(false)
+  score       Float
+
+  answer Answer    @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  chunk  CodeChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@unique([answerId, chunkId])
+  @@index([answerId])
+  @@map("answer_sources")
 }
