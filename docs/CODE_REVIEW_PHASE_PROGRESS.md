@@ -215,4 +215,40 @@ Commit: `085626f`
 
 ## Milestone 8 — Tests, Docker, documentation
 
-`<pending>`
+### Part A — comprehensive API/frontend/integration tests
+
+Added `api/src/routes/codeReview.test.ts` (19 Supertest cases, mirroring `qa.test.ts`'s
+structure and mocked-`fetch` technique exactly): auth/ownership across all three endpoints,
+scope validation (blank, too-long, wrong type), prerequisites blocking the provider call (no
+completed index, GitHub integration unconfigured — asserted via a `fetchSpy` that is never
+called), retrieval-before-provider ordering (a real-shaped GitHub 401 during chunk-building
+propagates without ever reaching `/review/analyze`), a successful review with trusted per-
+finding source metadata resolved from Node's own records, a fixed default scope when one is
+omitted, a fabricated-citation finding (citing only out-of-range source numbers) being dropped
+entirely rather than persisted, empty retrieval producing a completed zero-finding review
+without any provider call, provider configuration/failure (missing `ANTHROPIC_API_KEY`, missing
+`VOYAGE_API_KEY`, a generic provider failure — explicitly verified to leave the `CodeReview` row
+`status: "failed"` rather than orphaned, matching Milestone 4's documented improvement over
+Phase 9, a malformed response, an invalid severity value), no secret leakage, and cross-project
+review-history isolation.
+
+Added `frontend/src/pages/CodeReview.test.tsx` (14 RTL cases, mirroring `CodebaseQa.test.tsx`):
+blocked states (no repository, no index, index not yet completed — each confirmed to never call
+the review endpoints), the empty state with all three example scopes and the read-only
+disclaimer, a loading state whose own label text is confirmed not to contain "modif" (the page's
+separate disclaimer legitimately does), results rendering (summary, per-finding severity/
+category/confidence, recommendation, trusted sources, severity filtering demonstrated by hiding
+a non-matching finding), a zero-finding "no relevant code found" result rendered honestly,
+running another review and prepending it to history, error states (both a run failure and a
+history-load failure, shown distinctly), and no secret leakage.
+
+Added `tests/codeReview.test.ts` (1 real-HTTP case, mirroring `tests/qa.test.ts`): the honest
+`NO_COMPLETED_INDEX` path against a genuinely running API process and a real Postgres database —
+needs no GitHub/Anthropic/Voyage credentials, since the pipeline never reaches any of them
+without a completed index.
+
+Full suites: `api` 258 passed (231 + 8 from Milestone 7 + 19 new), `frontend` 101 passed (87 +
+14 new); `tsc`/`eslint` clean in both. `tests/codeReview.test.ts` typechecks cleanly and is run
+against a live stack during Part B's Docker verification below.
+
+Commit: `48d54bf`
