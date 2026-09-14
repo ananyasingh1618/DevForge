@@ -173,7 +173,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     across two calls).
   - `npm run typecheck` / `npm run lint` (api): clean, both before and after the off-by-one
     fix.
-- Commit: `<pending>` — "feat(api,ai-service): add code chunking and Voyage AI embedding
+- Commit: `32660c6` — "feat(api,ai-service): add code chunking and Voyage AI embedding
   generation".
 
 ### 4. Retrieval service and API
