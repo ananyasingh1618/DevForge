@@ -396,7 +396,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
     that only `devforge-postgres-1` remains running in Docker.
   - `git status --porcelain` after all of the above: clean — this milestone required no file
     changes.
-- Commit: `<pending>` — "chore: verify retrieval phase against a clean-volume Docker rebuild".
+- Commit: `326732a` — "chore: verify retrieval phase against a clean-volume Docker rebuild".
 
 ### 8. Documentation
 _Not started._
