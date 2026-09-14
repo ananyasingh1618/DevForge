@@ -11,7 +11,7 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
 - [x] 1. Inspect and plan
 - [x] 2. Database (Question, Answer, AnswerSource)
 - [x] 3. Q&A provider (ai-service)
-- [ ] 4. Retrieval-to-answer service
+- [x] 4. Retrieval-to-answer service
 - [ ] 5. Q&A API
 - [ ] 6. Frontend Codebase Q&A
 - [ ] 7. Security and prompt-injection protection
@@ -123,7 +123,44 @@ Status legend: [ ] not started · [~] in progress · [x] done and verified
   output)".
 
 ### 4. Retrieval-to-answer service
-_Not started._
+- **`api/src/lib/qaSourceSelection.ts`** (new): pure, network/DB-free `selectSources(results)` —
+  deduplicates overlapping evidence (same file, intersecting line ranges — e.g. two overlapping
+  split-pieces of an oversized symbol, or a class chunk and its already-separately-ranked
+  nested method chunk), keeping the higher-scored chunk from each overlapping group; caps at
+  `MAX_SOURCES = 8` and a combined `MAX_CONTEXT_CHARS = 16,000` budget, always keeping at least
+  one source if any exist even if it alone exceeds budget (mirrors `chunkFile`'s own "always
+  emit at least one line whole" precedent).
+- **`api/src/lib/aiServiceClient.ts`**: added `answerQuestionViaAiService(question, repository,
+  branch, commit, sources)` — reuses the existing `postToAiService` helper as-is (this is a
+  genuine `ANTHROPIC_API_KEY`-gated LLM call, exactly like the five generate functions above
+  it, so the same `PROVIDER_NOT_CONFIGURED` → `AI_PROVIDER_UNAVAILABLE` mapping applies
+  unchanged — no new "not configured" code invented). Validates the response shape (answer is
+  a non-empty string, `cited_source_numbers` is a number array, `insufficient_evidence` is a
+  boolean) before returning, throwing `AI_RESPONSE_INVALID` otherwise — "Validate the provider
+  response" from the task's own Milestone 4 list.
+- **`api/src/schemas/qa.ts`** (new): `askQuestionSchema` (`question` 1–2000 chars, matching
+  `schemas/retrieval.ts`'s own query cap), `projectIdParamSchema`, `questionParamSchema`.
+- **`api/src/services/qa.ts`** (new): `askQuestion(ownerId, projectId, question)` —
+  `requireOwnedProject`, then `retrievalService.search()` (Phase 8, unchanged — this is what
+  makes "retrieval before any LLM call" a structural guarantee, not just an ordering
+  convention: there is no code path here that reaches `answerQuestionViaAiService` without
+  `search()` having already succeeded), then `selectSources()`, then either a real local
+  "insufficient evidence" answer with **no Claude call at all** (zero selected sources) or a
+  real `answerQuestionViaAiService` call followed by independently re-validating
+  `citedSourceNumbers` against the real `1..N` range Node itself gave the model (defense in
+  depth on top of `ai-service`'s own identical filtering — never trust either layer alone).
+  Persists `Question` + `Answer` + `AnswerSource` rows, returning `{ questionId, question,
+  answer, insufficientEvidence, sources, branch, commit, createdAt }`. `listQuestions` and
+  `getQuestion` share a `serializeQuestion()` helper and the same ownership/ `(id, projectId)`
+  scoping pattern every other project-scoped resource in this codebase already uses — enforcing
+  question-history authorization and cross-project isolation the same established way, not a
+  new mechanism.
+- Commands run and results:
+  - `npm run typecheck` / `npm run lint`: clean on the first pass.
+  - Manual live verification (combined with Milestone 5's endpoints, since the service has no
+    caller without them yet) — see Milestone 5's log entry below for the full sequence and
+    results.
+- Commit: `<pending>` — "feat(api): add codebase Q&A retrieval-to-answer service".
 
 ### 5. Q&A API
 _Not started._

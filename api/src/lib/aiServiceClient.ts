@@ -615,3 +615,80 @@ export async function generateEmbeddingsViaAiService(
 
   return { model: body.model, dimensions: body.dimensions, embeddings: body.embeddings };
 }
+
+export type QaSourceForProvider = {
+  sourceNumber: number;
+  path: string;
+  symbolName: string | null;
+  startLine: number;
+  endLine: number;
+  content: string;
+};
+
+export type QaAnswer = {
+  answer: string;
+  citedSourceNumbers: number[];
+  insufficientEvidence: boolean;
+};
+
+/**
+ * Calls ai-service's codebase-Q&A endpoint and returns validated, camelCase
+ * answer content — or throws an AppError. Reuses postToAiService: this is a
+ * genuine Anthropic/ANTHROPIC_API_KEY-gated LLM call, exactly like the five
+ * generate calls above, so the same PROVIDER_NOT_CONFIGURED ->
+ * AI_PROVIDER_UNAVAILABLE mapping applies unchanged — no new "not
+ * configured" code is invented where an existing one already means the
+ * same thing.
+ */
+export async function answerQuestionViaAiService(
+  question: string,
+  repository: string,
+  branch: string,
+  commit: string,
+  sources: QaSourceForProvider[],
+): Promise<QaAnswer> {
+  const body = await postToAiService("/qa/answer", {
+    question,
+    repository,
+    branch,
+    commit,
+    sources: sources.map((s) => ({
+      source_number: s.sourceNumber,
+      path: s.path,
+      symbol_name: s.symbolName,
+      start_line: s.startLine,
+      end_line: s.endLine,
+      content: s.content,
+    })),
+  });
+
+  if (!body?.content) {
+    throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
+  }
+
+  const content = body.content as {
+    answer?: unknown;
+    cited_source_numbers?: unknown;
+    insufficient_evidence?: unknown;
+  };
+
+  if (
+    typeof content.answer !== "string" ||
+    content.answer.length === 0 ||
+    !Array.isArray(content.cited_source_numbers) ||
+    !content.cited_source_numbers.every((n) => typeof n === "number") ||
+    typeof content.insufficient_evidence !== "boolean"
+  ) {
+    throw new AppError(
+      502,
+      "AI_RESPONSE_INVALID",
+      "The AI service's response did not match the expected Q&A answer structure.",
+    );
+  }
+
+  return {
+    answer: content.answer,
+    citedSourceNumbers: content.cited_source_numbers,
+    insufficientEvidence: content.insufficient_evidence,
+  };
+}
