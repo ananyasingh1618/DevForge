@@ -10,9 +10,11 @@ embedding generation via Voyage AI (see app/agents/embeddings/) — also not
 an LLM call, gated by its own optional VOYAGE_API_KEY rather than
 ANTHROPIC_API_KEY. Phase 9 adds codebase Q&A (see app/agents/qa/) — an
 Anthropic structured-output call grounded in Phase 8 retrieval results,
-gated by the same ANTHROPIC_API_KEY as every other LLM agent. Code review
-remains unimplemented; nothing in this service fabricates a response for
-it.
+gated by the same ANTHROPIC_API_KEY as every other LLM agent. Phase 10 adds
+AI code review (see app/agents/review/) — the same structured-output-over-
+retrieved-evidence shape as Q&A, gated by the same ANTHROPIC_API_KEY, but
+returning a list of findings (each citing one or more numbered sources)
+instead of a single answer.
 """
 
 from fastapi import FastAPI
@@ -23,6 +25,7 @@ from app.agents.epics.router import router as epics_router
 from app.agents.prd.router import router as prd_router
 from app.agents.qa.router import router as qa_router
 from app.agents.requirements.router import router as requirements_router
+from app.agents.review.router import router as review_router
 from app.agents.tasks.router import router as tasks_router
 from app.errors import register_error_handlers
 from app.parsing.router import router as parsing_router
@@ -38,6 +41,7 @@ app.include_router(tasks_router)
 app.include_router(parsing_router)
 app.include_router(embeddings_router)
 app.include_router(qa_router)
+app.include_router(review_router)
 
 
 @app.get("/health")
