@@ -380,3 +380,44 @@ parallel-worker Set-Cookie flakiness noted in every earlier phase of this sessio
 isolation, then the full suite re-ran clean too. Build/typecheck clean.
 
 Commit: `3780fb0`
+
+## Milestone 14.6 — Preserve and strengthen Q&A grounding
+
+Audited Phase 13's expanded Q&A dataset (20 cases) plus Phase 12's own `qaAnswerGrounding.test.ts`
+against the task's own Milestone 14.6 checklist: multiple valid sources (`qa-order-processing-
+flow`), supporting context, missing/zero-valid-citation answers, invalid citation numbers,
+overconfident/unanswerable questions — all already covered. The one genuinely new gap: no case
+specifically tested **conflicting evidence** (two retrieved sources that answer differently for
+two different things asked about in one question). Added
+`qa-conflicting-evidence-user-lookup`: "Are both findUserByEmail and findUserById safe from SQL
+injection?" — retrieves both the vulnerable and the safe function together (verified live, not
+assumed), with `forbiddenClaims` explicitly rejecting a collapsed, inaccurate answer ("both are
+safe", "both are vulnerable") as well as either function's claim swapped onto the other. Zero
+production code changed — this is dataset coverage only. The zero-tolerance invariants (invalid
+citations reaching the user, fabricated source metadata, unsupported claims, findings without
+evidence) remain enforced exactly as before; `evaluation/reports/latest.json`'s
+`invalidCitationRate`/`unsupportedClaimRate` stay at 0% with the new case included.
+
+Dataset: 21 Q&A cases (20 + 1). Full evaluation suite: 121/121 unchanged (the new case was
+verified live, not yet re-counted into the committed unit-test totals since it's dataset content,
+not a new unit test file).
+
+Commit: `<pending>` (combined with Milestone 14.7 below)
+
+## Milestone 14.7 — Preserve and strengthen code-review grounding
+
+Same audit approach against Phase 10's existing review pipeline plus Phase 12 Milestone 5's own
+hardening and Phase 13's 9 new review cases: real bugs, safe-but-suspicious code, missing
+validation, security-sensitive patterns, empty-review cases, and insufficient-evidence scopes were
+all already covered. The one genuinely new gap: no case tested a finding whose evidence
+legitimately spans **multiple sources at once** (as opposed to a finding that merely cites several
+chunks while still being fully supported by any one of them). Added `review-jwt-no-expiration`: a
+real, verified defect (`generate_jwt` never sets an `"exp"` claim; `verify_jwt` never requires
+one) where neither chunk alone shows the problem — only both together do. Zero production code
+changed.
+
+Dataset: 21 review cases (20 + 1). All 13 regression gates still pass with both new cases
+included; `citationValidityRate` stays at 100% and `emptyReviewCorrectness` stays at 100%. Full
+dataset now: 67 retrieval / 21 Q&A / 21 review (109 total). Benchmark audit clean.
+
+Commit: `<pending>`

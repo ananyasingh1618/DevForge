@@ -338,6 +338,32 @@ export const QA_CASES: QaCase[] = [
     },
   },
   {
+    // Phase 14, Milestone 14.6: a "conflicting evidence" case — the two
+    // retrieved sources give genuinely different answers for the two
+    // different functions asked about (one vulnerable, one safe). A
+    // correct answer must accurately distinguish between them, not
+    // collapse them into one claim (falsely safe or falsely vulnerable).
+    id: "qa-conflicting-evidence-user-lookup",
+    question: "Are both findUserByEmail and findUserById safe from SQL injection?",
+    expectedAnswerPoints: ["findUserByEmail", "concatenat", "findUserById", "parameterized"],
+    requiredEvidenceChunkIds: ["db-find-user-by-email", "db-find-user-by-id"],
+    forbiddenClaims: [
+      "both functions are safe",
+      "both functions are vulnerable",
+      "findUserById is vulnerable to SQL injection",
+      "findUserByEmail is safe",
+    ],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "No, not both — findUserByEmail concatenates the caller-supplied email into the SQL " +
+        "string and is vulnerable to SQL injection, while findUserById uses a parameterized " +
+        "query and is safe.",
+      citedChunkIds: ["db-find-user-by-email", "db-find-user-by-id"],
+      insufficientEvidence: false,
+    },
+  },
+  {
     id: "qa-insufficient-evidence-oauth",
     question: "Does DevForge support logging in via a third-party OAuth provider like Google or GitHub?",
     expectedAnswerPoints: [],

@@ -542,6 +542,41 @@ export const REVIEW_CASES: ReviewCase[] = [
     mockFindings: [],
   },
   {
+    // Phase 14, Milestone 14.7: a finding that genuinely requires evidence
+    // from two sources at once — neither chunk alone shows the defect;
+    // generate_jwt shows no "exp" claim is ever set, and verify_jwt shows
+    // nothing requires one, so together they show tokens never expire.
+    id: "review-jwt-no-expiration",
+    scope: "Review the JWT token lifecycle for session-expiration issues.",
+    relevantChunkIds: ["py-generate-jwt", "py-verify-jwt"],
+    expectedFindings: [
+      {
+        id: "review-jwt-no-expiration/tokens-never-expire",
+        description: "Tokens are issued without an expiration claim and verified without requiring one, so a token never expires.",
+        category: "security",
+        severityRange: ["medium", "high"],
+        expectedSourceChunkId: "py-generate-jwt",
+        keywords: ["expir", "exp claim", "never expire", "session"],
+      },
+    ],
+    knownNonFindings: [],
+    notes: "Exercises a finding whose evidence genuinely spans two sources, not just a multi-chunk citation on an otherwise single-source finding.",
+    mockFindings: [
+      {
+        title: "JWTs are issued and accepted with no expiration",
+        description:
+          "generate_jwt encodes a payload with no \"exp\" claim, and verify_jwt decodes and trusts " +
+          "any token with a valid signature regardless of age — together, a token issued once " +
+          "remains valid forever, with no session expiration.",
+        severity: "medium",
+        category: "security",
+        confidence: "medium",
+        recommendation: "Include an \"exp\" claim when issuing a token and reject an expired one when verifying.",
+        citedChunkIds: ["py-generate-jwt", "py-verify-jwt"],
+      },
+    ],
+  },
+  {
     id: "review-insufficient-evidence-oauth",
     scope: "Review DevForge's third-party OAuth login integration for security issues.",
     relevantChunkIds: [],
