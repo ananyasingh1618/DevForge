@@ -256,4 +256,4 @@ Full suite after this milestone: 419/419 (406 + 13 new: 11 in the new `app.secur
 2 CORS, 2 helmet, 3 rate-limiting, 4 audit-logging — plus 2 in the new `pagination.test.ts`), `tsc
 --noEmit` and `eslint .` both clean.
 
-Commit: `<pending>`
+Commit: `5800a81`
