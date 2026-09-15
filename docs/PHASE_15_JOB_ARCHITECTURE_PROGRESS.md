@@ -319,4 +319,4 @@ clean-volume Docker rebuild with live migrations, and a live, real-HTTP job exer
 real production bugs found and fixed, not just tests passing) all corroborate the job system
 actually works end to end in a real deployment, not merely inside its own test suite.
 
-Commit: `<pending>`
+Commit: `3946bdd`
