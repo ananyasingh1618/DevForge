@@ -379,4 +379,4 @@ pre-existing flaky failure in `tasks.test.ts` under full-suite parallel load (th
 parallel-worker Set-Cookie flakiness noted in every earlier phase of this session) re-ran clean in
 isolation, then the full suite re-ran clean too. Build/typecheck clean.
 
-Commit: `<pending>`
+Commit: `3780fb0`
