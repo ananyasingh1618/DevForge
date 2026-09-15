@@ -11,10 +11,11 @@
     "dev:api": "pnpm --filter @devforge/api dev",
     "dev:frontend": "pnpm --filter @devforge/frontend dev",
     "build": "pnpm --filter @devforge/api build && pnpm --filter @devforge/frontend build",
-    "test": "pnpm --filter @devforge/api test && pnpm --filter @devforge/frontend test",
+    "test": "pnpm --filter @devforge/api test && pnpm --filter @devforge/frontend test && pnpm --filter @devforge/evaluation test",
     "test:integration": "pnpm --filter @devforge/integration-tests test",
+    "eval": "pnpm --filter @devforge/evaluation eval",
     "lint": "pnpm --filter @devforge/api lint && pnpm --filter @devforge/frontend lint",
-    "typecheck": "pnpm --filter @devforge/api typecheck && pnpm --filter @devforge/frontend typecheck && pnpm --filter @devforge/integration-tests typecheck"
+    "typecheck": "pnpm --filter @devforge/api typecheck && pnpm --filter @devforge/frontend typecheck && pnpm --filter @devforge/integration-tests typecheck && pnpm --filter @devforge/evaluation typecheck"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["esbuild", "prisma", "bcrypt", "@prisma/engines"]
