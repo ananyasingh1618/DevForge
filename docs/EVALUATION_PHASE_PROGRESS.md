@@ -146,4 +146,18 @@ Commit: `f3b5f3e`
 
 ## Milestone 8 — Tests, Docker verification, documentation
 
-`<pending>`
+### Part A — dataset, evaluator, and integration tests
+
+Added `dataset.test.ts` (18 cases), `retrievalEvaluator.test.ts` (9), `qaEvaluator.test.ts` (9),
+`reviewEvaluator.test.ts` (12), and `integration.test.ts` (5) — 52 tests total in `evaluation/`,
+directly matching the task's own Milestone 8 checklist for each evaluator. Refactored
+`retrievalEvaluator.ts`'s `evaluateCase`/`evaluateRetrieval` to accept an injectable chunk set
+(mirroring `rankChunks`'s own existing parameter) so unit tests use small, hand-built fixtures
+instead of the full 16-chunk dataset. The new tests found and fixed a real dataset-authoring bug
+— `qa-ownership-check`'s mock answer didn't literally contain its own `"does not check"` expected
+point (a wording mismatch, not an evaluator bug) — raising the golden-dataset pass count from
+21/24 to 22/24, still with the one documented, explained retrieval-proxy miss remaining. Full
+monorepo suite after this milestone: `api` 258, `frontend` 101, `evaluation` 52 — all green;
+`pnpm typecheck` and `pnpm lint` both clean across every package.
+
+Commit: `2703e07`
