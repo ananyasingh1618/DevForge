@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireProjectOwnership } from "../middleware/requireProjectOwnership.js";
 import { activate, compare, generate, getById, list, update } from "../controllers/epics.js";
 
 export const epicsRouter = Router();
 
-epicsRouter.use("/projects/:projectId/epics", requireAuth);
+epicsRouter.use("/projects/:projectId/epics", requireAuth, requireProjectOwnership);
 
 epicsRouter.post("/projects/:projectId/epics/generate", generate);
 epicsRouter.get("/projects/:projectId/epics", list);

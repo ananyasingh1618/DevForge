@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireProjectOwnership } from "../middleware/requireProjectOwnership.js";
 import { activate, analyze, compare, getById, list, update } from "../controllers/requirements.js";
 
 export const requirementsRouter = Router();
 
-requirementsRouter.use("/projects/:projectId/requirements", requireAuth);
+requirementsRouter.use("/projects/:projectId/requirements", requireAuth, requireProjectOwnership);
 
 requirementsRouter.post("/projects/:projectId/requirements/analyze", analyze);
 requirementsRouter.get("/projects/:projectId/requirements", list);

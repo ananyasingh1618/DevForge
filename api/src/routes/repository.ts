@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireProjectOwnership } from "../middleware/requireProjectOwnership.js";
 import {
   connect,
   disconnect,
@@ -11,7 +12,7 @@ import {
 
 export const repositoryRouter = Router();
 
-repositoryRouter.use("/projects/:projectId/repository", requireAuth);
+repositoryRouter.use("/projects/:projectId/repository", requireAuth, requireProjectOwnership);
 
 repositoryRouter.post("/projects/:projectId/repository/connect", connect);
 repositoryRouter.get("/projects/:projectId/repository", getConnection);

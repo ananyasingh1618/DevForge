@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireProjectOwnership } from "../middleware/requireProjectOwnership.js";
 import { activate, compare, generate, getById, list, update } from "../controllers/prd.js";
 
 export const prdRouter = Router();
 
-prdRouter.use("/projects/:projectId/prd", requireAuth);
+prdRouter.use("/projects/:projectId/prd", requireAuth, requireProjectOwnership);
 
 prdRouter.post("/projects/:projectId/prd/generate", generate);
 prdRouter.get("/projects/:projectId/prd", list);

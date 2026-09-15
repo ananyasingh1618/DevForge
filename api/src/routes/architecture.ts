@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireProjectOwnership } from "../middleware/requireProjectOwnership.js";
 import { activate, compare, generate, getById, list, update } from "../controllers/architecture.js";
 
 export const architectureRouter = Router();
 
-architectureRouter.use("/projects/:projectId/architecture", requireAuth);
+architectureRouter.use("/projects/:projectId/architecture", requireAuth, requireProjectOwnership);
 
 architectureRouter.post("/projects/:projectId/architecture/generate", generate);
 architectureRouter.get("/projects/:projectId/architecture", list);

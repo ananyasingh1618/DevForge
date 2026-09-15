@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireProjectOwnership } from "../middleware/requireProjectOwnership.js";
 import { cancel, create, get, list, retry } from "../controllers/jobs.js";
 
 export const jobsRouter = Router();
 
-jobsRouter.use("/projects/:projectId/jobs", requireAuth);
+jobsRouter.use("/projects/:projectId/jobs", requireAuth, requireProjectOwnership);
 
 jobsRouter.post("/projects/:projectId/jobs", create);
 jobsRouter.get("/projects/:projectId/jobs", list);
