@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import * as githubClient from "../lib/githubClient.js";
 import { decryptToken, isGithubIntegrationConfigured } from "../lib/githubTokenCrypto.js";
 import { generateEmbeddingsViaAiService } from "../lib/aiServiceClient.js";
@@ -24,13 +25,6 @@ export type SearchResult = {
   score: number;
 };
 
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 /**
  * Fetches each parsed file's content from GitHub and chunks it (Milestone

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import * as retrievalService from "./retrieval.js";
 import { answerQuestionViaAiService, type QaSourceForProvider } from "../lib/aiServiceClient.js";
 import { MAX_SOURCES, selectSources } from "../lib/qaSourceSelection.js";
@@ -27,13 +28,6 @@ export type QaResult = {
   createdAt: string;
 };
 
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 const questionWithAnswerInclude = {
   answer: {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import * as githubClient from "../lib/githubClient.js";
 import { decryptToken, isGithubIntegrationConfigured } from "../lib/githubTokenCrypto.js";
 import { parseFileViaAiService, type ParsedFile } from "../lib/aiServiceClient.js";
@@ -76,13 +77,6 @@ function isInSkippedDirectory(path: string): boolean {
 /** Confirms the project exists and belongs to `ownerId`. Throws the same 404
  * whether it doesn't exist or belongs to someone else — matches every other
  * project-scoped service in this codebase (see services/repository.ts). */
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 async function requireIndex(projectId: string): Promise<CodebaseIndex> {
   const index = await prisma.codebaseIndex.findUnique({ where: { projectId } });

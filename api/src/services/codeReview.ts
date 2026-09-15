@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import * as retrievalService from "./retrieval.js";
 import {
   analyzeReviewViaAiService,
@@ -48,13 +49,6 @@ export type CodeReviewResult = {
   completedAt: string | null;
 };
 
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 const reviewWithDetailInclude = {
   sources: {

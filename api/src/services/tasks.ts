@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import { generateTasksViaAiService } from "../lib/aiServiceClient.js";
 import type { TaskContent, TaskItem } from "../schemas/tasks.js";
 import type { EpicContent } from "../schemas/epics.js";
@@ -11,13 +12,6 @@ import type { TaskVersion } from "@prisma/client";
  * existing pattern in services/projects.ts, services/prd.ts,
  * services/architecture.ts, and services/epics.ts.
  */
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 export async function generateTasksFromActiveEpics(
   ownerId: string,

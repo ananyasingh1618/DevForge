@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import { generateArchitectureViaAiService } from "../lib/aiServiceClient.js";
 import type { ArchitectureContent } from "../schemas/architecture.js";
 import type { PrdContent } from "../schemas/prd.js";
@@ -11,13 +12,6 @@ import type { ArchitectureVersion } from "@prisma/client";
  * existing pattern in services/projects.ts, services/requirements.ts, and
  * services/prd.ts.
  */
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 export async function generateArchitectureFromActivePrd(
   ownerId: string,

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type Job, type JobStatus, type JobType } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 
 /**
  * A durable, Postgres-native job queue (Phase 15 —
@@ -35,13 +36,6 @@ export class InvalidJobTransitionError extends AppError {
   }
 }
 
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 /** Loads a job scoped to an owned project — the same 404-for-both-"doesn't
  * exist"-and-"not yours" shape every other ownership check in this codebase

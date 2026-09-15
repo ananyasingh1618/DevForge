@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import { generatePrdViaAiService } from "../lib/aiServiceClient.js";
 import type { PrdContent } from "../schemas/prd.js";
 import type { RequirementsContent } from "../schemas/requirements.js";
@@ -10,13 +11,6 @@ import type { PrdVersion } from "@prisma/client";
  * whether it doesn't exist or belongs to someone else — matches the
  * existing pattern in services/projects.ts and services/requirements.ts.
  */
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 export async function generatePrdFromActiveRequirements(
   ownerId: string,

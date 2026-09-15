@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import { analyzeRequirementsViaAiService } from "../lib/aiServiceClient.js";
 import type { RequirementItem, RequirementsContent } from "../schemas/requirements.js";
 import type { RequirementsVersion } from "@prisma/client";
@@ -9,13 +10,6 @@ import type { RequirementsVersion } from "@prisma/client";
  * whether it doesn't exist or belongs to someone else — matches the
  * existing getProjectForOwner pattern in services/projects.ts.
  */
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 export async function analyzeAndCreateVersion(
   ownerId: string,

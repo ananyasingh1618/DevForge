@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
+import { requireOwnedProject } from "../lib/ownership.js";
 import * as githubClient from "../lib/githubClient.js";
 import {
   decryptToken,
@@ -25,13 +26,6 @@ function sanitize(connection: RepositoryConnection): SanitizedRepositoryConnecti
  * existing pattern in services/projects.ts and every other project-scoped
  * service in this codebase.
  */
-async function requireOwnedProject(ownerId: string, projectId: string) {
-  const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
-  if (!project) {
-    throw AppError.notFound("Project not found");
-  }
-  return project;
-}
 
 async function requireConnection(projectId: string): Promise<RepositoryConnection> {
   const connection = await prisma.repositoryConnection.findUnique({ where: { projectId } });
