@@ -70,7 +70,18 @@ Commit: `b6cbb21`
 
 ## Milestone 4 — Codebase Q&A evaluation
 
-`<pending>`
+Added `evaluators/qaEvaluator.ts`. For each case, runs the same deterministic retrieval as
+Milestone 3 against the case's own `question` text to get a real "what was actually retrieved"
+set, then checks the graded answer's `citedChunkIds` against it (grounding: `citationPrecision`,
+`citationRecall`, `invalidCitationRate`, `missingCitationRate`), checks the answer text for
+`expectedAnswerPoints` coverage and `forbiddenClaims` violations (substring, case-insensitive —
+documented as a real but crude heuristic), and checks `insufficientEvidence` against the case's
+own expectation. All 6 dataset cases pass except one (`qa-notification-failures`), whose mock
+citation falls outside the one query Milestone 3 documented as a genuine retrieval-proxy miss —
+correctly and usefully flagged by this evaluator as a downstream grounding failure, not a bug in
+the evaluator (see Milestone 6 for why this doesn't fail the overall run).
+
+Commit: `b937e75`
 
 ## Milestone 5 — Code review evaluation
 
