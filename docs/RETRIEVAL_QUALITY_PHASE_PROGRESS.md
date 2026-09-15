@@ -355,4 +355,4 @@ changed-file reindex re-fetches/re-parses; a `parse_error` file is retried and c
 a removed file leaves zero orphaned `Symbol` rows; reindexing an unchanged commit twice is
 idempotent (no duplicates). Full `api` suite: 318/318 (313 + 5). Build/typecheck clean.
 
-Commit: `<pending>`
+Commit: `c34c808`
