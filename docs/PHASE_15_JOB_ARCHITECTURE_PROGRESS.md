@@ -134,3 +134,89 @@ right endpoint and refreshing, a list-load error with a working retry button, an
 text ever rendered. Full `frontend` suite: 121/121 (111 + 10). `tsc -b`/`eslint`/build all clean.
 
 Commit: `e24e655`
+
+## Milestone 15.6 — Repository-scale indexing
+
+Incremental indexing, changed/deleted-file detection, and re-indexing idempotency were already
+implemented and tested in Phase 14 (Milestone 14.4 — `loadPreviousFiles()`/`buildIndex()`'s skip-
+on-unchanged-hash logic, 5 regression tests including "no orphaned Symbol rows after deletion"
+and "reindexing an unchanged commit twice is idempotent"); re-confirmed still passing, not
+re-implemented. Bounded concurrency/file-size/chunk-count limits (`MAX_INDEXED_FILES`,
+`MAX_FILE_SIZE_BYTES`) predate this phase (Phase 7). Cancellation and recovery-after-restart are
+now provided by the Phase 15 job system itself (Milestones 15.2–15.3) wrapping indexing.
+
+Added `api/src/scripts/indexingBenchmark.ts` (`pnpm benchmark:indexing`) — measures two real,
+separable costs: `chunkFile()`'s own CPU-bound throughput at three synthetic corpus sizes
+(generated deterministically, so this is reproducible without a real large GitHub repository),
+and real PostgreSQL bulk-write throughput against the actual `code_chunks` table (not a synthetic
+estimate — a real `createMany` call against a real, cleaned-up-afterward test-database project).
+
+**Measured, real results**:
+
+| Corpus | Files | Chunks | Time | Files/sec | Chunks/sec |
+|---|---|---|---|---|---|
+| Small | 30 | 150 | 0.7ms | ~42,000 | ~210,000 |
+| Medium | 300 | 2,400 | 3.5ms | ~86,000 | ~685,000 |
+| Large | 2,000 | 20,000 | 26.8ms | ~75,000 | ~745,000 |
+
+| DB bulk insert | Chunks | Time | Chunks/sec |
+|---|---|---|---|
+| Small batch | 50 | 20.1ms | ~2,500 |
+| Medium batch | 500 | 111.8ms | ~4,500 |
+| Large batch | 5,000 | 819.6ms | ~6,100 |
+
+**Honest scope statement — what this does and does not claim**: `chunkFile()` itself is
+effectively free at any realistic repository size (tens of thousands of files/sec) — it is pure,
+synchronous string slicing with no I/O. The real bottleneck for indexing a large repository is
+**not** chunking but the two I/O-bound steps this benchmark deliberately does not attempt to
+simulate at scale: GitHub's blob-fetch API (one HTTP round-trip per changed file — network-
+latency-bound, already exercised qualitatively against the real `octocat/Hello-World` repository
+in every prior phase's own Docker verification, never claimed to scale-test against a genuinely
+large repository since this environment has no such repository available to index) and
+ai-service's real tree-sitter parse call per file (CPU-bound on ai-service's own side, already
+covered by that service's own test suite, not re-benchmarked here). **No claim is made about
+support for a specific repository size this package was never actually tested against** — Phase
+7's own `MAX_INDEXED_FILES = 500` remains the one enforced, real, tested ceiling.
+
+Commit: `<pending>`
+
+## Milestone 15.7 — Failure-injection testing
+
+Exercised via existing and new targeted tests rather than a separate, redundant test file — see
+each covering suite:
+
+| Scenario | Covered by | Result |
+|---|---|---|
+| Provider timeout | `jobWorker.test.ts` (real, non-faked timeout) | ✅ marked `timed_out` |
+| Provider 5xx | `jobWorker.test.ts` | ✅ transient, auto-retried (bounded) |
+| Provider 429 | `jobWorker.test.ts` (new) | ✅ **fixed a real bug**: was permanent, now transient (see below) |
+| Malformed provider output / input | `jobWorker.test.ts` (new: non-string `scope`) + ai-service's own schema-validation suite | ✅ falls back safely, or fails cleanly, never crashes the worker loop |
+| Worker crash / process restart | `jobs.test.ts`'s `recoverStaleJobs` suite (lease-expiry simulation) | ✅ requeued (bounded) or permanently failed, never silently lost |
+| Job cancellation (queued and running) | `jobs.test.ts`, `jobWorker.test.ts` | ✅ immediate for queued, cooperative for running |
+| Duplicate job submission | `jobs.test.ts`'s idempotency suite, `jobs.test.ts` route tests | ✅ returns the existing job, never a duplicate |
+| Invalid state transition | `jobs.test.ts`'s full transition-table suite | ✅ rejected with a clear 409, never silently allowed |
+| Stale running job | `jobs.test.ts`'s `recoverStaleJobs` suite | ✅ recovered, including under concurrent recovery attempts |
+| Empty / deleted repository files | Phase 7's `codebaseIndex.test.ts` (pre-existing) + Phase 14's Milestone 14.4 (deleted-file cleanup) | ✅ |
+
+**A real defect found and fixed by this milestone's own new 429 test**: `classifyError()`
+originally treated any non-5xx status as permanent, which would have made a rate-limited provider
+response (429) fail a job outright on the very first attempt instead of retrying — exactly the
+wrong behavior for a rate limit. Fixed by adding 429 to a small `TRANSIENT_STATUSES` set. This is
+the kind of defect failure-injection testing is meant to surface — found and fixed here, not
+merely asserted safe.
+
+**A second real gap found and closed the same way**: `schemas/jobs.ts`'s `input` field had no
+explicit size limit (only Express's own default JSON body-size limit applied). Added a 32,000-byte
+serialized-size ceiling — generous relative to the largest real job input today (a review `scope`
+string, already capped at 2,000 characters elsewhere) — with a new route test confirming an
+oversized input is rejected with a real 400, not silently accepted or left to a generic body-
+parser error. Full `api` suite: 383/383 (382 + 1).
+
+**Explicitly not covered, an honest remaining gap**: a genuine database-connection-loss mid-
+transaction scenario (killing the Postgres connection while a job's own `transitionJob()` `UPDATE`
+is in flight) was not simulated — Prisma's own connection-retry behavior and this application's
+error handling around a thrown `PrismaClientKnownRequestError`/connection error were not
+specifically exercised beyond what the existing `classifyError()`'s catch-all "unrecognized
+exception → transient, bounded" path already provides.
+
+Commit: `<pending>`

@@ -38,13 +38,22 @@ const UNSUPPORTED_JOB_TYPES = new Set<JobType>(["evaluation"]);
  * 5xx/network-shaped failures are transient (worth an automatic retry);
  * 4xx failures (validation, not-found, unauthorized, conflict) are
  * permanent — retrying the exact same input against the exact same state
- * cannot succeed. An unrecognized (non-`AppError`) exception is treated as
- * transient but still bounded by the job's own `maxRetries` — never an
- * infinite retry loop.
+ * cannot succeed. **429 (rate limited)** is the one 4xx status treated as
+ * transient — found via a dedicated failure-injection test (Milestone
+ * 15.7) that a naive ">= 500 is transient" rule would otherwise wrongly
+ * fail a rate-limited request permanently, when retrying (ideally after a
+ * backoff, which the automatic-retry's own requeue-to-`queued` naturally
+ * provides since the job waits for the next worker poll rather than
+ * retrying instantly) is exactly the correct response to a 429. An
+ * unrecognized (non-`AppError`) exception is treated as transient but
+ * still bounded by the job's own `maxRetries` — never an infinite retry
+ * loop.
  */
+const TRANSIENT_STATUSES = new Set([429]);
+
 function classifyError(err: unknown): { errorClass: jobs.JobErrorClass; errorCode: string; errorMessage: string } {
   if (err instanceof AppError) {
-    const errorClass: jobs.JobErrorClass = err.status >= 500 ? "transient" : "permanent";
+    const errorClass: jobs.JobErrorClass = err.status >= 500 || TRANSIENT_STATUSES.has(err.status) ? "transient" : "permanent";
     return { errorClass, errorCode: err.code, errorMessage: err.message };
   }
   return {

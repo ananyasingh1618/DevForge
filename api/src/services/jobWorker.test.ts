@@ -140,6 +140,31 @@ describe("runOneClaimedJob — error classification and retry", () => {
     expect(after.retryCount).toBe(0);
   });
 
+  it("a provider 429 (rate limit) is classified transient and requeues, same as a generic 5xx", async () => {
+    const { user, project } = await makeUserAndProject();
+    vi.mocked(qaService.askQuestion).mockRejectedValue(new AppError(429, "RATE_LIMITED", "Too many requests."));
+    const job = await createJob(user.id, project.id, "qa", { question: "x" }, { maxRetries: 3 });
+    const claimed = await claimNextJob("w1");
+    await runOneClaimedJob(claimed!);
+    const after = await getJob(user.id, project.id, job.id);
+    // Found via this exact test (Milestone 15.7): a naive ">= 500 is
+    // transient" rule would wrongly fail a 429 permanently on the first
+    // attempt — fixed in classifyError()'s TRANSIENT_STATUSES set.
+    expect(after.status).toBe("queued");
+    expect(after.retryCount).toBe(1);
+  });
+
+  it("a malformed/empty provider input never crashes the worker loop — the job fails cleanly", async () => {
+    const { user, project } = await makeUserAndProject();
+    vi.mocked(codeReviewService.createReview).mockResolvedValue({ id: "r1" } as never);
+    const job = await createJob(user.id, project.id, "review", { scope: 12345 }); // wrong type, not a string
+    const claimed = await claimNextJob("w1");
+    await expect(runOneClaimedJob(claimed!)).resolves.toBeUndefined();
+    const after = await getJob(user.id, project.id, job.id);
+    expect(after.status).toBe("completed"); // scope falls back to the service's own default when not a string
+    expect(codeReviewService.createReview).toHaveBeenCalledWith(user.id, project.id, undefined);
+  });
+
   it("an unrecognized thrown value never leaks its raw detail into errorMessage", async () => {
     const { user, project } = await makeUserAndProject();
     vi.mocked(qaService.askQuestion).mockRejectedValue(new Error("some raw internal stack trace with SECRET=sk-ant-abc123"));

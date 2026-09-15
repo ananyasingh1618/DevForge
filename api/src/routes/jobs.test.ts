@@ -94,6 +94,16 @@ describe("POST /projects/:projectId/jobs — validation", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects an oversized job input", async () => {
+    const cookie = await registerAndGetCookie("jobs-oversized@example.com");
+    const projectId = await createProject(cookie);
+    const res = await request(app)
+      .post(`/projects/${projectId}/jobs`)
+      .set("Cookie", cookie)
+      .send({ type: "qa", input: { question: "x".repeat(50_000) } });
+    expect(res.status).toBe(400);
+  });
+
   it("defaults input to {} when omitted", async () => {
     const cookie = await registerAndGetCookie("jobs-defaultinput@example.com");
     const projectId = await createProject(cookie);
