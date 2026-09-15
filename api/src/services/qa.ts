@@ -4,6 +4,7 @@ import { AppError } from "../lib/errors.js";
 import * as retrievalService from "./retrieval.js";
 import { answerQuestionViaAiService, type QaSourceForProvider } from "../lib/aiServiceClient.js";
 import { MAX_SOURCES, selectSources } from "../lib/qaSourceSelection.js";
+import { groundAnswer } from "../lib/qaAnswerGrounding.js";
 import type { Prisma } from "@prisma/client";
 
 export type QaSourceResult = {
@@ -148,19 +149,21 @@ export async function askQuestion(
 
   const aiAnswer = await answerQuestionViaAiService(question, repository, branch, commitSha, providerSources);
 
-  // Independently re-validate cited source numbers against the real range
-  // Node itself provided — defense in depth on top of the same filtering
-  // ai-service's own provider already does; never trust either layer
-  // alone.
-  const citedOrders = new Set(
-    aiAnswer.citedSourceNumbers.filter((n) => Number.isInteger(n) && n >= 1 && n <= selected.length),
-  );
+  // groundAnswer() independently re-validates cited source numbers against
+  // the real range Node itself provided (defense in depth on top of the
+  // same filtering ai-service's own provider already does — never trust
+  // either layer alone) and deterministically falls back to an honest
+  // insufficient-evidence answer if the provider claimed a confident
+  // answer while citing zero valid sources — see
+  // docs/RETRIEVAL_QUALITY_PHASE_PLAN.md, Milestone 4.
+  const grounded = groundAnswer(aiAnswer, selected.length);
+  const { citedOrders } = grounded;
 
   const answerRow = await prisma.answer.create({
     data: {
       questionId: questionRow.id,
-      answer: aiAnswer.answer,
-      insufficientEvidence: aiAnswer.insufficientEvidence,
+      answer: grounded.answer,
+      insufficientEvidence: grounded.insufficientEvidence,
       model: "claude-opus-5",
     },
   });
@@ -179,8 +182,8 @@ export async function askQuestion(
   return {
     questionId: questionRow.id,
     question,
-    answer: aiAnswer.answer,
-    insufficientEvidence: aiAnswer.insufficientEvidence,
+    answer: grounded.answer,
+    insufficientEvidence: grounded.insufficientEvidence,
     sources: selected.map((source, i) => ({
       filePath: source.filePath,
       symbolName: source.symbolName,

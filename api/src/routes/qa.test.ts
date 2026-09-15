@@ -477,6 +477,120 @@ describe("no secret leakage", () => {
   });
 });
 
+describe("citation grounding hardening (Phase 12)", () => {
+  it("falls back to a safe insufficient-evidence answer when the model cites only out-of-range source numbers", async () => {
+    const cookie = await registerAndGetCookie("qa-citation-outofrange@example.com");
+    const projectId = await createProject(cookie);
+    await connectAndIndex(cookie, projectId);
+
+    mockFetchResponses([
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: qaAnswerBody({ cited_source_numbers: [99], insufficient_evidence: false }) },
+    ]);
+
+    const res = await request(app)
+      .post(`/projects/${projectId}/qa`)
+      .set("Cookie", cookie)
+      .send({ question: "Where is add() defined?" });
+    expect(res.status).toBe(200);
+    expect(res.body.data.insufficientEvidence).toBe(true);
+    expect(res.body.data.answer).toMatch(/did not cite any of the supplied evidence/);
+    expect(res.body.data.sources[0].cited).toBe(false);
+  });
+
+  it("falls back to a safe insufficient-evidence answer when the model cites only negative source numbers", async () => {
+    const cookie = await registerAndGetCookie("qa-citation-negative@example.com");
+    const projectId = await createProject(cookie);
+    await connectAndIndex(cookie, projectId);
+
+    mockFetchResponses([
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: qaAnswerBody({ cited_source_numbers: [-1, 0], insufficient_evidence: false }) },
+    ]);
+
+    const res = await request(app)
+      .post(`/projects/${projectId}/qa`)
+      .set("Cookie", cookie)
+      .send({ question: "Where is add() defined?" });
+    expect(res.status).toBe(200);
+    expect(res.body.data.insufficientEvidence).toBe(true);
+  });
+
+  it("deduplicates a repeated citation number instead of double-counting it", async () => {
+    const cookie = await registerAndGetCookie("qa-citation-duplicate@example.com");
+    const projectId = await createProject(cookie);
+    await connectAndIndex(cookie, projectId);
+
+    mockFetchResponses([
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: qaAnswerBody({ cited_source_numbers: [1, 1, 1] }) },
+    ]);
+
+    const res = await request(app)
+      .post(`/projects/${projectId}/qa`)
+      .set("Cookie", cookie)
+      .send({ question: "Where is add() defined?" });
+    expect(res.status).toBe(200);
+    expect(res.body.data.sources).toHaveLength(1);
+    expect(res.body.data.sources[0].cited).toBe(true);
+    expect(res.body.data.insufficientEvidence).toBe(false);
+  });
+
+  it("respects an honest insufficient-evidence answer with zero citations, without overriding it", async () => {
+    const cookie = await registerAndGetCookie("qa-citation-honest-insufficient@example.com");
+    const projectId = await createProject(cookie);
+    await connectAndIndex(cookie, projectId);
+
+    mockFetchResponses([
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      {
+        status: 200,
+        body: qaAnswerBody({
+          answer: "The supplied evidence does not answer this question.",
+          cited_source_numbers: [],
+          insufficient_evidence: true,
+        }),
+      },
+    ]);
+
+    const res = await request(app)
+      .post(`/projects/${projectId}/qa`)
+      .set("Cookie", cookie)
+      .send({ question: "Where is add() defined?" });
+    expect(res.status).toBe(200);
+    expect(res.body.data.insufficientEvidence).toBe(true);
+    expect(res.body.data.answer).toBe("The supplied evidence does not answer this question.");
+  });
+
+  it("never leaks the fallback override reasoning to the client as a raw internal error", async () => {
+    const cookie = await registerAndGetCookie("qa-citation-fallback-safe@example.com");
+    const projectId = await createProject(cookie);
+    await connectAndIndex(cookie, projectId);
+
+    mockFetchResponses([
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: qaAnswerBody({ cited_source_numbers: [42], insufficient_evidence: false }) },
+    ]);
+
+    const res = await request(app)
+      .post(`/projects/${projectId}/qa`)
+      .set("Cookie", cookie)
+      .send({ question: "Where is add() defined?" });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toMatch(/stack|Error:/);
+  });
+});
+
 describe("project isolation", () => {
   it("never returns another project's chunks as sources", async () => {
     const cookieA = await registerAndGetCookie("qa-isolation-a@example.com");
