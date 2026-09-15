@@ -133,4 +133,4 @@ its list refresh, a real error surfaced when job creation fails, cancel/retry ac
 right endpoint and refreshing, a list-load error with a working retry button, and no secret-shaped
 text ever rendered. Full `frontend` suite: 121/121 (111 + 10). `tsc -b`/`eslint`/build all clean.
 
-Commit: `<pending>`
+Commit: `e24e655`
