@@ -115,7 +115,34 @@ Commit: `79b961d`
 
 ## Milestone 7 — Evaluation reporting and optional dashboard
 
-`<pending>`
+### Part A — reporting core
+
+Added `report.ts` (JSON + Markdown generation), `runEval.ts` (the `pnpm eval`/`pnpm eval:real`
+CLI), `mockProviders.ts`, `realProviders.ts` (optional real ai-service calls, gated only by
+`ANTHROPIC_API_KEY`, no GitHub credential ever needed), the `EvaluationRun` Prisma model +
+migration `20260914201014_add_evaluation_runs`, and `persist.ts` (best-effort raw-`pg`
+persistence, mirroring `tests/`'s own cross-package pattern against this same schema; a missing
+or unreachable `DATABASE_URL` never fails the run). Manually verified: `pnpm eval` produces
+`evaluation/reports/latest.json`/`latest.md` and, with `DATABASE_URL` set, a real row in
+`evaluation_runs` (confirmed via direct query).
+
+Commit: `3be7c13`
+
+### Part B — optional dashboard
+
+Added `GET /evaluations` and `GET /evaluations/:runId` (session-gated, deliberately the one
+service with no ownership filter — an `EvaluationRun` isn't owned by a project or user) and a
+minimal `/evaluations` frontend page linked from `AppShell`'s global header. Manually verified
+live end to end: started the API and frontend, registered a user, confirmed unauthenticated
+access to `GET /evaluations` returns `401`, listed a real persisted run, fetched its full detail,
+confirmed a real, non-existent run id returns a real `404`. Browser-verified via Playwright: the
+list renders, expanding a run shows all 11 regression gates, all three features' aggregate
+metrics, and the exact failed-case detail (case id, score, failure reasons) matching the CLI's
+own report — screenshot saved. Judged justified despite being explicitly optional (Milestone 7's
+own heading) because its marginal cost was low given existing CRUD/routing/session conventions,
+and it gives a non-CLI user the same visibility the required JSON/Markdown files already provide.
+
+Commit: `f3b5f3e`
 
 ## Milestone 8 — Tests, Docker verification, documentation
 
