@@ -51,7 +51,22 @@ Commit: `571c7d9`
 
 ## Milestone 3 — Retrieval evaluation harness
 
-`<pending>`
+Added `deterministicEmbedding.ts` (character-n-gram hashing/shingling, n = 3/4/5, L2-normalized,
+cosine similarity) and `evaluators/retrievalEvaluator.ts` (`recallAtK`, `hitRate`,
+`meanReciprocalRank`, `precisionAtK`, `emptyResultRate`, `duplicateSourceCaseRate`,
+`contextSizeCompliant`). Initial word-token-based embedding scored only 44% recall against the
+dataset — debugged directly (`rankChunks()` printed per-case) and traced to two causes, both
+fixed: (1) word-level tokenization couldn't match a natural-language query word ("password")
+against a camelCase identifier ("passwordHash") as a substring, fixed by switching to character
+n-grams; (2) the two whole-file chunks included their file's shared, generic boilerplate header
+comment, whose ordinary English prose dominated lexical-similarity scoring against unrelated
+queries — fixed by trimming those two chunks' line ranges (see Milestone 2's dataset note).
+Final recall@K after both fixes: 88.9% (8/9), with the one remaining, documented miss being a
+genuine, explained limitation of the lexical proxy (see `docs/EVALUATION_PHASE_PLAN.md`, "What
+cannot be measured reliably") rather than an evaluator bug. `pnpm eval` requires no Voyage AI
+credential and completes in well under a second.
+
+Commit: `b6cbb21`
 
 ## Milestone 4 — Codebase Q&A evaluation
 
