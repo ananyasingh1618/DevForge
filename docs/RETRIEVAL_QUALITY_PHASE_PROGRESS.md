@@ -61,7 +61,33 @@ Commit: `af01e1a`
 
 ## Milestone 3 — Retrieval ranking improvements
 
-`<pending>`
+Wired Milestone 2's hybrid scoring into `search()` (new exported `selectRankedResults()`) and
+`evaluation`'s `rankChunks()`: candidates are re-ranked by the combined score, then kept only
+while within `RELATIVE_SCORE_CUTOFF = 0.7` of the top result, capped at the caller's limit,
+always keeping at least the top-ranked result. `SearchResult.score`/`RankedChunk.score` stay
+pure cosine similarity in both packages — confirmed unchanged by running the full existing
+`retrieval.test.ts`/`qa.test.ts`/`codeReview.test.ts` Supertest suites (50 cases) with zero
+modifications needed.
+
+**Measured impact on the Phase 11 dataset** (before → after): recall@K 88.9% → **100%**, MRR
+66.1% → **80.6%**, precision@K 28.9% → **57.6%**. The previously-failing
+`retrieval-fire-and-forget-notifications` case (documented in Milestone 1 as a hard case for the
+lexical proxy) unexpectedly now succeeds too — the combination of lexical-overlap and file-path
+signals was apparently enough to overcome the sibling-chunk crowding, better than anticipated in
+the plan doc's more pessimistic prediction. As a direct downstream consequence, Q&A's
+invalid-citation rate — mechanically coupled to this exact retrieval case per Milestone 1's
+analysis — dropped from 20% to **0%** with no citation-layer code change at all. Golden-dataset
+pass rate reached 24/24 after also fixing one real, pre-existing dataset-wording bug found along
+the way: `qa-notification-failures`'s mock answer didn't literally contain its own expected
+phrases ("not awaited", "no error handling") — corrected the wording (not the evaluator), the
+same class of fix as Phase 11's own `qa-ownership-check` correction.
+
+13 new/updated tests in `evaluation/` (adaptive-cutoff behavior, a cross-package constant-parity
+tripwire test), 9 new in `api/` (`retrieval.test.ts`, unit-testing `selectRankedResults()`
+directly). Full suites green: `api` 295 (286 + 9), `evaluation` 84 (80 + 4). `tsc`/`eslint` both
+clean.
+
+Commit: `ef8277d`
 
 ## Milestone 4 — Q&A citation and grounding improvements
 
