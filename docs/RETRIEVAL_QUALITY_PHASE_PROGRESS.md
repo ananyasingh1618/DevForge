@@ -171,7 +171,22 @@ Commit: `02ce22f`
 
 ## Milestone 7 — Frontend and observability updates
 
-`<pending>`
+Added a minimal "Vs. previous run" comparison to the existing `/evaluations` page's run-detail
+view — four hand-picked key metrics (retrieval recall@K/precision@K, Q&A invalid-citation rate,
+review finding recall) with a ▲/▼/– indicator and an explicit "(regression)" label, shown only
+when a previous run exists. Deliberately small per the task's own "do not clutter... unless
+behind an appropriate development or evaluation view" instruction — the Evaluations page already
+is that view, so this is a small addition to it, not a new surface. No new route, no sensitive
+data exposed, existing routes/functionality unchanged.
+
+2 new tests. Full frontend suite: 111 (109 + 2). `tsc -b` and `eslint .` clean.
+
+Browser-verified live: persisted a fresh evaluation run alongside the original Phase-11-era one
+already in the database and confirmed the comparison correctly renders this phase's real,
+measured improvement — recall@K 88.9% → 100%, precision@K 28.9% → 55.7%, invalid-citation rate
+20% → 0%, all with the correct ▲ improvement indicator — screenshot saved.
+
+Commit: `e1a86ad`
 
 ## Milestone 8 — Full verification, documentation, and completion report
 
