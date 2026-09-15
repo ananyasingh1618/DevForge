@@ -30,6 +30,12 @@
 // Phase 11 (Evaluation) adds: evaluation_runs — the one system-wide,
 // non-project-scoped table in this schema; see docs/EVALUATION_PHASE_PLAN.md
 // and the evaluation/ package for why.
+// Phase 15 (Production Job Architecture) adds: jobs — a durable,
+// Postgres-native job queue (SELECT ... FOR UPDATE SKIP LOCKED claiming, no
+// new infrastructure) for indexing/Q&A/review/evaluation runs, with an
+// explicit state machine, bounded retries, a cooperative-cancellation flag,
+// and a lease/heartbeat for stale-job recovery; see
+// docs/PHASE_15_JOB_ARCHITECTURE_PLAN.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -95,6 +101,7 @@ model Project {
   codeChunks           CodeChunk[]
   questions            Question[]
   codeReviews          CodeReview[]
+  jobs                 Job[]
 
   @@index([ownerId])
   @@map("projects")
@@ -684,4 +691,77 @@ model EvaluationRun {
 
   @@index([createdAt])
   @@map("evaluation_runs")
+}
+
+enum JobType {
+  indexing
+  qa
+  review
+  evaluation
+}
+
+enum JobStatus {
+  queued
+  running
+  completed
+  failed
+  cancelled
+  timed_out
+}
+
+// A durable, Postgres-native job queue (Phase 15 —
+// docs/PHASE_15_JOB_ARCHITECTURE_PLAN.md). A worker claims the oldest
+// `queued` job via `SELECT ... FOR UPDATE SKIP LOCKED` (see
+// api/src/services/jobs.ts's `claimNextJob()`), so two worker processes can
+// never claim (and therefore never execute) the same job twice. `input`/
+// `output`/`progress` are validated structured JSON per `type` (see
+// api/src/schemas/jobs.ts) — never an unstructured blob or raw provider
+// response. `idempotencyKey`, when supplied by the caller, is unique per
+// `(projectId, type, idempotencyKey)` so a duplicate submission (e.g. a
+// retried HTTP request) reuses the existing job instead of creating a
+// second one. `leaseExpiresAt` is renewed by the worker while a job is
+// `running` (a heartbeat); a job whose lease has expired without being
+// renewed is presumed to belong to a crashed worker and is recovered by
+// `recoverStaleJobs()` — reset to `queued` (bounded by `retryCount` <
+// `maxRetries`) or moved to `failed` once retries are exhausted.
+// `cancelRequested` is a cooperative flag: cancelling a `running` job only
+// requests cancellation, since a background worker cannot be forcibly
+// killed mid-operation from the API request that asked for the cancel — the
+// worker itself checks this flag at safe points and transitions to
+// `cancelled`. Errors are never a raw provider stack trace — `errorCode` is
+// a small, stable, classified reason (`errors.ts`'s `classifyJobError()`)
+// and `errorMessage` is a safe, human-readable summary.
+model Job {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  type            JobType
+  status          JobStatus @default(queued)
+  input           Json
+  output          Json?
+  progress        Json?
+  errorCode       String?   @map("error_code")
+  errorMessage    String?   @map("error_message")
+  retryCount      Int       @default(0) @map("retry_count")
+  maxRetries      Int       @default(3) @map("max_retries")
+  idempotencyKey  String?   @map("idempotency_key")
+  correlationId   String    @default(uuid()) @map("correlation_id")
+  workerId        String?   @map("worker_id")
+  leaseExpiresAt  DateTime? @map("lease_expires_at")
+  cancelRequested Boolean   @default(false) @map("cancel_requested")
+  startedAt       DateTime? @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+  cancelledAt     DateTime? @map("cancelled_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Active-job claiming scans exactly this shape (status + createdAt order).
+  @@index([status, createdAt])
+  // "Recent jobs for this project" listing.
+  @@index([projectId, createdAt])
+  // Stale-lease recovery scans running jobs by lease expiry.
+  @@index([status, leaseExpiresAt])
+  @@unique([projectId, type, idempotencyKey])
+  @@map("jobs")
 }
