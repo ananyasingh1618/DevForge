@@ -91,7 +91,29 @@ Commit: `ef8277d`
 
 ## Milestone 4 — Q&A citation and grounding improvements
 
-`<pending>`
+Re-audited `services/qa.ts`'s citation handling with Milestone 1's finding in hand (the 20%
+invalid-citation rate was entirely caused by the retrieval gap Milestone 3 already fixed, not a
+citation-layer defect). Confirmed correct and left unchanged: out-of-range/negative/non-integer
+citation numbers were already rejected by the existing range check, and `Set`-based dedup
+already collapsed repeated citation numbers — re-confirmed by direct unit tests rather than
+re-implemented. One real, previously-unguarded gap found and fixed: a provider could return
+`insufficient_evidence: false` while citing zero valid sources after filtering — a confident-
+looking but fully ungrounded answer. Extracted citation validation into
+`lib/qaAnswerGrounding.ts`'s `groundAnswer()` (mirroring `qaSourceSelection.ts`'s own pure-
+function precedent) and added a deterministic, bounded fallback: exactly this situation now
+replaces the answer with a clear, honest insufficient-evidence message — never a retry, never a
+second provider call, never a silent citation-to-citation substitution.
+
+11 new unit tests (every adversarial citation shape from the task's own checklist: out-of-range,
+negative, non-integer, duplicate, mixed valid/invalid, the fallback trigger, and — just as
+important — the two cases that must *not* trigger it: an honest existing insufficient-evidence
+answer, and a genuinely empty source list which is handled upstream before any provider call).
+5 new Supertest route tests exercise the same fallback through the real HTTP/DB path, plus a
+check that no raw internal error/stack trace ever leaks alongside the fallback. Full existing
+`qa.test.ts` (18 cases), the entire `api` suite (311 total, 258 + 53 across Milestones 2–4), and
+`ai-service`'s own 117 tests all pass unmodified. `tsc`/`eslint` clean.
+
+Commit: `916fdac`
 
 ## Milestone 5 — Code review evidence improvements
 
