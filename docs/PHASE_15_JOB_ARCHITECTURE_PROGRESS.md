@@ -105,4 +105,4 @@ through the real worker dispatch path — confirmation that a failed job's error
 contain anything stack-trace-shaped. Full `api` suite: 380/380 (368 + 12). `tsc -b`/`eslint`/build
 all clean.
 
-Commit: `<pending>`
+Commit: `e52b752`
