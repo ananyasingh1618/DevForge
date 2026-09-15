@@ -240,7 +240,7 @@ a suspiciously-flat number that would suggest the benchmark isn't really exercis
 
 Full evaluation test suite: 115/115 passing.
 
-Commit: `<pending>`
+Commit: `2612e20`
 
 ## Phase 13: complete (Milestones 13.1–13.7)
 
