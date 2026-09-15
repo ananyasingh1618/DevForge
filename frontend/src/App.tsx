@@ -11,6 +11,7 @@ import { CodeSearch } from "./pages/CodeSearch.js";
 import { CodebaseQa } from "./pages/CodebaseQa.js";
 import { CodeReview } from "./pages/CodeReview.js";
 import { Evaluations } from "./pages/Evaluations.js";
+import { Jobs } from "./pages/Jobs.js";
 
 export function App() {
   return (
@@ -72,6 +73,14 @@ export function App() {
           element={
             <RequireAuth>
               <CodeReview />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/projects/:id/jobs"
+          element={
+            <RequireAuth>
+              <Jobs />
             </RequireAuth>
           }
         />

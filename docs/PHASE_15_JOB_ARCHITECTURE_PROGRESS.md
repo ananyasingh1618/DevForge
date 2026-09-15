@@ -106,3 +106,31 @@ contain anything stack-trace-shaped. Full `api` suite: 380/380 (368 + 12). `tsc 
 all clean.
 
 Commit: `e52b752`
+
+## Milestone 15.5 — Frontend job experience
+
+Added `frontend/src/pages/Jobs.tsx` (route `/projects/:id/jobs`, linked from the project overview
+nav alongside Search/Q&A/Reviews/Settings) plus `services/jobsApi.ts` and `types/job.ts`. Covers
+job creation (indexing/Q&A/review), queued/running/completed/failed/cancelled/timed-out states
+(a status badge per state), progress via retry-count display, cancel and retry actions, empty
+state, loading state, and error states for both the list and each action — reusing this
+codebase's existing `Button`/`Card`/`EmptyState`/`ErrorState`/`LoadingState` components verbatim,
+no new visual system.
+
+**Polling is deliberately bounded, not aggressive**: `pollWhileActive()` schedules exactly one
+more 3-second poll only while the just-fetched job list still contains a `queued`/`running` job —
+a project whose jobs are all in a terminal state polls exactly once (on mount) and then stops
+until the user starts a new job, cancels, or retries one (each of which re-triggers the same
+scheduler). A page revisited after a browser refresh re-runs this same logic from scratch, so a
+job that completed while the user was away is reflected on the very next load without any stale
+polling continuing in the background. Every action (cancel/retry) shows its own real error message
+from the API on failure — never a silent no-op.
+
+10 new tests (`Jobs.test.tsx`): empty state with all three creation buttons, per-status rendering,
+a failed job's real error message and retry-count display, cancel/retry button visibility rules
+(including a job already at its retry limit correctly showing no Retry button), job creation and
+its list refresh, a real error surfaced when job creation fails, cancel/retry actions calling the
+right endpoint and refreshing, a list-load error with a working retry button, and no secret-shaped
+text ever rendered. Full `frontend` suite: 121/121 (111 + 10). `tsc -b`/`eslint`/build all clean.
+
+Commit: `<pending>`

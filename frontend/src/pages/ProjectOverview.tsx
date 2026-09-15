@@ -95,6 +95,12 @@ export function ProjectOverview() {
                 Reviews
               </Link>
               <Link
+                to={`/projects/${state.project.id}/jobs`}
+                className="text-sm text-text-muted hover:text-text"
+              >
+                Jobs
+              </Link>
+              <Link
                 to={`/projects/${state.project.id}/settings`}
                 className="text-sm text-text-muted hover:text-text"
               >
