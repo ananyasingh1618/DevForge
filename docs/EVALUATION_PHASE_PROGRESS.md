@@ -205,4 +205,4 @@ at the repo root: `api` 258, `frontend` 101, `evaluation` 52 — all green. No o
 `uvicorn`/`vite` processes remained afterward except VoxMind's own (PID 16012, untouched
 throughout — confirmed via `ps aux` before, during, and after every Docker/process operation).
 
-Commit: `<pending>` (docs-only; no source changes in this part)
+Commit: `af6579b` (docs-only; no source changes in this part)
