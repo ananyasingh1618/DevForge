@@ -44,3 +44,42 @@ automatic retries, lease-based stale-job recovery, and ownership (404, never dis
 "doesn't exist" from "not yours"). Full `api` suite: 355/355 (323 + 32), zero regressions.
 
 Commit: `b68aa1a`
+
+## Milestone 15.3 — Worker implementation
+
+Added `api/src/services/jobWorker.ts`: a polling loop (`startWorker()`) that claims jobs via
+`claimNextJob()` and dispatches to the exact same, already-tested synchronous service functions
+every existing route already calls (`startIndexing`/`reindexRepository`, `askQuestion`,
+`createReview`) — the worker is a thin, durable wrapper around real, existing operations, not a
+new code-execution capability. `evaluation` jobs are deliberately never auto-dispatched (see the
+file's own header comment): automatically invoking the separate `evaluation/` package's CLI from
+a worker would mean the API triggering an external process in response to a request, which this
+phase's own "do not add code execution" rule rules out — evaluation runs remain a manually-invoked
+`pnpm eval`, unchanged from every prior phase. An `evaluation`-typed job still fails cleanly and
+immediately with a clear `JOB_TYPE_NOT_DISPATCHABLE` reason rather than silently hanging.
+
+`classifyError()` maps a thrown `AppError`'s status to transient (5xx — worth an automatic,
+bounded retry) or permanent (4xx — retrying identical input against identical state cannot
+succeed); an unrecognized exception is treated as transient but still bounded by the job's own
+`maxRetries`, and its raw detail is never surfaced in `errorMessage` (a fixed, safe summary is
+used instead — verified by a dedicated test with a deliberately secret-shaped error string).
+`runOneClaimedJob()` wraps the dispatched call in a real timeout (`withTimeout()`, `Promise.race`
+against `setTimeout`) and checks the cooperative `cancelRequested` flag both before dispatching
+and immediately after the dispatched call resolves — a job cancelled while its underlying
+operation is still in flight is marked `cancelled`, not `completed`, even though the operation
+itself already finished (a known, documented limit: true mid-operation cancellation of the single
+synchronous service call is not achievable without deeper instrumentation of each service; this
+worker cancels at the checkpoints available to it, not silently drops a cancel request). Lease
+renewal runs on its own interval alongside the dispatched call so a genuinely long-running job
+doesn't get mistaken for a crashed worker by `recoverStaleJobs()`. `startWorker()`'s `stop()`
+awaits any in-flight job before resolving — a graceful shutdown, never an abrupt kill mid-write.
+
+13 new tests (`jobWorker.test.ts`), mocking only the three dispatch-target service modules (each
+already has its own full test suite elsewhere) to test the worker's own orchestration in
+isolation: dispatch routing (including `force: true` → `reindexRepository`), a qa job missing its
+required input failing cleanly without ever calling the service, transient-vs-permanent error
+classification and the resulting requeue-vs-fail behavior, secret-safe error messages, cancellation
+both before and during a dispatched call, and a real (not faked) timeout. Full `api` suite:
+368/368 (355 + 13), zero regressions.
+
+Commit: `<pending>`
