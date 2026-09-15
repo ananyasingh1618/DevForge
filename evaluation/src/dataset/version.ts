@@ -5,4 +5,4 @@
  * src/report.ts) so a report is always self-describing about which
  * version of the dataset produced it.
  */
-export const DATASET_VERSION = "2026.09.16-1";
+export const DATASET_VERSION = "2026.09.16-2";

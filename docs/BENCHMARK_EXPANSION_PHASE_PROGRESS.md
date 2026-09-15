@@ -78,7 +78,7 @@ wording bugs found the same way as above (`qa-email-async-failure`, `qa-legacy-t
 `qa-js-order-ownership-missing` — mock-answer wording not literally containing its own required
 phrase). 104/104 evaluation tests pass; full monorepo typecheck clean.
 
-Commit: `<pending>` (combined with Milestone 13.3 below — implemented in the same working session
+Commit: `6f5841b` (combined with Milestone 13.3 below — implemented in the same working session
 since the evaluator changes needed for insufficient-evidence handling were required to even
 measure this milestone's own new cases correctly)
 
@@ -118,4 +118,6 @@ the completion report): recall@K 91.5%, precision@K 57.6%, MRR 78.9%, precision@
 38.2% (a genuinely low number — flagged as a concrete Phase 14.2/14.3 diagnostic target, not
 glossed over), duplicate-result rate 0%, empty-result rate (answerable) 0%.
 
-Commit: `<pending>`
+`DATASET_VERSION` bumped `2026.09.16-1` → `2026.09.16-2`.
+
+Commit: `6f5841b` (benchmark/graded-relevance changes), `<pending>` (this hash-backfill + version bump)
