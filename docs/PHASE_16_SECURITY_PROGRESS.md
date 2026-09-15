@@ -306,4 +306,4 @@ claim of frontend-test coverage that doesn't exist.
 
 Full suite after this milestone: 421/421 (419 + 2 new), `tsc --noEmit` and `eslint .` both clean.
 
-Commit: `<pending>`
+Commit: `6d138a5`
