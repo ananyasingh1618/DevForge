@@ -6,20 +6,23 @@ AI Software Engineering & Codebase Intelligence Platform.
 > Generation) + Phase 4 (Architecture Generation) + Phase 5 (Epics & Tasks Generation) +
 > Phase 6 (GitHub Integration) + Phase 7 (AST Parsing & Codebase Indexing) + Phase 8
 > (Retrieval & Semantic Search) + Phase 9 (Codebase Q&A) + Phase 10 (AI Code Review) +
-> Phase 11 (Evaluation, Quality Measurement & Review Improvements) complete.** This repository
-> implements authentication, a project workspace, AI-assisted requirements analysis,
-> AI-assisted PRD generation, AI-assisted architecture generation, AI-assisted epic/task
-> generation, a secure GitHub repository connection, tree-sitter-backed AST parsing and
-> codebase indexing, semantic code search (chunking the indexed codebase along symbol
-> boundaries, embedding it via Voyage AI, and ranking results by cosine similarity), a
-> grounded, **read-only** codebase Q&A layer over that retrieval, a grounded, **read-only**
-> AI code review layer over that same retrieval, and a deterministic, credential-free
-> evaluation system that measures retrieval/Q&A/review quality against a small, version-
+> Phase 11 (Evaluation, Quality Measurement & Review Improvements) + Phase 12 (Retrieval
+> Quality & Grounding Improvements) complete.** This repository implements authentication, a
+> project workspace, AI-assisted requirements analysis, AI-assisted PRD generation, AI-assisted
+> architecture generation, AI-assisted epic/task generation, a secure GitHub repository
+> connection, tree-sitter-backed AST parsing and codebase indexing, semantic code search
+> (chunking the indexed codebase along symbol boundaries, embedding it via Voyage AI, and
+> ranking results by a hybrid of semantic cosine similarity, lexical overlap, and identifier/
+> file-path matching, with an adaptive result count — see "Retrieval ranking" below), a
+> grounded, **read-only** codebase Q&A layer over that retrieval (with a deterministic
+> insufficient-evidence fallback whenever an answer can't be safely grounded), a grounded,
+> **read-only** AI code review layer over that same retrieval, and a deterministic, credential-
+> free evaluation system that measures retrieval/Q&A/review quality against a small, version-
 > controlled fixture dataset, end to end, with tests and a working Docker Compose stack. Both
 > Codebase Q&A and AI Code Review are strictly read-only — neither modifies code, opens pull
 > requests, creates GitHub issues, or runs GitHub Actions — see "Known limitations" below.
 > Evaluation results are measurements, not proof of complete correctness — see "Known
-> limitations" for exactly what Phase 11 does and does not claim. See
+> limitations" for exactly what Phase 11/12 do and do not claim. See
 > [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 > [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 > [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
@@ -29,9 +32,12 @@ AI Software Engineering & Codebase Intelligence Platform.
 > [docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md),
 > [docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md),
 > [docs/QA_PHASE_PROGRESS.md](docs/QA_PHASE_PROGRESS.md),
-> [docs/CODE_REVIEW_PHASE_PROGRESS.md](docs/CODE_REVIEW_PHASE_PROGRESS.md), and
-> [docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md) for the detailed,
-> verified log of every milestone that built each phase.
+> [docs/CODE_REVIEW_PHASE_PROGRESS.md](docs/CODE_REVIEW_PHASE_PROGRESS.md),
+> [docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md), and
+> [docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md) for the
+> detailed, verified log of every milestone that built each phase, and
+> [docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md](docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md)
+> for Phase 12's own before/after metrics and completion report.
 
 ## Overview
 
@@ -127,15 +133,20 @@ regression instead of relying on manual spot-checking.
   codebase with a natural-language query. Code is chunked along its Phase 7 symbol boundaries
   (one chunk per class/interface/function/method, oversized symbols split with overlap, a
   whole-file fallback for symbol-less files), embedded via Voyage AI (`voyage-code-3`), and
-  ranked by cosine similarity against the query's own embedding. Chunking and embedding happen
-  lazily on first search and are reused on every later search against the same indexed commit
-  — an explicit reindex is required to search a different commit. Results show the file path,
-  symbol name, a source snippet, exact line range, language, branch/commit, and similarity
-  score; a genuinely empty result set is shown honestly, never as an error. Requesting a
-  branch/commit other than the one currently indexed is a clear, real error, not a silent
-  mismatch. Same honesty guarantee as every other AI capability: no completed index, no
-  `GITHUB_TOKEN_ENCRYPTION_KEY`, or no `VOYAGE_API_KEY` each produce a clear, real error —
-  never fabricated results.
+  ranked by a hybrid score (Phase 12) — semantic cosine similarity as the dominant signal,
+  refined by lexical token overlap, symbol-identifier matching (including an exact-substring
+  boost when a query names a function/class directly), and file-path matching. Results are kept
+  only while their combined score stays within a documented relative margin of the top result
+  (always keeping at least the top one), instead of always padding out to the requested count —
+  see "Retrieval ranking" below. Chunking and embedding happen lazily on first search and are
+  reused on every later search against the same indexed commit — an explicit reindex is
+  required to search a different commit. Results show the file path, symbol name, a source
+  snippet, exact line range, language, branch/commit, and similarity score (always the raw
+  semantic score, unchanged by the hybrid ranking above it); a genuinely empty result set is
+  shown honestly, never as an error. Requesting a branch/commit other than the one currently
+  indexed is a clear, real error, not a silent mismatch. Same honesty guarantee as every other
+  AI capability: no completed index, no `GITHUB_TOKEN_ENCRYPTION_KEY`, or no `VOYAGE_API_KEY`
+  each produce a clear, real error — never fabricated results.
 - **Codebase Q&A**: from a project's Codebase Q&A page, ask a natural-language question about
   a fully indexed repository and get a grounded answer — read-only, never modifying code,
   opening a pull request, filing a GitHub issue, or running a GitHub Action. DevForge retrieves
@@ -147,11 +158,13 @@ regression instead of relying on manual spot-checking.
   data: the system prompt instructs Claude to ignore any instruction-like text found inside it
   and never repeat a secret/credential value even if one appears in a source. A genuinely empty
   evidence set skips the Claude call entirely and returns a real, local "insufficient evidence"
-  answer. Every question and its evidence are saved and listable per project — not a chat
-  thread, a simple history of independently-answered questions. Same honesty guarantee as
-  every other AI capability: no completed index, no `GITHUB_TOKEN_ENCRYPTION_KEY`, no
-  `VOYAGE_API_KEY`, or no `ANTHROPIC_API_KEY` each produce a clear, real error — never a
-  fabricated answer.
+  answer; if the model instead returns a confident-looking answer that cites zero valid sources
+  (Phase 12), the same deterministic fallback applies — a bounded text substitution, never a
+  retry or a silent citation swap. Every question and its evidence are saved and listable per
+  project — not a chat thread, a simple history of independently-answered questions. Same
+  honesty guarantee as every other AI capability: no completed index, no
+  `GITHUB_TOKEN_ENCRYPTION_KEY`, no `VOYAGE_API_KEY`, or no `ANTHROPIC_API_KEY` each produce a
+  clear, real error — never a fabricated answer.
 - **AI code review**: from a project's Code Review page, describe what to review (or leave it
   blank for a general review) and get a set of findings — read-only, never modifying code,
   running a command, creating a commit, opening a pull request, filing a GitHub issue, or
@@ -180,20 +193,24 @@ regression instead of relying on manual spot-checking.
   "Not yet implemented" section on this page.
 - **Evaluation** (`evaluation/`, `pnpm eval`): a deterministic, credential-free evaluation
   system measuring Phase 8 retrieval, Phase 9 Q&A, and Phase 10 review against a small,
-  version-controlled fixture dataset (9 hand-authored source files, 16 chunks, 24 cases total)
-  — recall/precision/MRR for retrieval, citation grounding/answer quality for Q&A, finding
-  precision/recall/false-positive rate/severity-category accuracy for review. Runs entirely
-  offline by default (a character-n-gram lexical-similarity proxy stands in for Voyage AI; each
-  case's own hand-authored mock answer/findings stand in for Claude) — no `ANTHROPIC_API_KEY`
-  or `VOYAGE_API_KEY` needed; an optional `pnpm eval:real` mode calls `ai-service`'s real
-  `/qa/answer`/`/review/analyze` endpoints directly (no GitHub credential needed even then).
-  Produces a JSON + Markdown report (dataset/evaluator version, git commit, timestamp,
-  aggregate + per-case results, failed-case detail) and exits non-zero only when an explicit
-  regression gate is violated — not merely because one fuzzy-quality case missed. A minimal,
-  read-only `/evaluations` page (linked from the global header, not project-scoped — the
-  dataset isn't a real connected repository) shows the latest run and history. Evaluation
-  results are **measurements against a small fixture dataset, not proof of complete
-  correctness** — see "Known limitations."
+  version-controlled fixture dataset — as of Phase 12, 12 hand-authored source files, 20
+  chunks, 32 cases total (grown from Phase 11's 9/16/24 by adversarial cases added specifically
+  to stress-test Phase 12's own ranking/grounding changes without overfitting to them) — recall/
+  precision/MRR/rank-distribution for retrieval, citation grounding/answer quality/fallback
+  count for Q&A, finding precision/recall/false-positive rate/severity-category accuracy for
+  review. Runs entirely offline by default (a character-n-gram lexical-similarity proxy stands
+  in for Voyage AI; each case's own hand-authored mock answer/findings stand in for Claude) — no
+  `ANTHROPIC_API_KEY` or `VOYAGE_API_KEY` needed; an optional `pnpm eval:real` mode calls
+  `ai-service`'s real `/qa/answer`/`/review/analyze` endpoints directly (no GitHub credential
+  needed even then), applying the same deterministic grounding fallback production does before
+  scoring the result. Produces a JSON + Markdown report (dataset/evaluator version, git commit,
+  timestamp, aggregate + per-case results, failed-case detail, regression-gate results) and
+  exits non-zero only when an explicit regression gate is violated — not merely because one
+  fuzzy-quality case missed. A minimal, read-only `/evaluations` page (linked from the global
+  header, not project-scoped — the dataset isn't a real connected repository) shows the latest
+  run, history, and (Phase 12) a small "vs. previous run" comparison with a regression
+  indicator on a run's detail view. Evaluation results are **measurements against a small
+  fixture dataset, not proof of complete correctness** — see "Known limitations."
 - Opaque, server-side sessions: a random token lives only in an httpOnly cookie; only its
   SHA-256 hash is ever persisted.
 - The full stack (Postgres, API, frontend, and the AI service) runs via a single
@@ -228,12 +245,32 @@ GitHub connectivity and file retrieval are Node API concerns only (there's no AI
 verifying repository access or fetching a file tree), so the Node API calls the GitHub REST
 API directly rather than routing through `ai-service`; it sends each fetched file's content to
 `ai-service`'s parser to extract symbols, chunks the parsed result itself (pure string-slicing,
-no AI needed), sends the chunk text to `ai-service`'s embedding endpoint, ranks the returned
-vectors by cosine similarity computed in the Node process itself (not in Postgres, and not via
-pgvector — see "Database schema" below), and for both Q&A and code review sends the question/
-scope plus a fixed, numbered list of the top-ranked chunks to `ai-service`'s Q&A or review
-endpoint — Claude only ever selects among that list by number, never emitting a path or line
-itself, in either agent.
+no AI needed), sends the chunk text to `ai-service`'s embedding endpoint, computes cosine
+similarity in the Node process itself (not in Postgres, and not via pgvector — see "Database
+schema" below), then (Phase 12) re-ranks and selects by a hybrid score — cosine similarity
+blended with lexical/identifier/file-path signals computed directly over each chunk's own
+already-fetched content, no extra network call — and for both Q&A and code review sends the
+question/scope plus a fixed, numbered list of the top-ranked chunks to `ai-service`'s Q&A or
+review endpoint — Claude only ever selects among that list by number, never emitting a path or
+line itself, in either agent. See "Retrieval ranking" below for the hybrid-scoring/adaptive-
+cutoff design in full.
+
+### Retrieval ranking (Phase 12)
+
+`api/src/lib/hybridScore.ts` computes four signals per candidate chunk — semantic (the existing
+cosine similarity), lexical token overlap, symbol-identifier match (including an exact-substring
+boost), and file-path match — combined with fixed, documented weights (semantic dominant) into
+one ranking score. `api/src/services/retrieval.ts`'s `search()` uses this combined score only to
+decide *which* chunks to return and in what order; `SearchResult.score`, the field every
+existing caller depends on, stays pure cosine similarity, unchanged. A candidate is kept only
+while its combined score is within `RELATIVE_SCORE_CUTOFF` (0.7) of the top result's own score,
+capped at the caller's `limit` — always keeping at least the top-ranked result — instead of
+always padding out to `limit` regardless of relevance, which measurably improved precision
+without regressing recall (see [docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md](docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md)
+for the full before/after numbers). The identical algorithm is mirrored in
+`evaluation/src/evaluators/retrievalEvaluator.ts` (cross-package, not imported — same convention
+`evaluation/` already follows for its deterministic embedding) so the improvement is measurable
+via `pnpm eval` without needing real Voyage AI credentials.
 
 ## Tech stack
 
@@ -254,10 +291,10 @@ itself, in either agent.
 | GitHub integration | Personal access token (user-supplied), native `fetch` against the GitHub REST API, AES-256-GCM token encryption via Node's built-in `crypto` | Smallest secure option — no OAuth App/GitHub App registration or callback infrastructure needed; no new dependency for a thin HTTP boundary. Documented choice in `docs/GITHUB_INTEGRATION_PHASE_PLAN.md` |
 | AST parsing | tree-sitter (`tree-sitter`, `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`), inside `ai-service` | Genuinely multi-language from one API, ships prebuilt `manylinux` wheels (confirmed for the existing `python:3.12-slim` image before adopting it — no compiler needed), and belongs next to the other "worker for the Node API" concern rather than a second parser stack in Node. Documented choice in `docs/CODEBASE_INDEX_PHASE_PLAN.md` |
 | Embeddings | Voyage AI (`voyage-code-3`, a code-retrieval-specific model), called directly over `httpx` from `ai-service` | Anthropic has no embeddings API and recommends Voyage as its embeddings partner — confirmed the real endpoint (a fake key gets a genuine 401, not a network failure) before adopting it. Gated by an optional `VOYAGE_API_KEY`, mirroring `ANTHROPIC_API_KEY` exactly. Documented choice in `docs/RETRIEVAL_PHASE_PLAN.md` |
-| Vector storage & ranking | Plain PostgreSQL `Float[]` columns; cosine similarity computed in the Node API | No new datastore, no pgvector extension/image change, no raw SQL — this project's per-project chunk-count scale doesn't need ANN indexing. Documented choice (and the pgvector/external-vector-DB/local-index alternatives it was weighed against) in `docs/RETRIEVAL_PHASE_PLAN.md` |
+| Vector storage & ranking | Plain PostgreSQL `Float[]` columns; cosine similarity computed in the Node API, re-ranked by a hybrid semantic+lexical+identifier+file-path score with an adaptive relative-score cutoff (Phase 12) | No new datastore, no pgvector extension/image change, no raw SQL — this project's per-project chunk-count scale doesn't need ANN indexing. Documented choice (and the pgvector/external-vector-DB/local-index alternatives it was weighed against) in `docs/RETRIEVAL_PHASE_PLAN.md`; the Phase 12 hybrid-scoring/adaptive-cutoff design (chosen only after diagnostics identified the fixed-K padding as the dominant cause of low precision, not primarily bad ranking) is in `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md` |
 | Codebase Q&A | Anthropic Claude (`claude-opus-5`) structured output, gated by the same `ANTHROPIC_API_KEY` as every other generation agent — reused, not duplicated | The structured answer schema has no field for a model-supplied file path, symbol, or line number — only a numeric selection from the fixed, real source list Node already built from Phase 8 retrieval, making citation hallucination structurally impossible rather than merely prompt-discouraged. Documented in `docs/QA_PHASE_PLAN.md` |
 | AI code review | Anthropic Claude (`claude-opus-5`) structured output, gated by the same `ANTHROPIC_API_KEY`, reusing Phase 8 retrieval and Phase 9's `selectSources()` evidence cap unchanged | Same citation-safety schema as Q&A applied to a list of findings instead of one answer — each finding can only cite numbered sources by number, never a path/symbol/line, and a finding left with zero valid citations is dropped entirely. Documented in `docs/CODE_REVIEW_PHASE_PLAN.md` |
-| Evaluation | A separate `evaluation/` pnpm package; a dependency-free character-n-gram embedding proxy for retrieval, hand-authored mock answers/findings for Q&A/review, real `ai-service` calls only in an explicit opt-in `--real` mode | Deterministic, reproducible, zero-cost-by-default measurement was prioritized over new AI capability, per the phase's own instruction — no paid Voyage AI/Anthropic credential is ever required for the suite to run or gate CI. Documented in `docs/EVALUATION_PHASE_PLAN.md` |
+| Evaluation | A separate `evaluation/` pnpm package; a dependency-free character-n-gram embedding proxy for retrieval (Phase 12: re-ranked by the same hybrid-score/adaptive-cutoff algorithm production uses), hand-authored mock answers/findings for Q&A/review, real `ai-service` calls only in an explicit opt-in `--real` mode | Deterministic, reproducible, zero-cost-by-default measurement was prioritized over new AI capability, per the phase's own instruction — no paid Voyage AI/Anthropic credential is ever required for the suite to run or gate CI. Documented in `docs/EVALUATION_PHASE_PLAN.md` and `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md` |
 | Local/dev orchestration | Docker Compose | Postgres, API, frontend, ai-service, each with a healthcheck |
 
 ## Repository structure
@@ -285,8 +322,10 @@ devforge/
                     RETRIEVAL_PHASE_PLAN.md, RETRIEVAL_PHASE_PROGRESS.md, QA_PHASE_PLAN.md,
                     QA_PHASE_PROGRESS.md, CODE_REVIEW_PHASE_PLAN.md,
                     CODE_REVIEW_PHASE_PROGRESS.md, EVALUATION_PHASE_PLAN.md,
-                    EVALUATION_PHASE_PROGRESS.md — the verified milestone-by-milestone log
-                    for each phase
+                    EVALUATION_PHASE_PROGRESS.md, RETRIEVAL_QUALITY_PHASE_PLAN.md,
+                    RETRIEVAL_QUALITY_PHASE_PROGRESS.md,
+                    RETRIEVAL_QUALITY_COMPLETION_REPORT.md — the verified milestone-by-
+                    milestone log for each phase
   scripts/         Local dev/setup scripts (test-database bootstrap)
   docker-compose.yml
 ```
@@ -732,36 +771,49 @@ through Prisma directly, since `evaluation/` has no dependency on `api`'s genera
   above; `pnpm eval`'s own exit code is already CI-safe (0/1, no credential needed) but nothing
   currently invokes it automatically on a push or PR.
 - **Evaluation measures a small, hand-authored fixture dataset, not real-world code.** A
-  passing `pnpm eval` run is evidence of no regression against this dataset's 24 cases — it is
+  passing `pnpm eval` run is evidence of no regression against this dataset's 32 cases — it is
   not a general quality guarantee, and it says nothing about DevForge's behavior on a large,
   unfamiliar, real codebase.
 - The default evaluation mode's retrieval ranking is a deterministic character-n-gram lexical-
   overlap proxy, not Voyage AI — a result against it is not a measurement of real embedding
-  quality (see `docs/EVALUATION_PHASE_PLAN.md`, "What cannot be measured reliably"). One of the
-  9 retrieval cases misses under this proxy for exactly this reason and is left in the dataset,
-  documented, rather than reworded to force a perfect score.
+  quality (see `docs/EVALUATION_PHASE_PLAN.md`, "What cannot be measured reliably"). Phase 12's
+  hybrid-scoring/adaptive-cutoff change (see "Retrieval ranking" above) fixed the one retrieval
+  case Phase 11 had left as a documented, accepted miss; the current dataset passes 32/32, but
+  this remains a lexical proxy, not a semantic one, and a future case built around a genuine
+  paraphrase (no shared vocabulary at all) could still expose the same class of limitation.
+- The Phase 12 hybrid-score weights and the adaptive relative-score cutoff (`RELATIVE_SCORE_CUTOFF
+  = 0.7`) are hand-picked constants, not learned or tuned per query type — documented as a
+  heuristic, not a claim of optimality (see `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md`, "Risks").
 - Evaluation's `expectedAnswerPoints`/`forbiddenClaims`/finding-keyword matching are substring
   and keyword heuristics, not semantic entailment — a correct answer or finding phrased very
   differently from the dataset's own wording can register as a miss, and vice versa.
 - `confidenceCalibrationProxy` (code review) is explicitly weak — it only checks whether a
   matched finding's self-reported confidence was at least "medium," not a real calibration
-  curve, which would need a much larger, human-labeled dataset than this phase's 9 review cases
+  curve, which would need a much larger, human-labeled dataset than this phase's review cases
   provide.
 - Real-provider evaluation mode (`pnpm eval:real`) exercises `ai-service`'s real Q&A/review
   agents but still ranks evidence with the same deterministic lexical proxy, not real Voyage
   embeddings — retrieval-ranking quality and provider answer/finding quality are evaluated as
   separable concerns in this phase, not combined end to end against a real embedding model.
+- Q&A's deterministic insufficient-evidence fallback (Phase 12) only catches the specific case
+  of zero valid citations with a confident-looking answer — it cannot detect a citation that is
+  structurally valid (points to a real, retrieved source) but doesn't actually support the
+  specific claim made about it; that remains the model's own responsibility per its system
+  prompt, not something a deterministic Node-side check can verify without a second LLM call
+  (deliberately not added — see `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md`'s non-goals).
 
 ## Future work
 
 A background job queue for indexing, search, Q&A, and code review (removing the synchronous-
-request size/file/evidence caps and the first-use latency), hybrid (BM25 + vector + RRF +
-reranking) retrieval and an ANN-backed vector store (e.g. pgvector) in place of today's
-linear-scan `Float[]` ranking, true multi-turn conversation for Codebase Q&A and iterative
-context for AI code review (today each question/review is handled independently), support for
-a caller-supplied branch/commit override on both Q&A and review requests, wiring `pnpm eval`
-into an actual CI pipeline, a larger and/or real-Voyage-embedding-backed evaluation dataset for
-a truer retrieval-quality signal, and a human-labeled dataset large enough to measure real
+request size/file/evidence caps and the first-use latency); a proper BM25 lexical index and
+reciprocal-rank fusion in place of Phase 12's simpler hand-weighted hybrid score, and an
+ANN-backed vector store (e.g. pgvector) in place of today's linear-scan `Float[]` ranking, both
+for scale a single project's chunk count doesn't currently need; learned (rather than hand-
+picked) hybrid-score weights; true multi-turn conversation for Codebase Q&A and iterative
+context for AI code review (today each question/review is handled independently); support for a
+caller-supplied branch/commit override on both Q&A and review requests; wiring `pnpm eval` into
+an actual CI pipeline; a larger and/or real-Voyage-embedding-backed evaluation dataset for a
+truer retrieval-quality signal; and a human-labeled dataset large enough to measure real
 confidence calibration — per the full product specification. See
 [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
@@ -772,9 +824,10 @@ confidence calibration — per the full product specification. See
 [docs/CODEBASE_INDEX_PHASE_PROGRESS.md](docs/CODEBASE_INDEX_PHASE_PROGRESS.md),
 [docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md),
 [docs/QA_PHASE_PROGRESS.md](docs/QA_PHASE_PROGRESS.md),
-[docs/CODE_REVIEW_PHASE_PROGRESS.md](docs/CODE_REVIEW_PHASE_PROGRESS.md), and
-[docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md) for what's been verified
-so far and how it was verified.
+[docs/CODE_REVIEW_PHASE_PROGRESS.md](docs/CODE_REVIEW_PHASE_PROGRESS.md),
+[docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md), and
+[docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md) for what's
+been verified so far and how it was verified.
 
 ## License
 

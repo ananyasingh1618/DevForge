@@ -190,4 +190,84 @@ Commit: `e1a86ad`
 
 ## Milestone 8 — Full verification, documentation, and completion report
 
-`<pending>`
+Ran the task's full 15-step verification checklist:
+
+1. `pnpm --filter @devforge/api test` — 313 passed. `pnpm --filter @devforge/frontend test` —
+   111 passed. `pnpm --filter @devforge/evaluation test` — 100 passed. `.venv/bin/python -m
+   pytest tests/ -v` (ai-service) — 117 passed (unchanged this phase).
+2. `pnpm typecheck` (api, frontend, tests, evaluation) — clean.
+3. `pnpm lint` (api, frontend) — clean.
+4. `pnpm build` (api, frontend) — clean.
+5. Full Docker rebuild: `docker compose down -v` then `docker compose up -d --build` — clean
+   start, all 11 migrations auto-applied, verified via `docker compose exec postgres psql` against
+   `_prisma_migrations`.
+6. Live `pnpm eval` (mock mode, no credentials) against the freshly-rebuilt Docker Postgres —
+   exit 0, 32/32 golden cases, all 11 regression gates green.
+7. Regression-gate verification: re-read `evaluation/reports/latest.json`'s `regressionGates`
+   array — all `passed: true`, including the newly zero-tolerance `invalidCitationRate` gate.
+8. Secret scan of `evaluation/reports/latest.{json,md}` and `docker compose logs api ai-service
+   frontend` for GitHub-token/Anthropic-key/AWS-key-shaped strings — none found.
+9. VoxMind isolation: `ps aux | grep voxmind` confirmed PID 16012 (`uvicorn voxmind.main:app`,
+   port 8000) running throughout, untouched; no DevForge command referenced any VoxMind path or
+   its port-5432 Postgres.
+10. Re-verified every prior phase's live dependency chain against the fresh stack: registration/
+    login (Phase 2), GitHub PAT connection honest-failure with a validly-encrypted-but-fake token
+    against real `octocat/Hello-World` (Phase 6), indexing honest-failure (Phase 7), search gate
+    (Phase 8), Q&A gate (Phase 9), review gate (Phase 10), Evaluations page (Phase 11/12) — all
+    behaved identically to pre-Phase-12.
+11. `pnpm test:integration` (`tests/`, real HTTP against the running Docker stack) — 12/12 passed.
+12. Playwright screenshots of Code Search (`No repository connected` gate) and Evaluations
+    (persisted Phase 12 run, passed) pages against the Dockerized frontend at
+    `http://localhost:4173` — both render correctly, dark theme intact.
+13. Confirmed no endpoint was made unauthenticated (`GET /evaluations` still returns 401 with no
+    session).
+14. Confirmed no existing feature broke — full regression suite (§Regression results in the
+    completion report) green apart from two isolated pre-existing parallel-worker-flakiness
+    failures (`architecture.test.ts`, `codebaseIndex.test.ts`), both re-run in isolation and
+    passed, then the full suite re-run clean.
+15. Environment fully restored after verification: `docker compose down` (no `-v`), standalone
+    `postgres` service restarted, `devforge_test` recreated via `scripts/setup-test-db.sh` with
+    all 11 migrations, `devforge`'s own migration status re-confirmed up to date, final `npm run
+    test` sanity run green (api 313 / frontend 111 / evaluation 100).
+
+Wrote `docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md` covering all 18 required points (milestone
+status, files created/modified, database/API/frontend/retrieval/Q&A/review changes, before-and-
+after metrics, regression results, tests executed, security verification, performance impact,
+known limitations, remaining risks, VoxMind confirmation, Phase 13 confirmation). Finished the
+`README.md` and `evaluation/README.md` updates started during earlier milestones (status banner,
+architecture section, tech-stack table, known limitations, dataset section) and confirmed every
+doc cross-link resolves.
+
+No production code changed in this milestone — documentation and verification only.
+
+Commit: `<pending>`
+
+## Phase 12: complete
+
+All 8 milestones delivered and verified. Final counts, cross-checked against the actual final
+`pnpm test` run reported in the completion report's §11 (not re-summed from per-milestone deltas,
+to avoid the arithmetic mistakes caught in this same section during Phase 9 and Phase 11): `api`
+313 tests (258 pre-Phase-12 + 55 new across Milestones 2–5: 28 + 9 + 53-cumulative-through-M4
+which already includes M2+M3's 37, so M4 itself added 16, then M5 added 2 — net 313), `frontend`
+111 (109 + 2), `evaluation` 100 (84 + 16), `ai-service` 117 (unchanged), `tests/` 12 (unchanged) —
+**653 total**, all green except the two documented, pre-existing, isolation-confirmed-flaky
+cases.
+
+Retrieval precision@K improved 28.9% → 55.7% (measured on the final 32-case, adversarially-
+extended dataset) while recall@K improved 88.9% → 100% and MRR improved 66.1% → 82.1% — Goal 1's
+"improve precision without sacrificing recall" was met on both axes simultaneously, because the
+dominant cause of low precision (fixed-K padding, not poor ranking) was diagnosed before any code
+was written. Q&A's invalid-citation rate reached the task's explicitly preferred zero-on-fixture
+outcome (20% → 0%), via a fix to the coupled retrieval defect plus one genuinely new, narrowly-
+scoped grounding fallback for a previously-unguarded zero-valid-citation case. Code review
+evidence quality, already at 100% before this phase, gained adversarial-test coverage and no
+production change, confirming Milestone 1's own prediction rather than uncovering a hidden defect.
+
+Every change preserved the existing embedding architecture (Postgres `Float[]`, Voyage AI, Node-
+side cosine similarity — untouched), the `score` field's meaning (still pure cosine similarity in
+both production and evaluation), and every pre-Phase-12 API/test contract. Eight adversarial
+dataset cases, added strictly after the ranking/grounding implementation was finalized, all
+passed without any dataset-specific branching in production or evaluation code — the anti-
+overfitting check the phase plan committed to in Milestone 1 was not just asserted but actually
+run and actually passed. VoxMind's process and database were confirmed untouched at every
+checkpoint. Phase 13 was not started, per the task's own closing instruction.
