@@ -68,7 +68,7 @@ export function rankChunks(query: string, chunks: FixtureChunk[] = FIXTURE_CHUNK
  * 11/12 case (none of which set these fields) resolves to precisely its
  * old binary-ish behavior.
  */
-type GradedCase = {
+export type GradedCase = {
   direct: string[];
   supporting: string[];
   irrelevant: string[];
@@ -78,7 +78,7 @@ type GradedCase = {
   difficulty: string;
 };
 
-function gradedCase(testCase: RetrievalCase): GradedCase {
+export function gradedCase(testCase: RetrievalCase): GradedCase {
   return {
     direct: testCase.directSourceChunkIds ?? testCase.expectedChunkIds,
     supporting: testCase.supportingSourceChunkIds ?? testCase.acceptableAlternativeChunkIds,
@@ -90,7 +90,7 @@ function gradedCase(testCase: RetrievalCase): GradedCase {
   };
 }
 
-function relevanceGrade(chunkId: string, direct: string[], supporting: string[]): 0 | 1 | 2 {
+export function relevanceGrade(chunkId: string, direct: string[], supporting: string[]): 0 | 1 | 2 {
   if (direct.includes(chunkId)) return 2;
   if (supporting.includes(chunkId)) return 1;
   return 0;

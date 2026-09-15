@@ -122,6 +122,18 @@ export const FIXTURE_CHUNKS: FixtureChunk[] = [
   { chunkId: "py-load-api-key", filePath: "python/config/settings.py", symbolName: "load_api_key", symbolType: "function", startLine: 13, endLine: 18, language: "python" },
   { chunkId: "py-format-currency", filePath: "python/helpers/network_utils.py", symbolName: "format_currency", symbolType: "function", startLine: 9, endLine: 13, language: "python" },
   { chunkId: "py-legacy-get-order-by-id", filePath: "python/legacy/legacy_repository.py", symbolName: "get_order_by_id", symbolType: "function", startLine: 12, endLine: 17, language: "python" },
+
+  // --- Phase 13, Milestone 13.6: hidden-style anti-overfitting fixture —
+  // a structurally unrelated domain (warehouse inventory), authored after
+  // all Phase 13/14 ranking/grounding work was finalized, graded by the
+  // exact same evaluator code path as every other chunk above. See
+  // docs/BENCHMARK_EXPANSION_PHASE_PLAN.md ("Anti-overfitting controls").
+  { chunkId: "hidden-reserve-stock", filePath: "hidden/warehouse/stockLevels.ts", symbolName: "reserveStock", symbolType: "function", startLine: 15, endLine: 21, language: "typescript" },
+  { chunkId: "hidden-release-stock", filePath: "hidden/warehouse/stockLevels.ts", symbolName: "releaseStock", symbolType: "function", startLine: 27, endLine: 29, language: "typescript" },
+  { chunkId: "hidden-mark-shipment-delivered", filePath: "hidden/warehouse/shipmentTracker.ts", symbolName: "markShipmentDelivered", symbolType: "function", startLine: 16, endLine: 22, language: "typescript" },
+  { chunkId: "hidden-estimate-delivery-date", filePath: "hidden/warehouse/shipmentTracker.ts", symbolName: "estimateDeliveryDate", symbolType: "function", startLine: 28, endLine: 36, language: "typescript" },
+  { chunkId: "hidden-fetch-supplier-price", filePath: "hidden/warehouse/supplierClient.ts", symbolName: "fetchSupplierPrice", symbolType: "function", startLine: 16, endLine: 19, language: "typescript" },
+  { chunkId: "hidden-summarize-low-stock", filePath: "hidden/warehouse/inventoryReport.ts", symbolName: "summarizeLowStockItems", symbolType: "function", startLine: 11, endLine: 15, language: "typescript" },
 ];
 
 const contentCache = new Map<string, string[]>();

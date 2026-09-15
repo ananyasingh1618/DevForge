@@ -6,6 +6,9 @@
   "scripts": {
     "eval": "tsx src/runEval.ts",
     "eval:real": "tsx src/runEval.ts --real",
+    "audit:benchmark": "tsx src/runBenchmarkAudit.ts",
+    "perf:baseline": "tsx src/perf/runPerfBaseline.ts",
+    "relevance:report": "tsx src/relevanceReport.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

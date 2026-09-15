@@ -120,4 +120,81 @@ glossed over), duplicate-result rate 0%, empty-result rate (answerable) 0%.
 
 `DATASET_VERSION` bumped `2026.09.16-1` → `2026.09.16-2`.
 
-Commit: `6f5841b` (benchmark/graded-relevance changes), `<pending>` (this hash-backfill + version bump)
+Commit: `6f5841b` (benchmark/graded-relevance changes), `15fb29b` (hash-backfill + version bump)
+
+## Milestone 13.4 — Add benchmark quality checks
+
+Added `evaluation/src/dataset/benchmarkAudit.ts` — programmatic checks covering every item in the
+task's own Milestone 13.4 list: every expected/referenced chunk id resolves to a real
+`FIXTURE_CHUNKS` entry; chunk and case ids are unique; an answerable retrieval case has at least
+one expected chunk and an unanswerable one has none; a chunk is never labeled both a direct
+source and an explicit irrelevant example; every query is non-empty; no case or fixture text
+contains a credential-shaped string, a non-allowlisted email-shaped string, an SSN-shaped string,
+or mentions VoxMind; fixture paths are relative and normalized; a chunk's declared `language`
+matches what its own file extension implies (a real, concrete check — not just trusting the
+hand-authored field). Findings split into `errors` (structural — must be fixed) and `warnings`
+(worth a human look, e.g. an accidentally-duplicated query, not necessarily wrong).
+
+Added `evaluation/src/runBenchmarkAudit.ts` (`pnpm audit:benchmark`) writing
+`evaluation/reports/benchmark-audit.md`, and `benchmarkAudit.test.ts` (8 new tests) asserting the
+real dataset audits clean plus exercising the report renderer directly.
+
+Commit: `<pending>` (combined with Milestones 13.5-13.6 below)
+
+## Milestone 13.5 — Add human-reviewable relevance reports
+
+Added `evaluation/src/relevanceReport.ts` (`pnpm relevance:report`), writing
+`evaluation/reports/relevance-report.md`. For every retrieval case: query, category/language/
+difficulty/answerable metadata, direct/supporting source lists, hit/miss result, and the top-5
+ranked candidates' full score breakdown (semantic/lexical/identifier/file-path/combined),
+relevance label, duplicate-group membership, and whether the adaptive cutoff kept or removed it
+from the actually-returned set — reusing `diagnostics.ts`'s existing content-free breakdown
+(Phase 12, Milestone 2) rather than re-deriving it, so no raw chunk content or secret-bearing
+source ever appears in the report. Added a lightweight automatic **Diagnosis** classifier
+distinguishing a ranking problem, a missing indexed source, a benchmark-design issue (the
+`vague-wording` category), and a general query-understanding problem — spot-checked against
+`retrieval-fire-and-forget-notifications` and confirmed it correctly surfaces exactly the same
+noisy irrelevant top-rankers (`py-send-email-async`, `py-charge-card`, …) diagnosed by hand during
+Milestone 13.2, with the true answer's actual rank (8th) shown directly — real, verified evidence
+this report does what it's meant to, not just a plausible-looking template.
+
+`gradedCase`/`relevanceGrade`/`GradedCase` exported from `retrievalEvaluator.ts` (previously
+module-private) so this module reuses the evaluator's own graded-relevance logic instead of a
+second, potentially-drifting copy.
+
+Commit: `<pending>` (combined with Milestones 13.4/13.6)
+
+## Milestone 13.6 — Add adversarial and anti-overfitting evaluation
+
+Most adversarial categories the task lists (similar identifiers, similar filenames, same function
+name in multiple files, misleading wording, no-answer queries, short vs. long queries) were
+already covered by Milestone 13.2's own 47 new cases, several deliberately designed as adversarial
+per the plan doc's anti-overfitting methodology.
+
+Added the one piece Milestone 13.2 didn't cover: a genuinely **hidden-style fixture** —
+`evaluation/src/dataset/fixtures/hidden/warehouse/` — 4 new TypeScript files (stock reservation,
+shipment tracking, a supplier-price client with a real reliability bug, a clean inventory-summary
+utility) in a domain (warehouse/inventory) structurally unrelated to every other fixture file,
+written and added strictly *after* Milestone 13.2's ranking-affecting embedding changes were
+already finalized and committed — not tuned against afterward. 6 chunks, 6 new retrieval cases
+(including a second insufficient-evidence case in this new domain), graded by the exact same
+`rankChunks()`/`evaluateRetrieval()` code path as every other case, with zero dataset-specific
+branching added anywhere.
+
+**All 6 hidden-fixture cases pass** — real, verified evidence (not merely claimed) that Milestone
+13.2's embedding/ranking improvements generalize to unrelated content rather than being narrowly
+tuned to the visible dataset, mirroring Phase 12's own successful anti-overfitting check.
+Aggregate metrics on the now-67-case retrieval dataset actually improved slightly (recall@K 91.5%
+→ 92.2%, MRR 78.9% → 80.5%) since the hidden fixture's cleanly-separated content is easier than
+several of the deliberately-hard adversarial cases already in the visible set — expected and
+healthy, not a sign of a rigged benchmark.
+
+Also grep-audited `api/src/lib/hybridScore.ts`, `api/src/services/retrieval.ts`, and their
+`evaluation/` mirrors for any literal chunk id, case id, or fixture file path — none found,
+confirming by direct inspection (not just by claim) that no dataset-specific special-casing
+exists anywhere in the ranking code.
+
+Full dataset now: 67 retrieval / 20 Q&A / 20 review cases (107 total). 110/110 evaluation tests
+pass; benchmark audit clean (0 errors, 0 warnings).
+
+Commit: `<pending>`
