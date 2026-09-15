@@ -350,6 +350,46 @@ own identical conclusion) and was not pursued for the same reason Phase 12 didn'
 cheap, existing architecture supports it, and the two affected cases are a small (2 of 67), known,
 honestly-reported minority. No production chunking code changed in this milestone.
 
+## Milestone 14.4 — Incremental indexing foundations
+
+Scoped deliberately to "the safe, well-tested parts," per the task's own instruction — no full
+asynchronous worker system. Inspected `api/src/services/codebaseIndex.ts` (Milestone 13.1 already
+found: `CodebaseIndex`'s Prisma relations already cascade-delete `IndexedFile → Symbol/CodeChunk`,
+so **deleted-file cleanup was already structurally correct** before this milestone — confirmed,
+not re-implemented, by a new regression test rather than new code). The one real gap: every
+reindex re-fetched and re-parsed *every* file from GitHub and ai-service, even files whose content
+hadn't changed since the index's own last completed run — expensive I/O with no benefit.
+
+**Implemented**: `loadPreviousFiles()` reads the current index's own last-persisted
+`IndexedFile`+`Symbol` rows, keyed by path, reconstructing each successfully-parsed file's
+symbol list in the exact positional-`parentIndex` shape `ParsedFile` uses (derived from a stable,
+deterministic re-ordering of the persisted rows — the actual parent/child relationships are
+preserved exactly; only cosmetic sibling ordering can differ). `buildIndex()` now skips the
+GitHub blob fetch and the ai-service parse call for a file whose current blob sha exactly matches
+its previous content hash *and* whose previous status was `"parsed"` — reusing the previous
+result instead. A file whose previous status was `"parse_error"` is **never** cache-skipped, even
+with an unchanged hash — always retried, since a transient failure or a since-fixed parser bug
+deserves a fresh attempt (the task's own "retryable failures" requirement). Every other skip
+status (binary/too-large/unsupported/index-limit) was already a cheap, no-I/O computation with
+nothing worth caching.
+
+**Verified, not assumed**, via 5 new Supertest tests in `api/src/routes/codebaseIndex.test.ts`:
+an unchanged file's reindex makes zero blob/parse calls and correctly reuses its symbols; a
+changed file's reindex re-fetches and re-parses, with its new symbols replacing the old; a
+previously-`parse_error` file is retried even with an unchanged hash, and can newly succeed; a
+file removed from the tree leaves zero orphaned `Symbol` rows after reindex (deleted-file cleanup,
+confirmed real, not just claimed); reindexing an unchanged commit twice in a row produces no
+duplicate files or symbols (idempotency, confirmed real). Full `api` suite: 318/318 (313 + 5).
+`tsc -b`/build clean.
+
+**Known limitation, documented rather than pursued**: this reuses a *successful parse result* for
+an unchanged file within the *same* index's history — it does not (and was not asked to) reuse or
+share *embeddings* across commits for byte-identical chunk content across different commits,
+which would require a deeper architecture change to `CodeChunk`'s own `commitSha`-scoped unique
+constraint and `retrieval.ts`'s `ensureEmbeddings()`. Noted as a real, larger, un-pursued future
+optimization — not implemented here, consistent with "only the safe, well-tested parts" and "not
+a full asynchronous worker system."
+
 ## Non-goals reaffirmed for Phase 14
 
 No vector database, no pgvector, no full asynchronous worker system (Milestone 14.4 implements

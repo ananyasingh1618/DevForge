@@ -103,18 +103,87 @@ type CandidateFile = {
 };
 
 /**
+ * A previously-indexed file's own content hash and (if it was successfully
+ * parsed last time) reconstructed parse result, keyed by path — used by
+ * buildIndex() below to skip re-fetching and re-parsing a file whose
+ * content hasn't changed since the last index. See docs/
+ * CODEBASE_INDEX_PHASE_PLAN.md's Phase 14 addendum for the full rationale.
+ */
+type PreviousFileInfo = {
+  contentHash: string;
+  parseStatus: FileParseStatus;
+  language: string | null;
+  parseError: string | null;
+  symbols: ParsedFile["symbols"];
+};
+
+/**
+ * Loads the current index's own most-recently-persisted files and symbols
+ * (if any), reconstructing each successfully-parsed file's symbol list in
+ * the exact `ParsedFile["symbols"]` shape (positional `parentIndex`, not a
+ * database foreign key) by re-deriving positions from a stable,
+ * deterministic ordering (startLine, then id) — the same relationships
+ * `persistIndex()` will reconstruct into fresh rows either way, so this
+ * round-trip never changes what a file's own parent/child symbol
+ * structure means, only (harmlessly) the order same-level siblings might
+ * be listed in.
+ */
+async function loadPreviousFiles(projectId: string): Promise<Map<string, PreviousFileInfo>> {
+  const index = await prisma.codebaseIndex.findUnique({
+    where: { projectId },
+    include: { files: { include: { symbols: true } } },
+  });
+  if (!index) return new Map();
+
+  const byPath = new Map<string, PreviousFileInfo>();
+  for (const file of index.files) {
+    const orderedSymbols = [...file.symbols].sort((a, b) => a.startLine - b.startLine || a.id.localeCompare(b.id));
+    const idToIndex = new Map(orderedSymbols.map((s, i) => [s.id, i]));
+    byPath.set(file.path, {
+      contentHash: file.contentHash,
+      parseStatus: file.parseStatus,
+      language: file.language,
+      parseError: file.parseError,
+      symbols: orderedSymbols.map((s) => ({
+        name: s.name,
+        type: s.type,
+        startLine: s.startLine,
+        endLine: s.endLine,
+        parentIndex: s.parentId !== null ? (idToIndex.get(s.parentId) ?? null) : null,
+        signature: s.signature,
+      })),
+    });
+  }
+  return byPath;
+}
+
+/**
  * Fetches the branch's file tree and, for each candidate file, either
  * records why it was skipped or fetches and parses its content. Nothing
  * here is fabricated: a skip reason is always a real, distinct
  * FileParseStatus, and a parse result always comes from a real ai-service
  * call — never a guessed or default-successful outcome.
+ *
+ * Incremental (Phase 14, Milestone 14.4 — docs/CODEBASE_INDEX_PHASE_PLAN.md's
+ * addendum): when a file's current blob sha exactly matches the content
+ * hash it had in the index's own last completed run, and that run
+ * successfully parsed it, this reuses the previous parse result instead of
+ * re-fetching the blob and re-calling ai-service — real, measurable I/O
+ * savings on an unchanged file. A file that previously failed to parse
+ * (`parse_error`) is deliberately never cache-skipped, even if its content
+ * hash is unchanged — a transient ai-service failure or a since-fixed
+ * parser bug deserves a fresh attempt every time, matching the task's own
+ * "retryable failures" requirement. Every other skip reason
+ * (unsupported/binary/too-large/index-limit) is already a cheap,
+ * no-I/O computation, so there's nothing to cache for those.
  */
 async function buildIndex(
   token: string,
   owner: string,
   repo: string,
   commitSha: string,
-): Promise<{ files: CandidateFile[]; truncated: boolean }> {
+  previousFiles: Map<string, PreviousFileInfo>,
+): Promise<{ files: CandidateFile[]; truncated: boolean; reusedFileCount: number }> {
   const tree = await githubClient.getTree(token, owner, repo, commitSha);
 
   const blobEntries = tree.entries
@@ -122,6 +191,7 @@ async function buildIndex(
     .sort((a, b) => a.path.localeCompare(b.path));
 
   const files: CandidateFile[] = [];
+  let reusedFileCount = 0;
 
   for (let i = 0; i < blobEntries.length; i++) {
     const entry = blobEntries[i];
@@ -143,6 +213,19 @@ async function buildIndex(
     }
     if (!SUPPORTED_EXTENSIONS.has(extensionOf(entry.path))) {
       files.push({ ...base, parseStatus: "unsupported", parseError: null, language: null, symbols: [] });
+      continue;
+    }
+
+    const previous = previousFiles.get(entry.path);
+    if (previous && previous.contentHash === entry.sha && previous.parseStatus === "parsed") {
+      files.push({
+        ...base,
+        parseStatus: "parsed",
+        parseError: null,
+        language: previous.language,
+        symbols: previous.symbols,
+      });
+      reusedFileCount++;
       continue;
     }
 
@@ -174,7 +257,7 @@ async function buildIndex(
     }
   }
 
-  return { files, truncated: tree.truncated };
+  return { files, truncated: tree.truncated, reusedFileCount };
 }
 
 /** Replaces an index's files/symbols wholesale in one short transaction —
@@ -279,7 +362,14 @@ async function runIndexingPipeline(
   });
 
   try {
-    const { files, truncated } = await buildIndex(token, connection.githubOwner, connection.githubRepo, commitSha);
+    const previousFiles = await loadPreviousFiles(projectId);
+    const { files, truncated } = await buildIndex(
+      token,
+      connection.githubOwner,
+      connection.githubRepo,
+      commitSha,
+      previousFiles,
+    );
     return await persistIndex(projectId, truncated, files);
   } catch (err) {
     const message = err instanceof AppError ? err.message : "Indexing failed.";

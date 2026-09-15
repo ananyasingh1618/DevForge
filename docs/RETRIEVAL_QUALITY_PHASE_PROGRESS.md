@@ -339,3 +339,20 @@ raw file content at ranking time) rather than assuming it without checking. See 
 Phase 14 addendum for the full reasoning.
 
 Commit: `995350d` (combined with Milestone 14.2 above)
+
+## Milestone 14.4 — Incremental indexing foundations
+
+Added `loadPreviousFiles()` to `api/src/services/codebaseIndex.ts`, reading the current index's
+own last-persisted files/symbols keyed by path. `buildIndex()` now skips the GitHub blob fetch and
+ai-service parse call for a file whose blob sha is unchanged from last time *and* whose previous
+parse status was `"parsed"` — reusing the previous result. A previous `"parse_error"` is never
+cache-skipped (always retried). Deleted-file cleanup was confirmed already correct (Prisma cascade
+deletes, found during Milestone 13.1's own inspection) — added a regression test proving it rather
+than re-implementing something that already worked.
+
+5 new Supertest tests: unchanged-file reindex makes zero blob/parse calls and reuses symbols;
+changed-file reindex re-fetches/re-parses; a `parse_error` file is retried and can newly succeed;
+a removed file leaves zero orphaned `Symbol` rows; reindexing an unchanged commit twice is
+idempotent (no duplicates). Full `api` suite: 318/318 (313 + 5). Build/typecheck clean.
+
+Commit: `<pending>`
