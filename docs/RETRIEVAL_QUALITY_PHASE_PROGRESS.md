@@ -402,7 +402,7 @@ Dataset: 21 Q&A cases (20 + 1). Full evaluation suite: 121/121 unchanged (the ne
 verified live, not yet re-counted into the committed unit-test totals since it's dataset content,
 not a new unit test file).
 
-Commit: `<pending>` (combined with Milestone 14.7 below)
+Commit: `1f6cc41` (combined with Milestone 14.7 below)
 
 ## Milestone 14.7 — Preserve and strengthen code-review grounding
 
@@ -420,4 +420,4 @@ Dataset: 21 review cases (20 + 1). All 13 regression gates still pass with both 
 included; `citationValidityRate` stays at 100% and `emptyReviewCorrectness` stays at 100%. Full
 dataset now: 67 retrieval / 21 Q&A / 21 review (109 total). Benchmark audit clean.
 
-Commit: `<pending>`
+Commit: `1f6cc41`
