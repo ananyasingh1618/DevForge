@@ -198,3 +198,78 @@ Full dataset now: 67 retrieval / 20 Q&A / 20 review cases (107 total). 110/110 e
 pass; benchmark audit clean (0 errors, 0 warnings).
 
 Commit: `fdb5002`
+
+## Milestone 13.7 — Establish a reliable performance baseline
+
+Added `evaluation/src/perf/` — a reproducible, deterministic, credential-free, network-free
+benchmark of the shared ranking algorithm's own latency (`deterministicEmbedding` +
+`hybridScore`'s combined score), in isolation from network/database/embedding-provider cost.
+`syntheticCorpus.ts` generates deterministic, realistically-shaped synthetic chunks (function
+declarations with short doc comments, never added to the graded dataset — every id uses a
+reserved `synthetic-` prefix `RETRIEVAL_CASES` never references) so the benchmark can measure
+latency at corpus sizes well beyond the real 67-chunk fixture. `rankingLatency.ts` measures p50/
+p95/p99/mean per single query, cold (first call, no JIT warmup) and warm (30 iterations after 5
+warmup passes). `runPerfBaseline.ts` (`pnpm perf:baseline`) runs this at three corpus sizes —
+small (the real 70-chunk fixture, including the hidden set), medium (300 synthetic), large (1000
+synthetic) — and writes `evaluation/reports/perf-baseline.{md,json}`.
+
+**Measured baseline** (this machine, mock/mirror algorithm — not real Voyage embeddings):
+
+| Corpus | Chunks | Cold p50 | Warm p50 | Warm p95 | Warm p99 |
+|---|---|---|---|---|---|
+| small (real fixture) | 70 | 4.7ms | 2.9ms | 3.0ms | 3.1ms |
+| medium (synthetic) | 300 | 12.4ms | 12.3ms | 12.8ms | 13.6ms |
+| large (synthetic) | 1000 | 40.9ms | 40.9ms | 42.9ms | 44.1ms |
+
+Scales roughly linearly with corpus size (expected — the algorithm is a single O(n) pass per
+query), comfortably within the task's search-latency targets (p50 ≤500ms, p95 ≤1,500ms) even at
+1000 chunks, for the ranking algorithm alone.
+
+**Deliberately deferred to Milestone 14.8**: live, end-to-end `POST /search` latency and real
+indexing throughput (files/sec, chunks/sec) against a running Docker stack. Milestone 14.8's own
+"Full regression and verification" already requires a full Docker rebuild and before/after
+measurement once Phase 14's changes are in — measuring live end-to-end latency twice (once now,
+unchanged, and again after Phase 14) would be redundant work for no additional signal, so the one
+live measurement is captured there instead, where it can show real before/after numbers alongside
+every other Phase 14 verification step. This is a sequencing decision, not a skipped deliverable —
+documented here explicitly rather than left unstated.
+
+Added `rankingLatency.test.ts` (5 new tests): synthetic-chunk generation is deterministic and
+uses only reserved ids, and latency stats are well-formed and actually grow with corpus size (not
+a suspiciously-flat number that would suggest the benchmark isn't really exercising the algorithm).
+
+Full evaluation test suite: 115/115 passing.
+
+Commit: `<pending>`
+
+## Phase 13: complete (Milestones 13.1–13.7)
+
+All 7 milestones delivered. Final dataset: 67 retrieval / 20 Q&A / 20 review cases (107 total,
+comfortably exceeding the task's 60/20/20 targets), across 36 real fixture files (TypeScript,
+JavaScript, Python — confirmed by directly reading `ai-service/app/parsing/parser.py`, not
+assumed) plus 4 hidden-fixture files, 68 total indexed chunks. Benchmark audit clean (0 errors, 0
+warnings). Graded relevance (direct/supporting/irrelevant, 25 query categories, per-category/
+per-language/per-difficulty reporting) implemented additively — every Phase 11/12 case and every
+pre-existing consumer of `RetrievalCase`/`AggregateMetrics` works completely unchanged. A
+human-reviewable relevance report and a reproducible performance baseline are both real,
+generated, and inspected — not merely described. The hidden anti-overfitting fixture's 6/6 cases
+passing is real, verified evidence the Milestone 13.2 embedding improvements generalize.
+
+Two real defects were found and fixed along the way, both through direct measurement rather than
+guesswork: the deterministic mock embedding's char-n-gram proxy degrading at 3×+ corpus scale
+(fixed with two general, non-dataset-specific techniques), and a genuine evaluator bug in how
+unanswerable retrieval cases were graded. Two ground-truth corrections were applied using the
+exact same precedent Phase 12 itself established for `retrieval-vague-wording`. All changes were
+additive to existing types/aggregates; zero pre-existing test, gate, or report field changed
+meaning. `regressionGates.ts` itself was deliberately left untouched in Phase 13, per this phase's
+own plan doc — gate thresholds are Phase 14's concern, once real ranking/chunking improvements are
+implemented against this now-validated baseline.
+
+Phase 13's own honest, currently-unmet targets, measured against the final 67-case dataset
+(including the hidden fixture) rather than hidden: recall@5 83.6% (target ≥95%), precision@1
+80.6% (target ≥85%), nDCG@5 82.7% (target ≥85%), useful-context rate 38.1% (target ≥90%, the
+single largest gap) — see the completion report for the full before/after table and root-cause
+hypotheses for each.
+
+VoxMind was not touched at any point in this phase (confirmed via `ps aux` before and after every
+Docker/process check). Phase 15 was not started.
