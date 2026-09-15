@@ -13,7 +13,7 @@ lease/heartbeat, cooperative cancellation) and the explicit state-transition tab
 
 Deliverables: `docs/PHASE_15_JOB_ARCHITECTURE_PLAN.md`, this progress log.
 
-Commit: TBD
+Commit: `b68aa1a`
 
 ## Milestone 15.2 — Database and persistence
 
@@ -43,4 +43,4 @@ cancelled→running, failed→completed without a new attempt, queued→complete
 automatic retries, lease-based stale-job recovery, and ownership (404, never distinguishing
 "doesn't exist" from "not yours"). Full `api` suite: 355/355 (323 + 32), zero regressions.
 
-Commit: `<pending>`
+Commit: `b68aa1a`
