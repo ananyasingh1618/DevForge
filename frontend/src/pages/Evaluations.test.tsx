@@ -105,6 +105,51 @@ describe("Evaluations — list state", () => {
   });
 });
 
+describe("Evaluations — baseline comparison (Phase 12)", () => {
+  it("shows a comparison against the previous run when one exists, with a regression indicator", async () => {
+    const older = makeSummary({
+      id: "run-older",
+      createdAt: new Date(Date.now() - 86_400_000).toISOString(),
+      retrievalMetrics: { recallAtK: 1, precisionAtK: 0.6, caseCount: 14 },
+      qaMetrics: { invalidCitationRate: 0, caseCount: 7 },
+      reviewMetrics: { findingRecall: 1, caseCount: 11 },
+    });
+    const newer = makeSummary({
+      id: "run-newer",
+      createdAt: new Date().toISOString(),
+      passed: false,
+      retrievalMetrics: { recallAtK: 0.8, precisionAtK: 0.6, caseCount: 14 },
+      qaMetrics: { invalidCitationRate: 0, caseCount: 7 },
+      reviewMetrics: { findingRecall: 1, caseCount: 11 },
+    });
+    mockedEvaluationsApi.listEvaluationRunsRequest.mockResolvedValue({ runs: [newer, older] });
+    mockedEvaluationsApi.getEvaluationRunRequest.mockResolvedValue(makeDetail(newer));
+    renderPage();
+    await screen.findByText("Failed");
+
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: /22\/24 cases/ })[0]!);
+
+    expect(await screen.findByText(/Vs\. previous run/)).toBeInTheDocument();
+    // recallAtK regressed from 100% to 80% — must show a regression indicator.
+    expect(screen.getByText("Retrieval recall@K")).toBeInTheDocument();
+    expect(screen.getByText(/regression/)).toBeInTheDocument();
+  });
+
+  it("shows no comparison for the oldest (only) run", async () => {
+    mockedEvaluationsApi.listEvaluationRunsRequest.mockResolvedValue({ runs: [makeSummary()] });
+    mockedEvaluationsApi.getEvaluationRunRequest.mockResolvedValue(makeDetail());
+    renderPage();
+    await screen.findByText("Passed");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /22\/24 cases/ }));
+    await screen.findByText("Regression gates");
+
+    expect(screen.queryByText(/Vs\. previous run/)).not.toBeInTheDocument();
+  });
+});
+
 describe("Evaluations — detail state", () => {
   it("expands a run to show regression gates, metrics, and failed-case detail", async () => {
     mockedEvaluationsApi.listEvaluationRunsRequest.mockResolvedValue({ runs: [makeSummary()] });

@@ -54,7 +54,56 @@ function FailedCases({ cases }: { cases: CaseResult[] }) {
   );
 }
 
-function RunDetail({ detail }: { detail: EvaluationRunDetail }) {
+/** Key metrics worth a quick "did this get better or worse" glance — a
+ * small, hand-picked subset (not every metric), each tagged with which
+ * direction counts as an improvement. Kept deliberately small per the
+ * task's own "do not clutter" instruction. */
+const COMPARISON_METRICS: Array<{ feature: "retrieval" | "qa" | "review"; key: string; label: string; higherIsBetter: boolean }> = [
+  { feature: "retrieval", key: "recallAtK", label: "Retrieval recall@K", higherIsBetter: true },
+  { feature: "retrieval", key: "precisionAtK", label: "Retrieval precision@K", higherIsBetter: true },
+  { feature: "qa", key: "invalidCitationRate", label: "Q&A invalid-citation rate", higherIsBetter: false },
+  { feature: "review", key: "findingRecall", label: "Review finding recall", higherIsBetter: true },
+];
+
+function BaselineComparison({
+  current,
+  previous,
+}: {
+  current: EvaluationRunDetail;
+  previous: EvaluationRunSummary;
+}) {
+  const metricsByFeature = { retrieval: current.retrievalMetrics, qa: current.qaMetrics, review: current.reviewMetrics };
+  const previousByFeature = { retrieval: previous.retrievalMetrics, qa: previous.qaMetrics, review: previous.reviewMetrics };
+
+  return (
+    <div>
+      <p className="text-xs font-medium text-text-muted">Vs. previous run ({new Date(previous.createdAt).toLocaleDateString()})</p>
+      <ul className="mt-1 flex flex-col gap-0.5">
+        {COMPARISON_METRICS.map((m) => {
+          const currentValue = metricsByFeature[m.feature][m.key];
+          const previousValue = previousByFeature[m.feature][m.key];
+          if (currentValue === undefined || previousValue === undefined) return null;
+          const delta = currentValue - previousValue;
+          const improved = m.higherIsBetter ? delta > 0 : delta < 0;
+          const regressed = m.higherIsBetter ? delta < 0 : delta > 0;
+          const indicator = improved ? "▲" : regressed ? "▼" : "–";
+          const color = improved ? "text-success" : regressed ? "text-danger" : "text-text-muted";
+          return (
+            <li key={m.key} className="text-xs">
+              <span className={color}>{indicator}</span> <span className="text-text">{m.label}</span>{" "}
+              <span className="text-text-muted">
+                {fmtPct(previousValue)} → {fmtPct(currentValue)}
+              </span>
+              {regressed && <span className="ml-1 text-danger">(regression)</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function RunDetail({ detail, previousRun }: { detail: EvaluationRunDetail; previousRun: EvaluationRunSummary | null }) {
   return (
     <Card className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -64,6 +113,8 @@ function RunDetail({ detail }: { detail: EvaluationRunDetail }) {
           {detail.gitCommit.slice(0, 8)} · {new Date(detail.createdAt).toLocaleString()}
         </span>
       </div>
+
+      {previousRun && <BaselineComparison current={detail} previous={previousRun} />}
 
       <div>
         <p className="text-xs font-medium text-text-muted">Regression gates</p>
@@ -91,12 +142,14 @@ function RunDetail({ detail }: { detail: EvaluationRunDetail }) {
 
 function RunRow({
   run,
+  previousRun,
   expanded,
   detail,
   detailError,
   onToggle,
 }: {
   run: EvaluationRunSummary;
+  previousRun: EvaluationRunSummary | null;
   expanded: boolean;
   detail: EvaluationRunDetail | null;
   detailError: string | null;
@@ -119,7 +172,7 @@ function RunRow({
       </button>
       {expanded && detailError && <ErrorState message={detailError} />}
       {expanded && !detailError && !detail && <LoadingState label="Loading run detail…" />}
-      {expanded && detail && <RunDetail detail={detail} />}
+      {expanded && detail && <RunDetail detail={detail} previousRun={previousRun} />}
     </div>
   );
 }
@@ -194,10 +247,11 @@ export function Evaluations() {
           />
         )}
         {state.status === "ready" &&
-          state.runs.map((run) => (
+          state.runs.map((run, i) => (
             <RunRow
               key={run.id}
               run={run}
+              previousRun={state.runs[i + 1] ?? null}
               expanded={expandedId === run.id}
               detail={details[run.id] ?? null}
               detailError={detailErrors[run.id] ?? null}
