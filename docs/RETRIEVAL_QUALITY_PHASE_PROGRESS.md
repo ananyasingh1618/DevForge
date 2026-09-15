@@ -356,3 +356,27 @@ a removed file leaves zero orphaned `Symbol` rows; reindexing an unchanged commi
 idempotent (no duplicates). Full `api` suite: 318/318 (313 + 5). Build/typecheck clean.
 
 Commit: `c34c808`
+
+## Milestone 14.5 — Retrieval observability
+
+Added `api/src/lib/searchObservability.ts`: a pure `buildSearchObservabilityEvent()` (unit-
+testable without capturing console output) plus a thin `logSearchObservability()` that writes one
+structured JSON line per `search()` call via `console.log` — the same minimal logging convention
+already used in `app.ts`/`server.ts` (this codebase has no logger library). Wired into
+`search()` in `api/src/services/retrieval.ts`, timed from the top of the function so latency
+includes embedding generation and the database query, not just ranking.
+
+Logged per request: query length (never the raw query text), total/semantic/lexical candidate
+counts, final result count, how many candidates the adaptive cutoff removed and the exact
+threshold used, top/mean combined score, latency in milliseconds, the index's own branch/commit/
+completed-at age/failed-file-count (a cheap staleness/health proxy — no extra GitHub call). A
+dedicated test asserts a deliberately sensitive-looking query and its serialized log line never
+share any substring, confirming by direct check (not just design intent) that raw query text,
+chunk content, and file paths never reach a log aggregator.
+
+5 new tests (`searchObservability.test.ts`). Full `api` suite: 323/323 (318 + 5) — one unrelated,
+pre-existing flaky failure in `tasks.test.ts` under full-suite parallel load (the same documented
+parallel-worker Set-Cookie flakiness noted in every earlier phase of this session) re-ran clean in
+isolation, then the full suite re-ran clean too. Build/typecheck clean.
+
+Commit: `<pending>`

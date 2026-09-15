@@ -7,6 +7,7 @@ import { generateEmbeddingsViaAiService } from "../lib/aiServiceClient.js";
 import { chunkFile } from "../lib/chunking.js";
 import { cosineSimilarity } from "../lib/similarity.js";
 import { combinedScore, computeScoreSignals } from "../lib/hybridScore.js";
+import { buildSearchObservabilityEvent, logSearchObservability } from "../lib/searchObservability.js";
 import type { SearchRequestInput } from "../schemas/retrieval.js";
 
 export type SearchResult = {
@@ -144,6 +145,7 @@ export async function search(
   projectId: string,
   input: SearchRequestInput,
 ): Promise<SearchResult[]> {
+  const searchStartedAt = Date.now();
   await requireOwnedProject(ownerId, projectId);
 
   const index = await prisma.codebaseIndex.findUnique({ where: { projectId } });
@@ -244,7 +246,32 @@ export async function search(
     })
     .filter((r): r is SearchResult => r !== null);
 
-  return selectRankedResults(input.query, scored, input.limit);
+  const results = selectRankedResults(input.query, scored, input.limit);
+
+  // Observability (Phase 14, Milestone 14.5) — a single bounded, secret-
+  // free structured log line per search request. Never logs the query
+  // text, chunk content, or file paths — see searchObservability.ts's own
+  // header comment for exactly what is and isn't included.
+  const candidateSummaries = scored.map((c) => {
+    const signals = computeScoreSignals(input.query, c.score, { content: c.content, symbolName: c.symbolName, filePath: c.filePath });
+    return { semanticScore: signals.semanticScore, lexicalScore: signals.lexicalScore, combined: combinedScore(signals) };
+  });
+  const topCombined = candidateSummaries.length > 0 ? Math.max(...candidateSummaries.map((c) => c.combined)) : 0;
+  logSearchObservability(
+    buildSearchObservabilityEvent({
+      query: input.query,
+      candidates: candidateSummaries,
+      finalResultCount: results.length,
+      cutoffThreshold: topCombined * RELATIVE_SCORE_CUTOFF,
+      latencyMs: Date.now() - searchStartedAt,
+      indexBranch: index.branch,
+      indexCommitSha: index.commitSha,
+      indexCompletedAt: index.completedAt,
+      indexFailedFileCount: index.failedFileCount,
+    }),
+  );
+
+  return results;
 }
 
 /** Relative-to-top cutoff: a candidate is kept only while its combined
