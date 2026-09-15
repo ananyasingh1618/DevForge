@@ -139,7 +139,7 @@ Added `evaluation/src/runBenchmarkAudit.ts` (`pnpm audit:benchmark`) writing
 `evaluation/reports/benchmark-audit.md`, and `benchmarkAudit.test.ts` (8 new tests) asserting the
 real dataset audits clean plus exercising the report renderer directly.
 
-Commit: `<pending>` (combined with Milestones 13.5-13.6 below)
+Commit: `fdb5002` (combined with Milestones 13.5-13.6 below)
 
 ## Milestone 13.5 — Add human-reviewable relevance reports
 
@@ -162,7 +162,7 @@ this report does what it's meant to, not just a plausible-looking template.
 module-private) so this module reuses the evaluator's own graded-relevance logic instead of a
 second, potentially-drifting copy.
 
-Commit: `<pending>` (combined with Milestones 13.4/13.6)
+Commit: `fdb5002` (combined with Milestones 13.4/13.6)
 
 ## Milestone 13.6 — Add adversarial and anti-overfitting evaluation
 
@@ -197,4 +197,4 @@ exists anywhere in the ranking code.
 Full dataset now: 67 retrieval / 20 Q&A / 20 review cases (107 total). 110/110 evaluation tests
 pass; benchmark audit clean (0 errors, 0 warnings).
 
-Commit: `<pending>`
+Commit: `fdb5002`
