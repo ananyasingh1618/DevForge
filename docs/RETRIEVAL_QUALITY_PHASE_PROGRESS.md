@@ -240,7 +240,7 @@ doc cross-link resolves.
 
 No production code changed in this milestone — documentation and verification only.
 
-Commit: `<pending>`
+Commit: `560298a`
 
 ## Phase 12: complete
 
