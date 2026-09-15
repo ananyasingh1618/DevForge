@@ -27,4 +27,11 @@ EXPOSE 4000
 # Applies any pending migrations before starting — this is the container's
 # equivalent of the local-dev `prisma migrate dev` step, using the
 # non-interactive `deploy` command appropriate for a running environment.
-CMD ["sh", "-c", "pnpm exec prisma migrate deploy && node dist/server.js"]
+# `exec` replaces the shell with the node process so node becomes PID 1 and
+# receives SIGTERM directly from `docker stop` — without it, the shell stays
+# PID 1, never forwards the signal to its child, and server.ts's graceful
+# shutdown (worker.stop() draining any in-flight job before exit) never
+# runs, forcing Docker to hard-kill the process after its grace period
+# instead. Found via a live `docker compose stop` check during Milestone
+# 15.8 verification.
+CMD ["sh", "-c", "pnpm exec prisma migrate deploy && exec node dist/server.js"]

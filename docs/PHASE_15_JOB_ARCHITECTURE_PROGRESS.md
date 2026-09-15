@@ -220,3 +220,103 @@ specifically exercised beyond what the existing `classifyError()`'s catch-all "u
 exception → transient, bounded" path already provides.
 
 Commit: `c43540c`
+
+## Milestone 15.8 — Phase 15 verification
+
+Ran the full verification matrix rather than stopping at the unit/integration suites already
+passing from prior milestones, per this milestone's own "do not mark Phase 15 complete if the job
+system works only in the happy path" instruction.
+
+**Full test matrix (clean run, this milestone):**
+
+| Suite | Result |
+|---|---|
+| `api` typecheck (`tsc --noEmit`) | ✅ clean |
+| `frontend` typecheck (`tsc -b`) | ✅ clean |
+| `tests` (integration) typecheck | ✅ clean |
+| `evaluation` typecheck | ✅ clean |
+| `api` lint (`eslint .`) | ✅ clean |
+| `frontend` lint | ✅ clean (1 pre-existing, unrelated warning) |
+| `api` build (`tsc -p tsconfig.build.json`) | ✅ clean |
+| `api` tests | ✅ 383/383 |
+| `frontend` tests | ✅ 121/121 |
+| `evaluation` tests | ✅ 135/135 (includes the 14 Milestone A6 adversarial tests) |
+| `tests` (integration, real stack) | ✅ 11/11 files, 12/12 tests, run against the live Docker stack below |
+
+**Full Docker rebuild**: `docker compose down -v` (wiping the local `postgres` volume) followed by
+`docker compose up -d --build` for all four services (`postgres`, `ai-service`, `api`, `frontend`).
+All four became healthy. The `api` container's startup log confirms all 12 migrations — the 11 from
+prior phases plus this phase's own `20260915223112_add_jobs` — applied cleanly to a completely
+fresh database, and the 11-file integration suite then passed against this live stack.
+
+**A real gap found and fixed: the worker was never actually started.** `jobWorker.ts`'s
+`startWorker()` had its own full test suite (`jobWorker.test.ts`) but, checked directly, was never
+called from anywhere outside tests — `server.ts` only ever did `app.listen(...)`. This meant that on
+a real deployment, a job created over HTTP would sit in `queued` forever: fully tested in isolation,
+never actually wired to run. Fixed in `api/src/server.ts` by calling `startWorker()` alongside
+`app.listen()` (in-process, no new service or Dockerfile — the minimal fix consistent with this
+phase's own "do not introduce unnecessary infrastructure" instruction), and by handling `SIGTERM`/
+`SIGINT` to call `worker.stop()` (draining any in-flight job) before the process exits.
+
+**Live job exercise against the running Docker stack** (real HTTP, real Postgres, real worker poll
+loop — not a test mock): registered a user, created a project, and submitted one job of each of the
+four types (`indexing`, `qa`, `review`, `evaluation`) via `POST /projects/:id/jobs`. Within one poll
+cycle (~1–5s) the worker claimed and completed all four:
+- `evaluation` → failed with `JOB_TYPE_NOT_DISPATCHABLE`, exactly as designed.
+- `indexing` → failed with `NO_REPOSITORY_CONNECTED` (no GitHub repo was connected in this
+  smoke check — a genuine, correct service-level validation response, not a worker defect).
+- `qa` / `review` → failed with `NO_COMPLETED_INDEX`, for the same underlying reason.
+
+This is an honest scope note, not a gap: reaching the `completed` outcome for these three types
+requires a real indexed repository (a live GitHub connection, AI-service parsing, real embeddings),
+which was deliberately not exercised here to avoid an unnecessary external GitHub call during a
+verification pass — the `completed` path itself is already covered by `jobWorker.test.ts`'s
+mocked-service tests. What this live check specifically proves, and what those unit tests cannot,
+is the full production wiring: HTTP create → worker poll → claim → dispatch → real service call →
+result persisted — all against the actual running server, not an in-process test harness. Also
+exercised live: `retry` (a failed `qa` job → `queued`, `retryCount: 1`) and `cancel` (a freshly
+queued job → `cancelled` immediately). Confirmed via `docker compose logs api` that none of the four
+failure messages leaked a stack trace or internal detail, matching `runOneClaimedJob`'s designed
+error handling.
+
+**A second real bug found and fixed: `SIGTERM` never reached the Node process.** After wiring in the
+shutdown handler above, `docker compose stop api` was used to verify it actually fires — it did not.
+The `Dockerfile`'s `CMD ["sh", "-c", "pnpm exec prisma migrate deploy && node dist/server.js"]` runs
+`node` as a child of `sh`; a plain `sh -c "cmd1 && cmd2"` does not forward signals to its child
+process, so `sh` (PID 1) absorbed the `SIGTERM` and Node never saw it, meaning `server.ts`'s new
+graceful-shutdown code — and the safety property it exists for, letting `worker.stop()` drain an
+in-flight job before exit — silently never ran, with Docker left to fall back to a hard kill after
+its grace period. Fixed by changing the `CMD` to `... && exec node dist/server.js`: `exec` replaces
+the shell process image with Node, so Node becomes PID 1 and receives `SIGTERM` directly. Re-verified
+live: after the fix, `docker compose stop api` produced the `"Received SIGTERM, shutting down
+gracefully..."` log line and exited in ~0.26s (a clean, fast exit — not a 10-second forced-kill
+timeout). Rebuilt the `api` image with this fix, restarted the full stack, and re-ran `tsc --noEmit`
++ `eslint .` clean.
+
+**Secret scan**: captured the full `api` container log across this milestone's live job runs
+(including four deliberately-triggered failures) and grepped for Anthropic/GitHub/JWT-shaped key
+patterns, `password`-adjacent fields, private-key headers, and credential-bearing connection
+strings. No matches beyond the intentionally-non-secret Docker Compose placeholder
+(`SESSION_SECRET: docker-compose-local-verification-secret-not-for-prod-...`, itself already labeled
+as non-production in `docker-compose.yml`).
+
+**VoxMind isolation**: confirmed before and after this milestone's Docker rebuild — `ps -p 16012`
+still shows the native `uvicorn voxmind.main:app --port 8000` process running throughout, with its
+five native Postgres connections on port 5432 (`lsof -i :5432`) unaffected. DevForge's own Postgres
+remained on its separate host port 5433 throughout, per `docker-compose.yml`'s existing convention.
+
+**Environment restored after verification**: `docker compose down` (full stack, without `-v`) then
+`docker compose up -d postgres` to return to this session's established local-dev baseline (a single
+standalone `postgres` container, not the full 4-service stack) — matching how the environment was
+found at the start of this milestone. Because the earlier `down -v` wiped the shared Postgres
+volume, migrations were re-applied to both `devforge` (already current, applied automatically by the
+`api` container's own startup during the rebuild) and `devforge_test` (via `scripts/setup-test-db.sh`,
+the established per-phase pattern). Re-ran the full `api` suite once more against the restored local
+test database: 383/383 passing, confirming the restored environment is fully consistent.
+
+**Milestone 15.8 conclusion**: Phase 15 is not "happy-path only" — failure-injection (15.7), a full
+clean-volume Docker rebuild with live migrations, and a live, real-HTTP job exercise (including two
+real production bugs found and fixed, not just tests passing) all corroborate the job system
+actually works end to end in a real deployment, not merely inside its own test suite.
+
+Commit: `<pending>`
