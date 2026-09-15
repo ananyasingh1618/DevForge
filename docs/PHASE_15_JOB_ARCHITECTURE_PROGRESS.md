@@ -82,4 +82,4 @@ classification and the resulting requeue-vs-fail behavior, secret-safe error mes
 both before and during a dispatched call, and a real (not faked) timeout. Full `api` suite:
 368/368 (355 + 13), zero regressions.
 
-Commit: `<pending>`
+Commit: `8c59bc3`
