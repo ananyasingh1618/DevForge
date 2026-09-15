@@ -41,7 +41,7 @@ Root causes identified with real measurements, not guesses (full detail in the p
 
 Deliverables: `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md`, this progress log.
 
-Commit: `<pending>`
+Commit: `8074b37`
 
 ## Milestone 2 — Retrieval diagnostics
 
