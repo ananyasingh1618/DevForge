@@ -68,8 +68,8 @@ export const QA_CASES: QaCase[] = [
     insufficientEvidenceExpected: false,
     mockAnswer: {
       answer:
-        "No — getProject looks up the project by id and returns it without checking req.user " +
-        "against the project's ownerId, so any authenticated user can read another user's project.",
+        "No — getProject does not check req.user against the project's ownerId before returning " +
+        "it, so any authenticated user can read another user's project.",
       citedChunkIds: ["api-get-project"],
       insufficientEvidence: false,
     },

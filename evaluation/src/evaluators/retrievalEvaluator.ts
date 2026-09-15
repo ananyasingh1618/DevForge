@@ -26,8 +26,8 @@ export function rankChunks(query: string, chunks: FixtureChunk[] = FIXTURE_CHUNK
     .slice(0, k);
 }
 
-function evaluateCase(testCase: RetrievalCase, k: number): CaseResult {
-  const ranked = rankChunks(testCase.query, FIXTURE_CHUNKS, k);
+function evaluateCase(testCase: RetrievalCase, chunks: FixtureChunk[], k: number): CaseResult {
+  const ranked = rankChunks(testCase.query, chunks, k);
   const rankedIds = ranked.map((r) => r.chunk.chunkId);
   const acceptable = new Set([...testCase.expectedChunkIds, ...testCase.acceptableAlternativeChunkIds]);
 
@@ -56,15 +56,19 @@ function evaluateCase(testCase: RetrievalCase, k: number): CaseResult {
   };
 }
 
-export function evaluateRetrieval(cases: RetrievalCase[] = RETRIEVAL_CASES, k = TOP_K): FeatureReport {
-  const results = cases.map((c) => evaluateCase(c, k));
+export function evaluateRetrieval(
+  cases: RetrievalCase[] = RETRIEVAL_CASES,
+  k = TOP_K,
+  chunks: FixtureChunk[] = FIXTURE_CHUNKS,
+): FeatureReport {
+  const results = cases.map((c) => evaluateCase(c, chunks, k));
 
   const n = results.length || 1;
   const hits = results.filter((r) => r.score > 0).length;
   const emptyResults = results.filter((r) => (r.actual as { rankedIds: string[] }).rankedIds.length === 0).length;
   const duplicateCases = results.filter((r) => r.failureReasons.some((f) => f.includes("duplicate"))).length;
   const contextCompliant = cases.every((c) => {
-    const ranked = rankChunks(c.query, FIXTURE_CHUNKS, k);
+    const ranked = rankChunks(c.query, chunks, k);
     return ranked.reduce((sum, r) => sum + chunkContent(r.chunk).length, 0) <= MAX_CONTEXT_CHARS;
   });
   const precisionValues = results.map((r) => {
