@@ -198,4 +198,4 @@ result's absolute score stays low, not confidently high), determinism, and dupli
 Milestones A2–A4's fixes generalize to fresh content across all three languages, not narrowly
 tuned to the main dataset's own specific chunks. Full `evaluation` suite: 135/135 (121 + 14).
 
-Commit: `<pending>`
+Commit: `d0b7622`
