@@ -27,6 +27,9 @@
 // Q&A (retrieval -> structured-output provider -> citation validation ->
 // persistence) but with evidence owned by the review (shared across many
 // findings) rather than by one answer; see docs/CODE_REVIEW_PHASE_PLAN.md.
+// Phase 11 (Evaluation) adds: evaluation_runs — the one system-wide,
+// non-project-scoped table in this schema; see docs/EVALUATION_PHASE_PLAN.md
+// and the evaluation/ package for why.
 
 generator client {
   provider = "prisma-client-js"
@@ -641,4 +644,44 @@ model CodeReviewFindingSource {
   @@index([findingId])
   @@index([sourceId])
   @@map("code_review_finding_sources")
+}
+
+enum EvaluationRunMode {
+  mock
+  real
+}
+
+// One row per evaluation suite run (see docs/EVALUATION_PHASE_PLAN.md and
+// the evaluation/ package). Deliberately NOT project-scoped and NOT owned
+// by a user — the evaluation dataset is a fixed, version-controlled
+// synthetic fixture (evaluation/src/dataset/), not a real connected
+// repository, so there is no project/owner for a run to belong to; this is
+// the one system-wide table in this schema. `evaluation/`'s CLI (raw `pg`,
+// the same cross-package pattern `tests/` already uses against this same
+// schema) inserts a row here as a best-effort last step after writing the
+// authoritative JSON/Markdown report files to disk — a reachable database
+// is never required for the evaluation suite itself to run or to gate CI.
+// `retrievalMetrics`/`qaMetrics`/`reviewMetrics` are each feature's
+// aggregate metrics object; `reportJson` is the full report (including
+// every per-case result) — the dataset is intentionally small, so storing
+// it whole here is cheap and lets the read-only frontend page show full
+// failure detail without a second round-trip to a file the browser can't
+// reach.
+model EvaluationRun {
+  id               String            @id @default(uuid())
+  datasetVersion   String            @map("dataset_version")
+  evaluatorVersion String            @map("evaluator_version")
+  mode             EvaluationRunMode
+  gitCommit        String            @map("git_commit")
+  passed           Boolean
+  totalCases       Int               @map("total_cases")
+  failedCaseCount  Int               @map("failed_case_count")
+  retrievalMetrics Json              @map("retrieval_metrics")
+  qaMetrics        Json              @map("qa_metrics")
+  reviewMetrics    Json              @map("review_metrics")
+  reportJson       Json              @map("report_json")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("evaluation_runs")
 }
