@@ -2,6 +2,7 @@ import { prisma } from "../lib/prisma.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { generateSessionToken, hashSessionToken, SESSION_TTL_MS } from "../lib/sessionToken.js";
 import { AppError } from "../lib/errors.js";
+import { logAuditEvent } from "../lib/auditLog.js";
 import type { LoginInput, RegisterInput } from "../schemas/auth.js";
 
 export type SafeUser = {
@@ -29,6 +30,7 @@ export async function registerUser(
   });
 
   const { sessionToken, expiresAt } = await createSession(user.id);
+  logAuditEvent({ event: "auth.register", userId: user.id });
   return { user: toSafeUser(user), sessionToken, expiresAt };
 }
 
@@ -41,8 +43,10 @@ export async function loginUser(
   // the response can't be used to enumerate registered email addresses. Uses
   // its own INVALID_CREDENTIALS code, distinct from the UNAUTHENTICATED code
   // requireAuth uses for "no/invalid session" on protected routes.
-  const invalidCredentials = () =>
-    new AppError(401, "INVALID_CREDENTIALS", "Invalid email or password");
+  const invalidCredentials = () => {
+    logAuditEvent({ event: "auth.login_failure" });
+    return new AppError(401, "INVALID_CREDENTIALS", "Invalid email or password");
+  };
 
   if (!user) {
     throw invalidCredentials();
@@ -54,6 +58,7 @@ export async function loginUser(
   }
 
   const { sessionToken, expiresAt } = await createSession(user.id);
+  logAuditEvent({ event: "auth.login_success", userId: user.id });
   return { user: toSafeUser(user), sessionToken, expiresAt };
 }
 

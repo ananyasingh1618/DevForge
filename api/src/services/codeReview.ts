@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
+import { MAX_LIST_RESULTS } from "../lib/pagination.js";
 import { AppError } from "../lib/errors.js";
 import { requireOwnedProject } from "../lib/ownership.js";
 import * as retrievalService from "./retrieval.js";
@@ -255,6 +256,7 @@ export async function listReviews(ownerId: string, projectId: string): Promise<C
     where: { projectId },
     include: reviewWithDetailInclude,
     orderBy: { createdAt: "desc" },
+    take: MAX_LIST_RESULTS,
   });
   return reviews.map(serializeReview);
 }

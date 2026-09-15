@@ -1,5 +1,6 @@
 import { prisma } from "./prisma.js";
 import { AppError } from "./errors.js";
+import { logAuditEvent } from "./auditLog.js";
 
 /**
  * The single ownership predicate every project-scoped service function
@@ -11,10 +12,19 @@ import { AppError } from "./errors.js";
  * updating the other ten). Behavior is unchanged: throws AppError.notFound()
  * (404, never 403) so a caller can never distinguish "no such project" from
  * "a project that exists but belongs to someone else" through the response.
+ *
+ * Milestone 16.5 added the audit-log call on the failure path. This
+ * deliberately does not run a second query to distinguish "no such
+ * project at all" from "a project that exists but belongs to someone
+ * else" — that would double the query cost of the single most-frequently-
+ * called check in the whole API purely for log-labeling purposes. Either
+ * way the signal an investigator needs is the same: this user attempted
+ * to access this project id and was denied.
  */
 export async function requireOwnedProject(ownerId: string, projectId: string) {
   const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
   if (!project) {
+    logAuditEvent({ event: "ownership.denied", userId: ownerId, projectId });
     throw AppError.notFound("Project not found");
   }
   return project;

@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { requireOwnedProject } from "../lib/ownership.js";
+import { logAuditEvent } from "../lib/auditLog.js";
 import * as githubClient from "../lib/githubClient.js";
 import {
   decryptToken,
@@ -92,6 +93,7 @@ export async function connectRepository(
     },
   });
 
+  logAuditEvent({ event: "repository.connected", userId: ownerId, projectId });
   return sanitize(connection);
 }
 
@@ -178,4 +180,5 @@ export async function disconnectRepository(ownerId: string, projectId: string): 
   await requireOwnedProject(ownerId, projectId);
   await requireConnection(projectId);
   await prisma.repositoryConnection.delete({ where: { projectId } });
+  logAuditEvent({ event: "repository.disconnected", userId: ownerId, projectId });
 }

@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma.js";
+import { MAX_LIST_RESULTS } from "../lib/pagination.js";
 import { AppError } from "../lib/errors.js";
 import { requireOwnedProject } from "../lib/ownership.js";
 import { generateEpicsViaAiService } from "../lib/aiServiceClient.js";
@@ -68,6 +69,7 @@ export async function listVersions(ownerId: string, projectId: string): Promise<
   return prisma.epicVersion.findMany({
     where: { projectId },
     orderBy: { version: "desc" },
+    take: MAX_LIST_RESULTS,
   });
 }
 

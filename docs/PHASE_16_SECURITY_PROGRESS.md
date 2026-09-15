@@ -177,3 +177,83 @@ Full suite after this milestone: 406/406 (392 + 9 secretRedaction unit + 1 retri
 4 repository schema tests = 392 + 14), `tsc --noEmit` and `eslint .` both clean.
 
 Commit: `26045fd`
+
+## Milestone 16.5 — API security
+
+Closed every real gap Milestone 16.1's inventory found in this area, plus one more found while
+auditing list endpoints for this milestone specifically.
+
+**Rate limiting** (`api/src/middleware/rateLimit.ts`, new dependency `express-rate-limit`): two
+tiers — `authRateLimit` (20 requests / 15 min), mounted only on `/auth/register` and `/auth/login`
+(the endpoints a credential-stuffing or brute-force attempt would actually hit), and a generous
+`apiRateLimit` (1000 requests / 15 min) as a general abuse backstop on every other route. Both are
+deliberately skipped when `NODE_ENV=test` — the existing 400+ test suite legitimately sends far more
+than 20 requests per file — with a dedicated test proving the skip is real (sends
+`AUTH_RATE_LIMIT_MAX + 5` login attempts against the real app and confirms none 429). Real
+(non-skipped) throttling behavior is proven with a second test that builds a standalone Express app
+using the exact same handler function but `skip: () => false`, confirming a 3rd request within the
+window gets a real `429 TOO_MANY_REQUESTS`. `429`s are additionally correctly classified as
+*transient* by `jobWorker.ts`'s own `classifyError()` (Phase 15) — no cross-milestone regression.
+
+**Secure headers**: added `helmet()` (new dependency) as the very first middleware — this API serves
+only JSON, never HTML, so its defaults (HSTS, `X-Content-Type-Options: nosniff`, hidden
+`X-Powered-By`, etc.) needed no per-route CSP tuning. Tested directly (`x-content-type-options:
+nosniff` present, `x-powered-by` absent).
+
+**CORS reviewed, confirmed already correct, now tested** (previously untested): the `cors` package
+is configured with a single fixed origin string (`env.FRONTEND_ORIGIN`), not a function that echoes
+whatever `Origin` header a request sends — confirmed directly that a request claiming
+`Origin: https://evil.example.com` still gets back the fixed configured origin in
+`Access-Control-Allow-Origin`, never the foreign one, which means a malicious page's own browser
+blocks the response from ever reaching its JavaScript (the browser compares the response's ACAO
+value against the *requesting page's own* origin, not the reverse).
+
+**CSRF — explicit decision, not silence**: Milestone 16.1 flagged "no CSRF token layer" as a gap.
+After review, deliberately **not** adding one, for a documented reason rather than an oversight:
+state-changing (non-GET) requests from a foreign origin are already blocked two ways independently —
+(1) a JSON `fetch`/XHR POST triggers a CORS preflight, which the fixed-origin `cors` config above
+rejects outright for any other origin, so the browser never even sends the real request with
+credentials; (2) the session cookie is `SameSite=Lax` (`lib/cookies.ts`), and modern browsers
+(Chrome 80+, and every other current major browser) do not attach a `Lax` cookie to a cross-site
+POST at all — even a simple `<form>`-based submission that doesn't trigger a CORS preflight arrives
+with no session cookie, so it can never be treated as an authenticated request. A dedicated CSRF
+token layer would be genuine defense-in-depth on top of both of these, but would also require
+frontend changes (fetching and attaching a token on every state-changing request) for a residual
+risk that, given the two independent existing mitigations, is low relative to the cost — a
+deliberate scope decision, revisit if this app's CORS/cookie posture ever changes (e.g. supporting
+multiple frontend origins).
+
+**Audit logging** (`api/src/lib/auditLog.ts`, new): follows the exact same pattern as Phase 14's
+`searchObservability.ts` — one structured JSON line per event to stdout, no new database table
+(consistent with this project's minimalism precedent). Events: `auth.register`,
+`auth.login_success`, `auth.login_failure` (deliberately never includes which email was tried, to
+avoid reintroducing the exact enumeration surface `loginUser()`'s identical-error-message design
+already closes), `auth.logout`, `ownership.denied` (wired into the shared `requireOwnedProject()`
+from Milestone 16.2, so every one of the 11 services gets this for free), `repository.connected`,
+`repository.disconnected`. Never includes a password, raw session token, or GitHub token. 5 tests
+confirm each event fires with the right fields and never leaks a credential into the log line
+(including a direct assertion that a real password/email never appears in the `auth.register`/
+`auth.login_failure` log output).
+
+**A real gap found auditing list endpoints for this milestone specifically**: 8 of the codebase's
+list-type queries had no `take` limit at all — `listReviews` (codeReview.ts), `listVersions`
+(architecture/epics/prd/requirements/tasks.ts — 5 files, identical shape), `listProjectsForOwner`
+(projects.ts), and `listQuestions` (qa.ts). `jobs.ts` and `evaluations.ts` already had their own
+bounds before this milestone; these 8 did not. None are realistically likely to exceed a couple
+hundred rows in normal use (each row is the product of an individually-costly action — an LLM
+generation call, a completed review, a full Q&A turn), but an unbounded query is still an
+unnecessary risk (a single unusually heavy project turning one list call into an unbounded response
+size and an unbounded DB scan cost). Closed with a shared `api/src/lib/pagination.ts`
+(`MAX_LIST_RESULTS = 200`) applied uniformly across all 8 call sites — one shared constant, not 8
+independently-chosen numbers that could drift. Proven at runtime, not just by inspection: 2 tests in
+`api/src/lib/pagination.test.ts` seed `MAX_LIST_RESULTS + 10` rows directly via `createMany` (fast —
+no HTTP, no bcrypt, no LLM calls) for two representative shapes (`listProjectsForOwner`, no
+dependent FK; `requirements.ts`'s `listVersions`, the same shape as the other 4 version-list
+functions) and confirm the real DB row count exceeds the cap while the service function's returned
+array is capped at exactly `MAX_LIST_RESULTS`.
+
+Full suite after this milestone: 419/419 (406 + 13 new: 11 in the new `app.security.test.ts` —
+2 CORS, 2 helmet, 3 rate-limiting, 4 audit-logging — plus 2 in the new `pagination.test.ts`), `tsc
+--noEmit` and `eslint .` both clean.
+
+Commit: `<pending>`

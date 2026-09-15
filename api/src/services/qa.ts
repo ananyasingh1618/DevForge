@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
+import { MAX_LIST_RESULTS } from "../lib/pagination.js";
 import { AppError } from "../lib/errors.js";
 import { requireOwnedProject } from "../lib/ownership.js";
 import * as retrievalService from "./retrieval.js";
@@ -198,6 +199,7 @@ export async function listQuestions(ownerId: string, projectId: string): Promise
     where: { projectId },
     include: questionWithAnswerInclude,
     orderBy: { createdAt: "desc" },
+    take: MAX_LIST_RESULTS,
   });
   return questions.map(serializeQuestion);
 }
