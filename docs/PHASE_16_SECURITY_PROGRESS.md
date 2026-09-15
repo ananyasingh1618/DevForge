@@ -59,4 +59,4 @@ RepositoryConnection, CodebaseIndex, Q&A, CodeReview, Retrieval, Job) via each r
 `*.ownership.test.ts` or inline cross-user test cases — no new boundary was found missing there.
 The one real gap was `EvaluationRun`, closed above.
 
-Commit: `<pending>`
+Commit: `f950560`
