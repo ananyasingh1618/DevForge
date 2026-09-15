@@ -1,7 +1,15 @@
 import { cosineSimilarity, deterministicEmbedding } from "../deterministicEmbedding.js";
 import { chunkContent, FIXTURE_CHUNKS, type FixtureChunk } from "../dataset/fixtureRepo.js";
 import { RETRIEVAL_CASES, type RetrievalCase } from "../dataset/retrievalCases.js";
+import { combinedScore, computeScoreSignals } from "../hybridScore.js";
 import type { AggregateMetrics, CaseResult, FeatureReport } from "../types.js";
+
+/** Mirrors api/src/services/retrieval.ts's own RELATIVE_SCORE_CUTOFF exactly
+ * — see that file and docs/RETRIEVAL_QUALITY_PHASE_PLAN.md for the full
+ * rationale. Kept as a literal, re-verified-equal constant (not imported —
+ * this package has no dependency on `api`) by
+ * retrievalEvaluator.test.ts's own "mirrors production" test. */
+export const RELATIVE_SCORE_CUTOFF = 0.7;
 
 /** Mirrors Phase 8's own default search limit (api/src/schemas/retrieval.ts's
  * `limit` default is 10; MAX_SOURCES for Q&A/review is 8) — 5 is used here
@@ -16,14 +24,41 @@ export const MAX_CONTEXT_CHARS = 16_000;
 export type RankedChunk = { chunk: FixtureChunk; score: number };
 
 /** Ranks every fixture chunk against a query by deterministic-embedding
- * cosine similarity — the evaluation package's stand-in for Phase 8's
- * search(), used by every evaluator that needs retrieved evidence. */
+ * cosine similarity, then re-ranks/selects by the hybrid combined score
+ * (semantic + lexical + identifier + file-path) with the same relative-
+ * to-top cutoff production's selectRankedResults() applies — the
+ * evaluation package's stand-in for Phase 8's search(), used by every
+ * evaluator that needs retrieved evidence. `RankedChunk.score` stays pure
+ * semantic cosine similarity, mirroring SearchResult's own preserved
+ * `score` field contract. Can return fewer than `k` results when the
+ * score falls off a cliff (see RELATIVE_SCORE_CUTOFF) — always keeps at
+ * least the top-ranked chunk when any exist. */
 export function rankChunks(query: string, chunks: FixtureChunk[] = FIXTURE_CHUNKS, k = TOP_K): RankedChunk[] {
+  if (chunks.length === 0) return [];
   const queryVector = deterministicEmbedding(query);
-  return chunks
-    .map((chunk) => ({ chunk, score: cosineSimilarity(queryVector, deterministicEmbedding(chunkContent(chunk))) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, k);
+  const withCombined = chunks.map((chunk) => {
+    const content = chunkContent(chunk);
+    const semanticScore = cosineSimilarity(queryVector, deterministicEmbedding(content));
+    const signals = computeScoreSignals(query, semanticScore, {
+      content,
+      symbolName: chunk.symbolName,
+      filePath: chunk.filePath,
+    });
+    return { chunk, score: semanticScore, combined: combinedScore(signals) };
+  });
+
+  withCombined.sort((a, b) => b.combined - a.combined);
+
+  const topCombined = withCombined[0]!.combined;
+  const threshold = topCombined * RELATIVE_SCORE_CUTOFF;
+
+  const selected: RankedChunk[] = [];
+  for (const { chunk, score, combined } of withCombined) {
+    if (selected.length >= k) break;
+    if (selected.length > 0 && combined < threshold) break;
+    selected.push({ chunk, score });
+  }
+  return selected;
 }
 
 function evaluateCase(testCase: RetrievalCase, chunks: FixtureChunk[], k: number): CaseResult {

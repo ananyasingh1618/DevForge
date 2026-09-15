@@ -98,8 +98,8 @@ export const QA_CASES: QaCase[] = [
     insufficientEvidenceExpected: false,
     mockAnswer: {
       answer:
-        "notifyUserFireAndForget calls fetch() without awaiting it or handling a failure, so a " +
-        "failed delivery is silently lost.",
+        "notifyUserFireAndForget calls fetch() but the result is not awaited, and there is no " +
+        "error handling around it, so a failed delivery is silently lost.",
       citedChunkIds: ["services-notify-fire-and-forget"],
       insufficientEvidence: false,
     },

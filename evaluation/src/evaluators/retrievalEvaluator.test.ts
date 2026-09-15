@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRetrieval, rankChunks, MAX_CONTEXT_CHARS } from "./retrievalEvaluator.js";
+import { evaluateRetrieval, rankChunks, MAX_CONTEXT_CHARS, RELATIVE_SCORE_CUTOFF } from "./retrievalEvaluator.js";
 import type { FixtureChunk } from "../dataset/fixtureRepo.js";
 import type { RetrievalCase } from "../dataset/retrievalCases.js";
 
@@ -84,5 +84,33 @@ describe("evaluateRetrieval", () => {
     const first = evaluateRetrieval(cases, 5, CHUNKS);
     const second = evaluateRetrieval(cases, 5, CHUNKS);
     expect(first).toEqual(second);
+  });
+});
+
+describe("rankChunks — adaptive relative-score cutoff", () => {
+  it("mirrors api/src/services/retrieval.ts's RELATIVE_SCORE_CUTOFF constant exactly", () => {
+    // Not imported (this package has no dependency on `api`) — this
+    // assertion is the deliberate tripwire: if the two values ever drift,
+    // this test fails immediately instead of the two packages silently
+    // measuring different algorithms. See docs/RETRIEVAL_QUALITY_PHASE_PLAN.md.
+    expect(RELATIVE_SCORE_CUTOFF).toBe(0.7);
+  });
+
+  it("can return fewer than K chunks when the score falls off a cliff after the top result", () => {
+    const ranked = rankChunks("where are numbers rounded to a fixed number of decimal places?", undefined, 5);
+    // A precise, single-topic query against this 16-chunk dataset should
+    // not need to pad out to a full 5 irrelevant chunks.
+    expect(ranked.length).toBeLessThan(5);
+    expect(ranked.length).toBeGreaterThan(0);
+  });
+
+  it("never returns zero chunks when at least one chunk exists, however weak its score", () => {
+    const ranked = rankChunks("completely unrelated gibberish query zzz qqq", CHUNKS, 5);
+    expect(ranked.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("never returns more than the requested K even when many chunks score similarly", () => {
+    const ranked = rankChunks("function", undefined, 3);
+    expect(ranked.length).toBeLessThanOrEqual(3);
   });
 });

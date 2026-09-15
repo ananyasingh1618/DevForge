@@ -6,6 +6,7 @@ import { decryptToken, isGithubIntegrationConfigured } from "../lib/githubTokenC
 import { generateEmbeddingsViaAiService } from "../lib/aiServiceClient.js";
 import { chunkFile } from "../lib/chunking.js";
 import { cosineSimilarity } from "../lib/similarity.js";
+import { combinedScore, computeScoreSignals } from "../lib/hybridScore.js";
 import type { SearchRequestInput } from "../schemas/retrieval.js";
 
 export type SearchResult = {
@@ -233,12 +234,61 @@ export async function search(
         language: chunk.language,
         branch: chunk.branch,
         commitSha: chunk.commitSha,
+        // The publicly-returned `score` field is, and stays, pure cosine
+        // similarity — every existing caller/test depends on that exact
+        // meaning (see docs/RETRIEVAL_QUALITY_PHASE_PLAN.md). Hybrid
+        // signals (lexical/identifier/file-path) are computed separately,
+        // purely to decide selection/ordering below.
         score: cosineSimilarity(queryVector, embedding.vector),
       };
     })
-    .filter((r): r is SearchResult => r !== null)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, input.limit);
+    .filter((r): r is SearchResult => r !== null);
 
-  return scored;
+  return selectRankedResults(input.query, scored, input.limit);
+}
+
+/** Relative-to-top cutoff: a candidate is kept only while its combined
+ * (semantic + lexical + identifier + file-path) score is within this
+ * fraction of the top-ranked candidate's own combined score, capped at
+ * `limit`. This is the direct fix for the precision-ceiling problem
+ * documented in docs/RETRIEVAL_QUALITY_PHASE_PLAN.md ("Root-cause
+ * analysis"): search() previously always returned exactly `limit` results
+ * even when only one or two chunks were genuinely relevant, padding every
+ * response with low-confidence noise. The always-keep-the-top-result rule
+ * below means a genuinely irrelevant query never returns literally nothing
+ * when at least one chunk exists — an honestly-empty result (no chunks at
+ * all) is unaffected and unchanged. Chosen empirically against the Phase
+ * 11 evaluation dataset's own score distributions (see the progress log's
+ * Milestone 3 entry) — general and query-independent, never keyed to a
+ * specific query or chunk id. */
+export const RELATIVE_SCORE_CUTOFF = 0.7;
+
+/** Re-ranks by the hybrid combined score (semantic dominant, refined by
+ * lexical/identifier/file-path signals) and applies the adaptive cutoff
+ * above. Exported and separately unit-testable so this selection logic
+ * doesn't require a database or a real embedding call to verify. */
+export function selectRankedResults(query: string, candidates: SearchResult[], limit: number): SearchResult[] {
+  if (candidates.length === 0) return [];
+
+  const withCombined = candidates.map((c) => {
+    const signals = computeScoreSignals(query, c.score, {
+      content: c.content,
+      symbolName: c.symbolName,
+      filePath: c.filePath,
+    });
+    return { result: c, combined: combinedScore(signals) };
+  });
+
+  withCombined.sort((a, b) => b.combined - a.combined);
+
+  const topScore = withCombined[0]!.combined;
+  const threshold = topScore * RELATIVE_SCORE_CUTOFF;
+
+  const selected: SearchResult[] = [];
+  for (const { result, combined } of withCombined) {
+    if (selected.length >= limit) break;
+    if (selected.length > 0 && combined < threshold) break;
+    selected.push(result);
+  }
+  return selected;
 }
