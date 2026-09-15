@@ -83,3 +83,26 @@ both before and during a dispatched call, and a real (not faked) timeout. Full `
 368/368 (355 + 13), zero regressions.
 
 Commit: `8c59bc3`
+
+## Milestone 15.4 — API changes
+
+Added `POST/GET /projects/:projectId/jobs`, `GET /projects/:projectId/jobs/:jobId`,
+`POST /projects/:projectId/jobs/:jobId/cancel`, `POST /projects/:projectId/jobs/:jobId/retry` —
+all session-authenticated (`requireAuth`) and ownership-checked through the same
+`requireOwnedProject`/`requireOwnedJob` pattern every other project-scoped resource in this
+codebase already uses, returning the same 404-for-both-"doesn't exist"-and-"not yours" shape (an
+intruder's request through their own valid project id for another user's job id still 404s —
+verified by a dedicated test). Validation via Zod schemas (`schemas/jobs.ts`) matches this
+codebase's existing depth: the HTTP layer validates shape (a real job `type`, `input` is a JSON
+object), and `jobWorker.ts`'s own `dispatch()` validates each job type's specific required fields
+a second time — the same validated-at-the-boundary-then-validated-again-at-use pattern Phase 9/10
+already established for Q&A/review input.
+
+12 new Supertest route tests: auth/ownership across all five endpoints, idempotent job creation
+over real HTTP, the full create→read→list→cancel lifecycle, a rejected double-cancel (409, not a
+silent 200), a rejected retry of a never-failed job, status/type filtering, and — end to end
+through the real worker dispatch path — confirmation that a failed job's error fields never
+contain anything stack-trace-shaped. Full `api` suite: 380/380 (368 + 12). `tsc -b`/`eslint`/build
+all clean.
+
+Commit: `<pending>`

@@ -15,6 +15,7 @@ import { retrievalRouter } from "./routes/retrieval.js";
 import { qaRouter } from "./routes/qa.js";
 import { codeReviewRouter } from "./routes/codeReview.js";
 import { evaluationsRouter } from "./routes/evaluations.js";
+import { jobsRouter } from "./routes/jobs.js";
 import { AppError } from "./lib/errors.js";
 import { env } from "./env.js";
 
@@ -44,6 +45,7 @@ export function createApp() {
   app.use(qaRouter);
   app.use(codeReviewRouter);
   app.use(evaluationsRouter);
+  app.use(jobsRouter);
 
   // Unmatched routes become a structured 404 rather than Express's default HTML page.
   app.use((_req, _res, next) => {
