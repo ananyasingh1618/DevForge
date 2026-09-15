@@ -22,6 +22,11 @@ requests fail with a clear 503 with no `ANTHROPIC_API_KEY` set, and embedding re
 with a clear 503 with no `VOYAGE_API_KEY` set, instead of a fabricated result. See the root
 [README.md](../README.md) for the full picture.
 
+Unchanged by Phase 11 (Evaluation) — the `evaluation/` package's optional `pnpm eval:real` mode
+calls `/qa/answer` and `/review/analyze` directly, exactly as documented above, using its own
+fixture data as the `sources` list; the default, credential-free `pnpm eval` mode never reaches
+this service at all. See `evaluation/README.md`.
+
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt   # includes pytest, httpx for tests
