@@ -117,7 +117,22 @@ Commit: `916fdac`
 
 ## Milestone 5 — Code review evidence improvements
 
-`<pending>`
+Audited `services/codeReview.ts` and `lib/reviewFindingFiltering.ts` against the task's full
+Milestone 5 checklist — invalid source references, findings with no sources, duplicate sources
+within one finding, empty codebases, safe code with no findings, malformed provider output,
+provider failures, context-size limits — all already correctly handled and already tested by
+Phase 10's existing suite (`reviewFindingFiltering.test.ts`, `codeReview.test.ts`,
+`test_review.py`). No defect found, confirming Milestone 1's prediction that review evidence
+quality was already at 100% on every Phase 11 metric; this milestone is hardening-verification,
+not a fix.
+
+The one genuinely uncovered case identified: two independent findings (e.g. a security issue and
+a separate reliability issue) legitimately citing the *same* real source must survive filtering
+as two distinct findings, not be conflated with a duplicate/fabricated citation. Added a unit
+test and a Supertest route test confirming this. Full `api` suite: 313 (311 + 2 new). `tsc`/
+`eslint` clean.
+
+Commit: `5e5b546`
 
 ## Milestone 6 — Evaluation and regression gates
 
