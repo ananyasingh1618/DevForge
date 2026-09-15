@@ -145,3 +145,57 @@ Golden-dataset pass rate: **108/109** (67 retrieval + 21 Q&A + 21 review), all 1
 pass. Full `api` suite: 323/323 (zero regressions). Full `evaluation` suite: 121/121.
 
 Commit: `5543fec`
+
+## Milestone A5 — Validate the evaluator
+
+Audited the retrieval evaluator against the task's own checklist, largely building on validation
+already done in Phase 13 (Milestone 13.3) and Milestone A2 above, re-confirmed rather than assumed
+still correct:
+
+- **Graded relevance / direct vs. supporting**: `relevanceGrade()` correctly distinguishes grade
+  2/1/0; re-confirmed via the new adversarial suite's parent-child cases.
+- **Duplicate handling**: `duplicateSourceCaseRate`/`duplicateResultRate` both measured 0% on the
+  full dataset — re-confirmed by a dedicated adversarial test asserting no duplicate chunk ids in
+  a ranked result.
+- **Source identity / path normalization**: chunk identity is a stable, unique string id, never a
+  path comparison — no normalization defect possible by construction. `benchmarkAudit.ts`'s
+  `language-label-correct`/`source-path-normalized` checks re-run clean (0 errors).
+- **Insufficient-evidence cases**: `evaluateCase()`'s `graded.answerable` branch (Phase 13) is
+  unchanged and re-confirmed correct — all 3 unanswerable retrieval cases still pass structurally
+  (no false "miss" penalty), and Milestone A2 above separately confirmed `usefulContextRate`
+  correctly does **not** exclude them (a deliberate, reasoned decision, not an oversight).
+- **Multi-source cases**: `qa-order-processing-flow`/`qa-conflicting-evidence-user-lookup`
+  (Q&A) and `review-jwt-no-expiration` (review) continue to pass with the new cutoff-basis and
+  filePath-weight changes — re-run live, not assumed.
+- **Hidden-fixture behavior**: all 6 Phase 13 hidden-fixture cases (`retrieval-hidden-*`) still
+  pass after every Milestone A2–A4 change — re-confirmed live, real evidence the fixes generalize
+  beyond the visible dataset they were diagnosed against.
+
+**No evaluator defect found in this audit** (beyond the two already fixed and documented as
+production-ranking-code defects in Milestones A2–A4, not evaluator-scoring defects). No evaluator
+logic was altered in this milestone.
+
+## Milestone A6 — Expand adversarial retrieval tests
+
+Added `evaluation/src/dataset/fixturesAdversarialA6/` — 4 new files (2 TypeScript-adjacent: one
+`.ts`, one legacy `.js`; 2 Python, including a test file) covering a domain (task scheduling +
+notifications) entirely unrelated to the main dataset's own content, and
+`evaluation/src/retrievalAdversarial.test.ts` — 14 new tests exercising the exact same production-
+mirroring ranking algorithm (`deterministicEmbedding` + `hybridScore`'s adaptive cutoff, including
+Milestone A3's cutoff-basis desensitization) against this fixture via a self-contained rank
+function, deliberately **not** added to `RETRIEVAL_CASES`/`FIXTURE_CHUNKS` or counted in any
+regression gate — genuinely separate, per the task's explicit instruction.
+
+Covers: same symbol name in two files with different behavior (both directions — disambiguating
+the current implementation from the legacy one, and vice versa), parent/neighboring-symbol
+relationships, test-file vs. production-implementation resolution, token-family/light-stemming
+matching ("calculating" → `calculate_total_price`), query-casing invariance, short raw-identifier
+queries, long natural-language queries, cross-language disambiguation (Python-specific query not
+surfacing unrelated TS/JS chunks), an unanswerable query against this fixture (confirmed the top
+result's absolute score stays low, not confidently high), determinism, and duplicate-freedom.
+
+**All 14 pass on first implementation** — real, verified evidence (not merely claimed) that
+Milestones A2–A4's fixes generalize to fresh content across all three languages, not narrowly
+tuned to the main dataset's own specific chunks. Full `evaluation` suite: 135/135 (121 + 14).
+
+Commit: `<pending>`
