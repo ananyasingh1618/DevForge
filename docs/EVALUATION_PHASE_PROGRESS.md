@@ -162,6 +162,14 @@ monorepo suite after this milestone: `api` 258, `frontend` 101, `evaluation` 52 
 
 Commit: `2703e07`
 
+**Addendum**: the new `/evaluations` frontend page (Milestone 7 Part B) had shipped with no
+dedicated test file, unlike every other page in this codebase — caught during this milestone's
+own review pass. Added `frontend/src/pages/Evaluations.test.tsx` (8 cases: empty state, list
+rendering with passed/failed runs shown distinctly, expanding a run to its full detail —
+regression gates, metrics, failed-case detail — collapsing without re-fetching, a distinct
+detail-fetch error, a list-load error with working retry, and no secret/token-shaped string
+ever rendered). Commit: `bd32583`.
+
 ### Part B — Docker verification
 
 Full volume-wiped rebuild: `docker compose down -v` → `docker compose up -d --build` (all four
@@ -206,3 +214,49 @@ at the repo root: `api` 258, `frontend` 101, `evaluation` 52 — all green. No o
 throughout — confirmed via `ps aux` before, during, and after every Docker/process operation).
 
 Commit: `af6579b` (docs-only; no source changes in this part)
+
+### Part C — documentation
+
+Rewrote `evaluation/README.md` (previously a stale one-line placeholder from before this phase
+existed): how to run `pnpm eval`/`pnpm eval:real`, what's measured, dataset structure, the
+regression-gates-vs-golden-cases distinction, and known limitations. Updated the root
+`README.md` across every relevant section: status banner, overview paragraph, a new
+"Evaluation" bullet in "What works today," a new tech-stack row, the repository-structure
+listing, the Docker section (how to point `pnpm eval` at the Dockerized stack), the Tests
+section (added `pnpm eval` and the credential-honesty paragraph's evaluation clause), two new
+API summary rows, a new `evaluation_runs` paragraph in Database schema, six new Known-
+limitations bullets (small fixture dataset only, lexical-proxy retrieval scoring, substring/
+keyword matching heuristics, a weak confidence-calibration proxy, real-mode's own retrieval-
+scope limitation), and an updated Future work paragraph (removed the now-built "automated eval
+harness" item, added CI wiring / a larger or real-embedding-backed dataset / a calibration
+dataset as the genuinely remaining future work). Updated `ai-service/README.md` with a short,
+accurate note that it is functionally unchanged by this phase. Confirmed `frontend/README.md`
+needs no change (phase-agnostic, consistent with every prior phase's finding). Verified every
+`docs/*.md` link referenced from the new README text resolves to a real file, and that no
+stray trailing whitespace was introduced.
+
+Commit: `e839155`
+
+## Phase 11 (Evaluation, Quality Measurement & Review Improvements): complete
+
+All 8 milestones (with Milestone 8 split into Parts A/B/C, matching the established convention
+from Phases 9/10) are implemented, tested, Docker-verified, and documented. 60 new tests this
+phase: 52 in the new `evaluation/` package (18 dataset + 9 retrieval-evaluator + 9 Q&A-evaluator
++ 12 review-evaluator + 4 integration) and 8 in `frontend/src/pages/Evaluations.test.tsx`. Full-
+repository totals: 548 across all five packages — 258 api + 109 frontend + 52 evaluation + 117
+ai-service + 12 tests/ (the latter two unchanged by this phase, re-verified green during Docker
+verification) — all green.
+
+The central design decision this phase made — evaluating Q&A/review by calling `ai-service`'s
+real `/qa/answer`/`/review/analyze` endpoints directly with a caller-supplied source list,
+rather than requiring a real GitHub-connected repository — is what let both the deterministic
+default mode *and* the optional real-provider mode need zero GitHub credentials, ever. The
+second central decision — separating `report.passed` (a fixed set of regression gates) from
+each dataset case's own pass/fail — was arrived at after the naive "every case must pass"
+design produced a misleading FAILED status driven entirely by one documented, explained
+limitation of the deterministic lexical-similarity proxy; the final design reports both numbers
+honestly and explains the difference inline in the report itself, not just in documentation a
+reader might miss. VoxMind (PID 16012, port 8000) was never touched at any point in this phase —
+confirmed via `ps aux` before, during, and after every Docker/process operation, including the
+one point mid-phase where the Docker daemon itself needed restarting. Phase 12 was not started,
+per the task's own explicit "Stop after Phase 11" instruction.
