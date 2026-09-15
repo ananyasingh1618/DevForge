@@ -178,7 +178,7 @@ covered by that service's own test suite, not re-benchmarked here). **No claim i
 support for a specific repository size this package was never actually tested against** — Phase
 7's own `MAX_INDEXED_FILES = 500` remains the one enforced, real, tested ceiling.
 
-Commit: `<pending>`
+Commit: `c43540c`
 
 ## Milestone 15.7 — Failure-injection testing
 
@@ -219,4 +219,4 @@ error handling around a thrown `PrismaClientKnownRequestError`/connection error 
 specifically exercised beyond what the existing `classifyError()`'s catch-all "unrecognized
 exception → transient, bounded" path already provides.
 
-Commit: `<pending>`
+Commit: `c43540c`
