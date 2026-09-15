@@ -100,7 +100,18 @@ Commit: `3bf1650`
 
 ## Milestone 6 — Regression and quality gates
 
-`<pending>`
+Added `regressionGates.ts`. Initially wired `report.passed` directly from "did every case pass,"
+which produced a misleading FAILED status driven entirely by Milestone 3's one documented,
+explained retrieval-proxy limitation cascading into Milestone 4's grounding check — a real,
+useful *case*-level signal, but not a real *regression*. Redesigned so `report.passed` is decided
+only by explicit, separately-justified gates (5 structural zero-tolerance invariants + 6 quality
+floors sized to this dataset's case counts — see `docs/EVALUATION_PHASE_PLAN.md`, "Regression
+thresholds," for the exact numbers and reasoning). With this split, the current run reports
+FAILED-by-case-count (21/24) but PASSED-by-gate (11/11 gates green) — both numbers are shown in
+the report, and the distinction between them is explained inline in the Markdown output itself,
+not just in documentation a reader might miss.
+
+Commit: `79b961d`
 
 ## Milestone 7 — Evaluation reporting and optional dashboard
 
