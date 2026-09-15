@@ -7,7 +7,9 @@ AI Software Engineering & Codebase Intelligence Platform.
 > Phase 6 (GitHub Integration) + Phase 7 (AST Parsing & Codebase Indexing) + Phase 8
 > (Retrieval & Semantic Search) + Phase 9 (Codebase Q&A) + Phase 10 (AI Code Review) +
 > Phase 11 (Evaluation, Quality Measurement & Review Improvements) + Phase 12 (Retrieval
-> Quality & Grounding Improvements) complete.** This repository implements authentication, a
+> Quality & Grounding Improvements) + Phase 13 (Benchmark Expansion, Relevance Calibration &
+> Retrieval Validation) + Phase 14 (Retrieval & Indexing Architecture Improvements) complete.**
+> This repository implements authentication, a
 > project workspace, AI-assisted requirements analysis, AI-assisted PRD generation, AI-assisted
 > architecture generation, AI-assisted epic/task generation, a secure GitHub repository
 > connection, tree-sitter-backed AST parsing and codebase indexing, semantic code search
@@ -22,7 +24,12 @@ AI Software Engineering & Codebase Intelligence Platform.
 > Codebase Q&A and AI Code Review are strictly read-only — neither modifies code, opens pull
 > requests, creates GitHub issues, or runs GitHub Actions — see "Known limitations" below.
 > Evaluation results are measurements, not proof of complete correctness — see "Known
-> limitations" for exactly what Phase 11/12 do and do not claim. See
+> limitations" for exactly what Phase 11/12/13/14 do and do not claim. Phase 13 expanded the
+> evaluation benchmark from 14/6/9 to 67/20/20 retrieval/Q&A/review cases across TypeScript,
+> JavaScript, and Python; Phase 14 used that larger, harder benchmark to fix two real ranking
+> defects (recall@K 83.6%→95.3%, useful-context-rate 38.1%→52.9%) and add incremental
+> indexing (skips re-parsing files unchanged since the last index) and bounded search
+> observability logging. See
 > [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 > [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 > [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
@@ -33,11 +40,15 @@ AI Software Engineering & Codebase Intelligence Platform.
 > [docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md),
 > [docs/QA_PHASE_PROGRESS.md](docs/QA_PHASE_PROGRESS.md),
 > [docs/CODE_REVIEW_PHASE_PROGRESS.md](docs/CODE_REVIEW_PHASE_PROGRESS.md),
-> [docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md), and
-> [docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md) for the
-> detailed, verified log of every milestone that built each phase, and
+> [docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md),
+> [docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md) (Phase 12
+> and, in its own later section, Phase 14), and
+> [docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md](docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md)
+> (Phase 13) for the detailed, verified log of every milestone that built each phase, and
 > [docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md](docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md)
-> for Phase 12's own before/after metrics and completion report.
+> (Phase 12, plus a Phase 14 addendum) and
+> [docs/BENCHMARK_EXPANSION_COMPLETION_REPORT.md](docs/BENCHMARK_EXPANSION_COMPLETION_REPORT.md)
+> (Phase 13) for each phase's own before/after metrics and completion report.
 
 ## Overview
 
@@ -193,13 +204,18 @@ regression instead of relying on manual spot-checking.
   "Not yet implemented" section on this page.
 - **Evaluation** (`evaluation/`, `pnpm eval`): a deterministic, credential-free evaluation
   system measuring Phase 8 retrieval, Phase 9 Q&A, and Phase 10 review against a small,
-  version-controlled fixture dataset — as of Phase 12, 12 hand-authored source files, 20
-  chunks, 32 cases total (grown from Phase 11's 9/16/24 by adversarial cases added specifically
-  to stress-test Phase 12's own ranking/grounding changes without overfitting to them) — recall/
-  precision/MRR/rank-distribution for retrieval, citation grounding/answer quality/fallback
-  count for Q&A, finding precision/recall/false-positive rate/severity-category accuracy for
-  review. Runs entirely offline by default (a character-n-gram lexical-similarity proxy stands
-  in for Voyage AI; each case's own hand-authored mock answer/findings stand in for Claude) — no
+  version-controlled fixture dataset — as of Phase 13/14, 40 hand-authored source files across
+  TypeScript/JavaScript/Python, 68 chunks, 109 cases total (67 retrieval / 21 Q&A / 21 review,
+  grown from Phase 12's 14/7/11 in Phase 13's own benchmark-expansion pass, then exercised
+  against Phase 14's real ranking improvements) — recall/precision@1/3/5/MRR/nDCG@5/direct-hit-
+  rate/useful-context-rate/rank-distribution for retrieval (graded relevance: direct/supporting/
+  irrelevant), citation grounding/answer quality/fallback count for Q&A, finding precision/
+  recall/false-positive rate/severity-category accuracy for review, plus a benchmark-quality
+  audit (`pnpm audit:benchmark`), a human-reviewable per-case relevance report
+  (`pnpm relevance:report`), a six-strategy ranking comparison (`pnpm compare:ranking`), and a
+  reproducible ranking-latency performance baseline (`pnpm perf:baseline`). Runs entirely
+  offline by default (a character-n-gram + word-token lexical-similarity proxy stands in for
+  Voyage AI; each case's own hand-authored mock answer/findings stand in for Claude) — no
   `ANTHROPIC_API_KEY` or `VOYAGE_API_KEY` needed; an optional `pnpm eval:real` mode calls
   `ai-service`'s real `/qa/answer`/`/review/analyze` endpoints directly (no GitHub credential
   needed even then), applying the same deterministic grounding fallback production does before
@@ -255,22 +271,37 @@ review endpoint — Claude only ever selects among that list by number, never em
 line itself, in either agent. See "Retrieval ranking" below for the hybrid-scoring/adaptive-
 cutoff design in full.
 
-### Retrieval ranking (Phase 12)
+### Retrieval ranking (Phase 12, tuned in Phase 14)
 
 `api/src/lib/hybridScore.ts` computes four signals per candidate chunk — semantic (the existing
 cosine similarity), lexical token overlap, symbol-identifier match (including an exact-substring
 boost), and file-path match — combined with fixed, documented weights (semantic dominant) into
-one ranking score. `api/src/services/retrieval.ts`'s `search()` uses this combined score only to
-decide *which* chunks to return and in what order; `SearchResult.score`, the field every
-existing caller depends on, stays pure cosine similarity, unchanged. A candidate is kept only
-while its combined score is within `RELATIVE_SCORE_CUTOFF` (0.7) of the top result's own score,
-capped at the caller's `limit` — always keeping at least the top-ranked result — instead of
-always padding out to `limit` regardless of relevance, which measurably improved precision
-without regressing recall (see [docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md](docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md)
-for the full before/after numbers). The identical algorithm is mirrored in
-`evaluation/src/evaluators/retrievalEvaluator.ts` (cross-package, not imported — same convention
-`evaluation/` already follows for its deterministic embedding) so the improvement is measurable
-via `pnpm eval` without needing real Voyage AI credentials.
+one ranking score. Token comparison (Phase 14) excludes a standard English stopword list and
+treats two tokens as matching when they share a long common prefix (a light, general "safe
+stemming" fallback, e.g. "notify"/"notifications") — both fixed after directly inspecting real
+false-positive/false-negative signal breakdowns, not guessed. `api/src/services/retrieval.ts`'s
+`search()` uses this combined score only to decide *which* chunks to return and in what order;
+`SearchResult.score`, the field every existing caller depends on, stays pure cosine similarity,
+unchanged. A candidate is kept only while its combined score is within `RELATIVE_SCORE_CUTOFF`
+(0.78, tightened from Phase 12's original 0.7 after a real, persisted 5-value sweep in Phase 14 —
+see `evaluation/reports/ranking-comparison.md`) of the top result's own score, capped at the
+caller's `limit` — always keeping at least the top-ranked result — instead of always padding out
+to `limit` regardless of relevance, which measurably improved precision without regressing recall
+(see [docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md](docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md)
+for the full before/after numbers, including Phase 14's own addendum). The identical algorithm is
+mirrored in `evaluation/src/evaluators/retrievalEvaluator.ts` (cross-package, not imported — same
+convention `evaluation/` already follows for its deterministic embedding) so the improvement is
+measurable via `pnpm eval` without needing real Voyage AI credentials.
+
+### Incremental indexing (Phase 14)
+
+`api/src/services/codebaseIndex.ts`'s `buildIndex()` skips re-fetching a file's content from
+GitHub and re-calling `ai-service`'s parser when that file's blob sha is unchanged from the
+index's own last completed run *and* that run successfully parsed it — reusing the previous
+symbol list instead. A file that previously failed to parse is always retried, even with an
+unchanged hash, so a transient failure or a since-fixed parser bug gets a fresh attempt every
+time. Deleted-file cleanup (via Prisma's own cascade deletes) and reindex idempotency were both
+confirmed already correct, each with a new regression test proving it.
 
 ## Tech stack
 
@@ -771,19 +802,26 @@ through Prisma directly, since `evaluation/` has no dependency on `api`'s genera
   above; `pnpm eval`'s own exit code is already CI-safe (0/1, no credential needed) but nothing
   currently invokes it automatically on a push or PR.
 - **Evaluation measures a small, hand-authored fixture dataset, not real-world code.** A
-  passing `pnpm eval` run is evidence of no regression against this dataset's 32 cases — it is
+  passing `pnpm eval` run is evidence of no regression against this dataset's 109 cases — it is
   not a general quality guarantee, and it says nothing about DevForge's behavior on a large,
   unfamiliar, real codebase.
-- The default evaluation mode's retrieval ranking is a deterministic character-n-gram lexical-
-  overlap proxy, not Voyage AI — a result against it is not a measurement of real embedding
-  quality (see `docs/EVALUATION_PHASE_PLAN.md`, "What cannot be measured reliably"). Phase 12's
-  hybrid-scoring/adaptive-cutoff change (see "Retrieval ranking" above) fixed the one retrieval
-  case Phase 11 had left as a documented, accepted miss; the current dataset passes 32/32, but
-  this remains a lexical proxy, not a semantic one, and a future case built around a genuine
-  paraphrase (no shared vocabulary at all) could still expose the same class of limitation.
-- The Phase 12 hybrid-score weights and the adaptive relative-score cutoff (`RELATIVE_SCORE_CUTOFF
-  = 0.7`) are hand-picked constants, not learned or tuned per query type — documented as a
+- The default evaluation mode's retrieval ranking is a deterministic character-n-gram + word-
+  token lexical-overlap proxy, not Voyage AI — a result against it is not a measurement of real
+  embedding quality (see `docs/EVALUATION_PHASE_PLAN.md`, "What cannot be measured reliably").
+  Phase 14's hybrid-scoring/adaptive-cutoff changes closed most of the gap this proxy exposed at
+  Phase 13's larger, 67-case scale (recall@K 83.6%→95.3%), but three genuinely hard cases remain
+  honest, documented misses (a deliberately ambiguous query, and two cases requiring reverse
+  call-graph reasoning no current signal provides) — this remains a lexical proxy, not a semantic
+  one, and a future case built around a genuine paraphrase (no shared vocabulary at all) could
+  still expose the same class of limitation.
+- The hybrid-score weights and the adaptive relative-score cutoff (`RELATIVE_SCORE_CUTOFF =
+  0.78`, tightened from Phase 12's original 0.7 in Phase 14 after a real, persisted 5-value
+  sweep) are hand-picked constants, not learned or tuned per query type — documented as a
   heuristic, not a claim of optimality (see `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md`, "Risks").
+- Phase 14's useful-context-rate (52.9%, up from Phase 13's 38.1%) and direct-hit-rate (70.3%)
+  remain below their revised ≥90% targets — the single largest honestly-reported gap after two
+  phases of retrieval-quality work; see `docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md`'s Phase 14
+  addendum for the measured before/after table and remaining-bottleneck analysis.
 - Evaluation's `expectedAnswerPoints`/`forbiddenClaims`/finding-keyword matching are substring
   and keyword heuristics, not semantic entailment — a correct answer or finding phrased very
   differently from the dataset's own wording can register as a miss, and vice versa.
@@ -825,9 +863,10 @@ confidence calibration — per the full product specification. See
 [docs/RETRIEVAL_PHASE_PROGRESS.md](docs/RETRIEVAL_PHASE_PROGRESS.md),
 [docs/QA_PHASE_PROGRESS.md](docs/QA_PHASE_PROGRESS.md),
 [docs/CODE_REVIEW_PHASE_PROGRESS.md](docs/CODE_REVIEW_PHASE_PROGRESS.md),
-[docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md), and
-[docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md) for what's
-been verified so far and how it was verified.
+[docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md),
+[docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md), and
+[docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md](docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md) for
+what's been verified so far and how it was verified.
 
 ## License
 

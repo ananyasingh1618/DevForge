@@ -3,17 +3,23 @@
 Phase 11 built this package: measures Phase 8 retrieval, Phase 9 Codebase Q&A, and Phase 10 AI
 Code Review against a small, version-controlled fixture dataset — deterministically, by default,
 with no paid credential required. Phase 12 used it to diagnose and fix a real retrieval-quality
-gap (see `src/hybridScore.ts`/`src/regressionGates.ts` and
+gap. Phase 13 substantially expanded the benchmark (14/7/11 → 67/20/21 retrieval/Q&A/review
+cases, TypeScript-only → TypeScript/JavaScript/Python, plus graded relevance, a benchmark audit,
+a human-reviewable relevance report, a hidden anti-overfitting fixture, and a performance
+baseline) to determine whether Phase 12's metrics reflected real quality or a small-benchmark
+artifact. Phase 14 used that larger, validated benchmark to fix two real defects in the shared
+`src/hybridScore.ts` (missing stopword filtering, missing fuzzy token matching) and re-tune the
+adaptive cutoff from a real, persisted comparison (`src/comparison/`) — see
 [docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md](../docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md)
-for the full before/after story) and extended the dataset with adversarial cases specifically to
-prevent that fix from being overfit to the original fixture. See
-[docs/EVALUATION_PHASE_PLAN.md](../docs/EVALUATION_PHASE_PLAN.md) and
-[docs/RETRIEVAL_QUALITY_PHASE_PLAN.md](../docs/RETRIEVAL_QUALITY_PHASE_PLAN.md) for the full
-design, and [docs/EVALUATION_PHASE_PROGRESS.md](../docs/EVALUATION_PHASE_PROGRESS.md) /
-[docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](../docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md) for the
-verified build/verification logs. This package **measures and reports** — it never modifies
-retrieval/Q&A/review behavior on its own, never calls a GitHub API (read or write), and never
-executes model-suggested code.
+(Phase 12 + a Phase 14 addendum) and
+[docs/BENCHMARK_EXPANSION_COMPLETION_REPORT.md](../docs/BENCHMARK_EXPANSION_COMPLETION_REPORT.md)
+(Phase 13) for the full before/after story. See
+[docs/EVALUATION_PHASE_PLAN.md](../docs/EVALUATION_PHASE_PLAN.md),
+[docs/RETRIEVAL_QUALITY_PHASE_PLAN.md](../docs/RETRIEVAL_QUALITY_PHASE_PLAN.md), and
+[docs/BENCHMARK_EXPANSION_PHASE_PLAN.md](../docs/BENCHMARK_EXPANSION_PHASE_PLAN.md) for the full
+design, and the matching `*_PHASE_PROGRESS.md` docs for the verified build/verification logs.
+This package **measures and reports** — it never modifies retrieval/Q&A/review behavior on its
+own, never calls a GitHub API (read or write), and never executes model-suggested code.
 
 ## Running it
 
@@ -24,6 +30,11 @@ pnpm eval             # deterministic, no credentials, no network — the defaul
 pnpm eval:real        # optional: calls ai-service's real /qa/answer and /review/analyze
                        # (needs a running ai-service with ANTHROPIC_API_KEY configured;
                        # AI_SERVICE_URL defaults to http://localhost:8001)
+
+pnpm audit:benchmark   # structural dataset-quality checks -> reports/benchmark-audit.md
+pnpm relevance:report  # human-reviewable per-case retrieval breakdown -> reports/relevance-report.md
+pnpm compare:ranking   # six-strategy ranking comparison -> reports/ranking-comparison.md
+pnpm perf:baseline     # reproducible ranking-latency benchmark -> reports/perf-baseline.md
 
 pnpm --filter @devforge/evaluation test        # this package's own unit tests
 ```
@@ -53,18 +64,28 @@ best-effort persists a summary row for the optional `/evaluations` dashboard pag
 
 ## Dataset
 
-`src/dataset/fixtures/` — 12 real, hand-authored TypeScript files (never copied from a real
+`src/dataset/fixtures/` — 40 real, hand-authored source files (36 visible + 4 in a "hidden-style"
+warehouse-domain fixture, across TypeScript, JavaScript, and Python; never copied from a real
 project, no credentials, no VoxMind content) forming a small synthetic "repository," chunked by
-hand into 20 chunks with verified line ranges (`fixtureRepo.ts`). Ground truth lives in
-`retrievalCases.ts`/`qaCases.ts`/`reviewCases.ts`, each case with a stable id — 32 cases total.
-Phase 12 added 8 adversarial cases (similar-symbol disambiguation, the same identifier in two
-files, a misleading filename, vague wording, a raw-identifier query, an unanswerable question,
-"suspicious but valid" code, and a same-named-but-differently-implemented function) specifically
-*after* implementing its own ranking/grounding changes, to check they generalize rather than
-being overfit to the original 24 cases. See `docs/EVALUATION_PHASE_PLAN.md`'s "Evaluation
-dataset" section for why this is a fixed fixture rather than a real connected GitHub repository,
-and `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md`'s "Anti-overfitting strategy" for the adversarial-case
-methodology.
+hand into 68 chunks with verified line ranges (`fixtureRepo.ts`). Ground truth lives in
+`retrievalCases.ts`/`qaCases.ts`/`reviewCases.ts`, each case with a stable id — 109 cases total
+(67 retrieval / 21 Q&A / 21 review), covering the 25 retrieval-query categories the Phase 13 plan
+doc lists (exact function/class/variable/API-route names, cross-file dependencies, parent/
+neighboring-symbol, data-flow, insufficient-evidence, and more). `RetrievalCase` supports graded
+relevance (direct/supporting/irrelevant sources, category/language/difficulty metadata) via
+optional fields that default to Phase 11/12's original binary-ish shape, so every historical case
+still works unchanged. Phase 12 added 8 adversarial cases (similar-symbol disambiguation, the
+same identifier in two files, a misleading filename, vague wording, a raw-identifier query, an
+unanswerable question, "suspicious but valid" code, and a same-named-but-differently-implemented
+function); Phase 13 added a further 63 cases plus a genuinely hidden-style fixture (a separate
+domain, authored strictly *after* Phase 13's own ranking-affecting embedding changes were
+finalized) — all 6 of its cases pass, real evidence the changes generalize rather than being
+overfit. `src/dataset/benchmarkAudit.ts` (`pnpm audit:benchmark`) programmatically checks the
+dataset itself for broken references, relevance-label inconsistency, secrets/PII/VoxMind content,
+and mislabeled languages. See `docs/EVALUATION_PHASE_PLAN.md`'s "Evaluation dataset" section for
+why this is a fixed fixture rather than a real connected GitHub repository, and
+`docs/BENCHMARK_EXPANSION_PHASE_PLAN.md`'s "Anti-overfitting controls" for the adversarial/hidden-
+fixture methodology.
 
 ## Regression gates vs. golden-dataset cases
 
@@ -77,14 +98,21 @@ fail.
 
 ## Known limitations
 
-The deterministic embedding (even re-ranked by the Phase 12 hybrid score) is a lexical-overlap
-proxy, not a semantic one — a passing/failing score against it is not a measurement of Voyage
-AI's real retrieval quality. The hybrid-score weights and the adaptive cutoff constant
-(`RELATIVE_SCORE_CUTOFF = 0.7`) are hand-picked, not learned. `expectedAnswerPoints`/
-`forbiddenClaims`/finding-keyword matching are substring/keyword heuristics, not semantic
-entailment. `confidenceCalibrationProxy` is explicitly weak. The Q&A grounding fallback only
-catches zero-valid-citation cases — it cannot detect a structurally-valid citation that doesn't
-actually support its claim. None of this evaluates DevForge against real, large, unfamiliar
-codebases — only this small, hand-authored fixture. See `docs/EVALUATION_PHASE_PLAN.md`'s "What
+The deterministic embedding (even with Phase 13's word-token/stopword fixes, re-ranked by the
+Phase 14-tuned hybrid score) is a lexical-overlap proxy, not a semantic one — a passing/failing
+score against it is not a measurement of Voyage AI's real retrieval quality. The hybrid-score
+weights and the adaptive cutoff constant (`RELATIVE_SCORE_CUTOFF = 0.78`, tightened from Phase
+12's original 0.7 in Phase 14 after a real, persisted sweep) are hand-picked, not learned.
+`falseConfidenceRate` (a Phase 13 metric) is reported but explicitly documented as unreliable at
+this mock embedding's noise floor — real answerable/unanswerable query score distributions
+measurably overlap. `expectedAnswerPoints`/`forbiddenClaims`/finding-keyword matching are
+substring/keyword heuristics, not semantic entailment. `confidenceCalibrationProxy` is explicitly
+weak. The Q&A grounding fallback only catches zero-valid-citation cases — it cannot detect a
+structurally-valid citation that doesn't actually support its claim. Two retrieval categories
+(cases requiring reverse call-graph/"which function does X delegate to" reasoning) remain honest,
+documented misses — no existing signal in this architecture answers them, and Phase 14 found no
+justified chunking change to fix it. None of this evaluates DevForge against real, large,
+unfamiliar codebases — only this larger, still-synthetic, hand-authored fixture. See
+`docs/EVALUATION_PHASE_PLAN.md`'s "What
 cannot be measured reliably" and `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md`'s "Risks" for the full
 list.
