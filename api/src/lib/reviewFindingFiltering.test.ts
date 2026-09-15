@@ -66,4 +66,19 @@ describe("filterValidFindings", () => {
     const findings = [finding({ citedSourceNumbers: [2, 1] })];
     expect(filterValidFindings(findings, 3)).toEqual(filterValidFindings(findings, 3));
   });
+
+  it("keeps multiple distinct findings that legitimately cite the same real source", () => {
+    // Phase 12, Milestone 5: one source (e.g. a function with both a
+    // security issue and a separate reliability issue) can genuinely
+    // support more than one independent finding — this must not be
+    // conflated with a duplicate/fabricated citation.
+    const findings = [
+      finding({ title: "Security issue", citedSourceNumbers: [1] }),
+      finding({ title: "Reliability issue", citedSourceNumbers: [1] }),
+    ];
+    const result = filterValidFindings(findings, 3);
+    expect(result).toHaveLength(2);
+    expect(result.map((f) => f.title)).toEqual(["Security issue", "Reliability issue"]);
+    expect(result.every((f) => f.citedSourceNumbers.includes(1))).toBe(true);
+  });
 });

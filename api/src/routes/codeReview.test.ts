@@ -363,6 +363,53 @@ describe("successful review", () => {
     expect(res.body.data.findings).toEqual([]);
     expect(res.body.data.findingCount).toBe(0);
   });
+
+  it("persists multiple distinct findings that legitimately cite the same real source", async () => {
+    const cookie = await registerAndGetCookie("review-shared-source@example.com");
+    const projectId = await createProject(cookie);
+    await connectAndIndex(cookie, projectId);
+
+    mockFetchResponses([
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      {
+        status: 200,
+        body: reviewAnswerBody({
+          summary: "Two independent issues in the same function.",
+          findings: [
+            {
+              title: "Security concern",
+              description: "d1",
+              severity: "high",
+              category: "security",
+              confidence: "high",
+              recommendation: "r1",
+              cited_source_numbers: [1],
+            },
+            {
+              title: "Reliability concern",
+              description: "d2",
+              severity: "medium",
+              category: "reliability",
+              confidence: "medium",
+              recommendation: "r2",
+              cited_source_numbers: [1],
+            },
+          ],
+        }),
+      },
+    ]);
+
+    const res = await request(app).post(`/projects/${projectId}/reviews`).set("Cookie", cookie).send({});
+    expect(res.status).toBe(201);
+    expect(res.body.data.findingCount).toBe(2);
+    const titles = res.body.data.findings.map((f: { title: string }) => f.title);
+    expect(titles).toEqual(["Security concern", "Reliability concern"]);
+    for (const finding of res.body.data.findings) {
+      expect(finding.sources).toEqual([expect.objectContaining({ filePath: "src/app.ts" })]);
+    }
+  });
 });
 
 describe("empty retrieval result", () => {
