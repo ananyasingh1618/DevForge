@@ -311,4 +311,246 @@ export const REVIEW_CASES: ReviewCase[] = [
     notes: "Adversarial: tests that a same-named-but-differently-implemented function isn't flagged by mistaken analogy.",
     mockFindings: [],
   },
+
+  // --- Phase 13, Milestone 13.2: benchmark expansion. 9 new cases across
+  // the new TypeScript/JavaScript/Python fixture content, covering
+  // multi-source clean reviews and a genuinely empty-codebase case.
+  {
+    id: "review-payment-error-handling",
+    scope: "Review the payment charging code for error handling issues.",
+    relevantChunkIds: ["py-charge-card", "py-refund-payment"],
+    expectedFindings: [
+      {
+        id: "review-payment-error-handling/no-error-handling",
+        description: "charge_card does not check the response status or handle a failed gateway call.",
+        category: "error_handling",
+        severityRange: ["medium", "high"],
+        expectedSourceChunkId: "py-charge-card",
+        keywords: ["error handling", "status code", "exception", "failed"],
+      },
+    ],
+    knownNonFindings: ["refund_payment correctly checks the response status and raises a clear error and must not be flagged."],
+    notes: "",
+    mockFindings: [
+      {
+        title: "Payment gateway failures are not handled in charge_card",
+        description:
+          "charge_card does not check the response status code or catch any exception from the " +
+          "network call, so a failed charge is indistinguishable from a successful one — no error " +
+          "handling exists around the payment gateway call.",
+        severity: "high",
+        category: "error_handling",
+        confidence: "high",
+        recommendation: "Check the response status and raise a clear error on failure, as refund_payment does.",
+        citedChunkIds: ["py-charge-card"],
+      },
+    ],
+  },
+  {
+    id: "review-jwt-weak-secret",
+    scope: "Review the JWT token handling for security issues.",
+    relevantChunkIds: ["py-generate-jwt", "py-verify-jwt"],
+    expectedFindings: [
+      {
+        id: "review-jwt-weak-secret/hardcoded-fallback",
+        description: "verify_jwt falls back to a hardcoded, publicly-known secret when JWT_SECRET is unset.",
+        category: "security",
+        severityRange: ["high", "critical"],
+        expectedSourceChunkId: "py-verify-jwt",
+        keywords: ["hardcoded", "secret", "fallback", "forge"],
+      },
+    ],
+    knownNonFindings: ["generate_jwt always uses the caller-supplied secret and must not be flagged."],
+    notes: "",
+    mockFindings: [
+      {
+        title: "verify_jwt falls back to a hardcoded weak secret",
+        description:
+          "verify_jwt falls back to a hardcoded secret, \"dev-fallback-secret\", when JWT_SECRET is " +
+          "not set, letting an attacker who reads the source forge a valid token for an " +
+          "unconfigured deployment.",
+        severity: "critical",
+        category: "security",
+        confidence: "high",
+        recommendation: "Refuse to start (or refuse to verify) when JWT_SECRET is not configured, instead of using a hardcoded fallback.",
+        citedChunkIds: ["py-verify-jwt"],
+      },
+    ],
+  },
+  {
+    id: "review-python-sql-injection",
+    scope: "Review the Python order repository for security issues.",
+    relevantChunkIds: ["py-get-order-by-id", "py-get-order-by-customer-email"],
+    expectedFindings: [
+      {
+        id: "review-python-sql-injection/f-string-injection",
+        description: "get_order_by_customer_email builds SQL with an f-string instead of a parameter.",
+        category: "security",
+        severityRange: ["high", "critical"],
+        expectedSourceChunkId: "py-get-order-by-customer-email",
+        keywords: ["SQL injection", "f-string", "parameter"],
+      },
+    ],
+    knownNonFindings: ["get_order_by_id uses a real parameterized query and must not be flagged."],
+    notes: "",
+    mockFindings: [
+      {
+        title: "SQL injection in get_order_by_customer_email",
+        description:
+          "get_order_by_customer_email interpolates the caller-supplied email directly into an " +
+          "f-string instead of passing it as a query parameter, allowing SQL injection.",
+        severity: "critical",
+        category: "security",
+        confidence: "high",
+        recommendation: "Use a parameterized query, matching get_order_by_id's own pattern.",
+        citedChunkIds: ["py-get-order-by-customer-email"],
+      },
+    ],
+  },
+  {
+    id: "review-js-sql-injection",
+    scope: "Review the JavaScript product repository for security issues.",
+    relevantChunkIds: ["js-find-product-by-sku", "js-find-product-by-name"],
+    expectedFindings: [
+      {
+        id: "review-js-sql-injection/concatenation-injection",
+        description: "findProductByName concatenates a caller-supplied search term into the SQL string.",
+        category: "security",
+        severityRange: ["high", "critical"],
+        expectedSourceChunkId: "js-find-product-by-name",
+        keywords: ["SQL injection", "concatenat", "parameterized"],
+      },
+    ],
+    knownNonFindings: ["findProductBySku uses a real parameterized query and must not be flagged."],
+    notes: "",
+    mockFindings: [
+      {
+        title: "SQL injection in findProductByName",
+        description:
+          "findProductByName concatenates the caller-supplied search term directly into the SQL " +
+          "string instead of using a parameter, allowing SQL injection.",
+        severity: "critical",
+        category: "security",
+        confidence: "high",
+        recommendation: "Use a parameterized query, matching findProductBySku's own pattern.",
+        citedChunkIds: ["js-find-product-by-name"],
+      },
+    ],
+  },
+  {
+    id: "review-js-legacy-token-timing",
+    scope: "Review the legacy JavaScript token validator for security issues.",
+    relevantChunkIds: ["js-validate-legacy-token"],
+    expectedFindings: [
+      {
+        id: "review-js-legacy-token-timing/timing-attack",
+        description: "validateLegacyToken uses plain string equality instead of a constant-time comparison.",
+        category: "security",
+        severityRange: ["medium", "high"],
+        expectedSourceChunkId: "js-validate-legacy-token",
+        keywords: ["timing", "constant-time", "comparison", "equality"],
+      },
+    ],
+    knownNonFindings: [],
+    notes: "",
+    mockFindings: [
+      {
+        title: "Legacy token comparison is not constant-time",
+        description:
+          "validateLegacyToken compares the submitted token to the stored token with === (plain " +
+          "string equality), which is vulnerable to a timing side-channel attack.",
+        severity: "high",
+        category: "security",
+        confidence: "high",
+        recommendation: "Use a constant-time comparison function for the token comparison.",
+        citedChunkIds: ["js-validate-legacy-token"],
+      },
+    ],
+  },
+  {
+    id: "review-js-order-authorization",
+    scope: "Review the JavaScript order controller for authorization issues.",
+    relevantChunkIds: ["js-get-order", "js-get-owned-order"],
+    expectedFindings: [
+      {
+        id: "review-js-order-authorization/missing-ownership-check",
+        description: "getOrder returns any order by id without verifying the requester owns it.",
+        category: "security",
+        severityRange: ["high", "critical"],
+        expectedSourceChunkId: "js-get-order",
+        keywords: ["ownership", "userId", "authorization", "access control"],
+      },
+    ],
+    knownNonFindings: ["getOwnedOrder correctly checks userId and must not be flagged."],
+    notes: "",
+    mockFindings: [
+      {
+        title: "Missing ownership check in getOrder",
+        description:
+          "getOrder looks up an order by id and returns it without checking that req.user's id " +
+          "matches the order's userId, so any authenticated user can read another user's order.",
+        severity: "high",
+        category: "security",
+        confidence: "high",
+        recommendation: "Add an explicit ownership check before returning order data, as getOwnedOrder does.",
+        citedChunkIds: ["js-get-order"],
+      },
+    ],
+  },
+  {
+    id: "review-email-fire-and-forget",
+    scope: "Review the Python email service for reliability issues.",
+    relevantChunkIds: ["py-deliver-internal", "py-send-email-async"],
+    expectedFindings: [
+      {
+        id: "review-email-fire-and-forget/unawaited-task",
+        description: "send_email_async schedules _deliver without awaiting it or handling a failure.",
+        category: "reliability",
+        severityRange: ["low", "medium"],
+        expectedSourceChunkId: "py-send-email-async",
+        keywords: ["not awaited", "silently", "swallowed", "error handling"],
+      },
+    ],
+    knownNonFindings: ["_deliver itself correctly opens the connection and writes the message; the defect is in how it's scheduled, not in _deliver."],
+    notes: "",
+    mockFindings: [
+      {
+        title: "Email delivery failures are silently swallowed",
+        description:
+          "send_email_async schedules _deliver via asyncio.create_task without awaiting it or " +
+          "attaching an exception handler, so a delivery failure is silently swallowed by the " +
+          "event loop instead of being surfaced to the caller.",
+        severity: "medium",
+        category: "reliability",
+        confidence: "medium",
+        recommendation: "Await the task and handle its exceptions, or attach a done-callback that logs failures.",
+        citedChunkIds: ["py-send-email-async"],
+      },
+    ],
+  },
+  {
+    id: "review-clean-order-processing-multi-source",
+    scope: "Review the order processing pipeline for correctness issues.",
+    relevantChunkIds: ["svc-process-order", "svc-validate-order-items", "svc-calculate-order-total", "utils-normalize-order-payload"],
+    expectedFindings: [],
+    knownNonFindings: [
+      "normalizeOrderPayload, validateOrderItems, calculateOrderTotal, and processOrder are all " +
+        "correctly implemented and correctly composed; nothing across these four related chunks " +
+        "should be flagged.",
+    ],
+    notes: "Tests that the system does not invent findings even when several genuinely related chunks are all in scope at once.",
+    mockFindings: [],
+  },
+  {
+    id: "review-insufficient-evidence-oauth",
+    scope: "Review DevForge's third-party OAuth login integration for security issues.",
+    relevantChunkIds: [],
+    expectedFindings: [],
+    knownNonFindings: [
+      "No OAuth or third-party login code exists anywhere in this codebase; a correct review " +
+        "returns no findings rather than fabricating one about code that doesn't exist.",
+    ],
+    notes: "Adversarial: an empty/no-relevant-evidence scope — the correct behavior is zero findings, not a guessed one.",
+    mockFindings: [],
+  },
 ];

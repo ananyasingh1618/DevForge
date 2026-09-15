@@ -137,4 +137,208 @@ export const QA_CASES: QaCase[] = [
       insufficientEvidence: true,
     },
   },
+
+  // --- Phase 13, Milestone 13.2: benchmark expansion. 13 new cases across
+  // the new TypeScript/JavaScript/Python fixture content, covering
+  // multi-source answers, conflicting/safe counterparts, and a second
+  // insufficient-evidence case in a different domain than the existing one.
+  {
+    id: "qa-order-total-calculation",
+    question: "How does DevForge calculate an order's total from its line items?",
+    expectedAnswerPoints: ["reduce", "unitPriceCents", "quantity"],
+    requiredEvidenceChunkIds: ["svc-calculate-order-total"],
+    forbiddenClaims: ["tax is applied automatically", "discounts are applied automatically"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "calculateOrderTotal sums each line item's unitPriceCents multiplied by its quantity using " +
+        "a reduce over the items array.",
+      citedChunkIds: ["svc-calculate-order-total"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-order-processing-flow",
+    question: "Walk me through what happens when an order is processed, from raw input to total.",
+    expectedAnswerPoints: ["normalize", "total"],
+    // Multiple valid sources (Phase 13/14.6 requirement) — a correct
+    // answer legitimately cites the orchestrator and the normalization
+    // step it calls, not just one chunk.
+    requiredEvidenceChunkIds: ["svc-process-order", "utils-normalize-order-payload"],
+    forbiddenClaims: ["payment is charged automatically"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "processOrder normalizes the raw payload via normalizeOrderPayload, then validates each " +
+        "line item and calculates the total before loading the user's existing orders.",
+      citedChunkIds: ["svc-process-order", "utils-normalize-order-payload"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-jwt-weak-fallback",
+    question: "What secret does DevForge fall back to if JWT_SECRET isn't configured?",
+    expectedAnswerPoints: ["dev-fallback-secret", "hardcoded"],
+    requiredEvidenceChunkIds: ["py-verify-jwt"],
+    forbiddenClaims: ["the application refuses to start without JWT_SECRET"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "verify_jwt falls back to a hardcoded secret, \"dev-fallback-secret\", when the JWT_SECRET " +
+        "environment variable is not set, instead of refusing to start.",
+      citedChunkIds: ["py-verify-jwt"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-charge-card-error-handling",
+    question: "Does charging a card handle a failed response from the payment gateway?",
+    expectedAnswerPoints: ["does not check", "status code", "no error handling"],
+    requiredEvidenceChunkIds: ["py-charge-card"],
+    forbiddenClaims: ["charge_card retries automatically", "charge_card raises a clear exception on failure"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "No — charge_card does not check the response status code or catch any exception from the " +
+        "network call, so there is no error handling around a failed charge.",
+      citedChunkIds: ["py-charge-card"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-email-async-failure",
+    question: "What happens if sending an email fails in the background task?",
+    expectedAnswerPoints: ["not awaited", "silently swallowed"],
+    requiredEvidenceChunkIds: ["py-send-email-async"],
+    forbiddenClaims: ["failed emails are retried automatically", "the caller is notified of the failure"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "send_email_async schedules delivery via the internal _deliver helper, but the task is " +
+        "not awaited, so if _deliver raises, the failure is silently swallowed by the event loop " +
+        "instead of surfacing to the caller.",
+      citedChunkIds: ["py-send-email-async"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-sql-injection-python",
+    question: "Is there a SQL injection risk in the Python order-lookup-by-email code?",
+    expectedAnswerPoints: ["f-string", "SQL", "get_order_by_customer_email"],
+    requiredEvidenceChunkIds: ["py-get-order-by-customer-email"],
+    forbiddenClaims: ["get_order_by_id is vulnerable to SQL injection"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "Yes — get_order_by_customer_email builds its SQL query with an f-string that interpolates " +
+        "the caller-supplied email directly, which is a SQL injection risk.",
+      citedChunkIds: ["py-get-order-by-customer-email"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-product-search-injection",
+    question: "Is there a SQL injection risk in the JavaScript product-name-search code?",
+    expectedAnswerPoints: ["concatenat", "SQL", "findProductByName"],
+    requiredEvidenceChunkIds: ["js-find-product-by-name"],
+    forbiddenClaims: ["findProductBySku is vulnerable to SQL injection"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "Yes — findProductByName concatenates the caller-supplied search term directly into the " +
+        "SQL string instead of using a parameter, which is a SQL injection risk.",
+      citedChunkIds: ["js-find-product-by-name"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-legacy-token-timing",
+    question: "Is the legacy JavaScript token validator vulnerable to a timing attack?",
+    expectedAnswerPoints: ["===", "plain string equality", "not constant-time"],
+    requiredEvidenceChunkIds: ["js-validate-legacy-token"],
+    forbiddenClaims: ["validateLegacyToken uses a constant-time comparison"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "Yes — validateLegacyToken compares the submitted token to the stored token with plain " +
+        "string equality (===), which is not constant-time.",
+      citedChunkIds: ["js-validate-legacy-token"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-feature-flag-check",
+    question: "How does DevForge check if a named feature flag is enabled?",
+    expectedAnswerPoints: ["flags", "default", "false"],
+    requiredEvidenceChunkIds: ["config-is-feature-enabled"],
+    forbiddenClaims: ["an unknown flag name throws an error"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "isFeatureEnabled looks up the flag name in an in-memory flags map, defaulting to false for " +
+        "any unknown flag name rather than throwing.",
+      citedChunkIds: ["config-is-feature-enabled"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-order-ownership-check",
+    question: "Does the GET /api/orders/:id route check that the requester owns the order?",
+    expectedAnswerPoints: ["checks", "userId", "req.user.id"],
+    requiredEvidenceChunkIds: ["api-get-order-route"],
+    forbiddenClaims: ["getOrderRoute does not check ownership", "any authenticated user can read any order"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "Yes — getOrderRoute checks that the loaded order's userId matches req.user.id and throws " +
+        "Forbidden otherwise.",
+      citedChunkIds: ["api-get-order-route"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-js-order-ownership-missing",
+    question: "Does the JavaScript getOrder function check ownership before returning an order?",
+    expectedAnswerPoints: ["does not check", "any authenticated user"],
+    requiredEvidenceChunkIds: ["js-get-order"],
+    forbiddenClaims: ["getOrder checks that the order belongs to the requester"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "No — getOrder loads the order by id and returns it directly; it does not check that the " +
+        "requester owns it, so any authenticated user can read any order.",
+      citedChunkIds: ["js-get-order"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-password-strength",
+    question: "What makes a password strong enough for is_strong_password to accept it?",
+    expectedAnswerPoints: ["12 characters", "digit", "uppercase"],
+    requiredEvidenceChunkIds: ["py-is-strong-password"],
+    forbiddenClaims: ["a special character is required"],
+    insufficientEvidenceExpected: false,
+    mockAnswer: {
+      answer:
+        "is_strong_password requires at least 12 characters, containing at least one digit and at " +
+        "least one uppercase letter.",
+      citedChunkIds: ["py-is-strong-password"],
+      insufficientEvidence: false,
+    },
+  },
+  {
+    id: "qa-insufficient-evidence-oauth",
+    question: "Does DevForge support logging in via a third-party OAuth provider like Google or GitHub?",
+    expectedAnswerPoints: [],
+    requiredEvidenceChunkIds: [],
+    forbiddenClaims: ["OAuth", "Google login", "GitHub login", "third-party provider"],
+    insufficientEvidenceExpected: true,
+    mockAnswer: {
+      answer:
+        "No relevant code was found in the indexed repository for this question. Try rephrasing " +
+        "it, or ask about a more specific file, function, or feature.",
+      citedChunkIds: [],
+      insufficientEvidence: true,
+    },
+  },
 ];

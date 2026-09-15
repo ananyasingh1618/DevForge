@@ -77,16 +77,41 @@ describe("dataset: retrieval cases", () => {
   it("every referenced chunk id is a real fixture chunk", () => {
     const realIds = new Set(FIXTURE_CHUNKS.map((c) => c.chunkId));
     for (const c of RETRIEVAL_CASES) {
-      for (const id of [...c.expectedChunkIds, ...c.acceptableAlternativeChunkIds]) {
+      for (const id of [
+        ...c.expectedChunkIds,
+        ...c.acceptableAlternativeChunkIds,
+        ...(c.directSourceChunkIds ?? []),
+        ...(c.supportingSourceChunkIds ?? []),
+        ...(c.irrelevantExampleChunkIds ?? []),
+      ]) {
         expect(realIds.has(id)).toBe(true);
       }
     }
   });
 
-  it("every case has a non-empty query and at least one expected chunk", () => {
+  // Phase 13, Milestone 13.4: a retrieval case is allowed zero expected
+  // chunks only when it's explicitly marked `answerable: false` (an
+  // insufficient-evidence case, the retrieval-side counterpart to
+  // QA_CASES' `insufficientEvidenceExpected`) — every other case must have
+  // at least one real expected chunk. See benchmarkAudit.ts for the fuller
+  // automated audit this hand-written test complements.
+  it("every case has a non-empty query, and an answerable case has at least one expected chunk", () => {
     for (const c of RETRIEVAL_CASES) {
       expect(c.query.length).toBeGreaterThan(0);
-      expect(c.expectedChunkIds.length).toBeGreaterThan(0);
+      if (c.answerable === false) {
+        expect(c.expectedChunkIds.length).toBe(0);
+      } else {
+        expect(c.expectedChunkIds.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("an unanswerable case never accidentally has real expected evidence", () => {
+    for (const c of RETRIEVAL_CASES) {
+      if (c.answerable === false) {
+        expect(c.expectedChunkIds).toEqual([]);
+        expect(c.acceptableAlternativeChunkIds).toEqual([]);
+      }
     }
   });
 });

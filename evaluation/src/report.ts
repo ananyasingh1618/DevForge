@@ -50,12 +50,26 @@ function fmtPct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
 }
 
-/** Every aggregate metric is a 0..1 fraction except these, which are plain counts. */
-const PLAIN_COUNT_METRICS = new Set(["caseCount", "fallbackCount", "regenerationCount"]);
+/** Every aggregate metric is a 0..1 fraction except these, which are plain
+ * counts — plus, since Phase 13 (Milestone 13.3), any per-category/per-
+ * language/per-difficulty breakdown key ending in `_count` (a dynamic,
+ * data-driven set of keys — see retrievalEvaluator.ts's `addBreakdown()` —
+ * that can't be listed here by name ahead of time). */
+const PLAIN_COUNT_METRICS = new Set([
+  "caseCount",
+  "fallbackCount",
+  "regenerationCount",
+  "answerableCaseCount",
+  "unanswerableCaseCount",
+]);
+
+function isPlainCount(key: string): boolean {
+  return PLAIN_COUNT_METRICS.has(key) || key.endsWith("_count");
+}
 
 function featureTable(report: FeatureReport): string {
   const rows = Object.entries(report.aggregate)
-    .map(([k, v]) => `| ${k} | ${PLAIN_COUNT_METRICS.has(k) ? v : fmtPct(v)} |`)
+    .map(([k, v]) => `| ${k} | ${isPlainCount(k) ? v : fmtPct(v)} |`)
     .join("\n");
   return `| Metric | Value |\n|---|---|\n${rows}`;
 }
