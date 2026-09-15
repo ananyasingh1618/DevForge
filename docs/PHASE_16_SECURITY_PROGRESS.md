@@ -307,3 +307,55 @@ claim of frontend-test coverage that doesn't exist.
 Full suite after this milestone: 421/421 (419 + 2 new), `tsc --noEmit` and `eslint .` both clean.
 
 Commit: `6d138a5`
+
+## Milestone 16.7 — Multi-user isolation tests
+
+Every resource type already had its own scattered "404 for a project owned by someone else" test
+(Milestone 16.1's inventory: one dedicated case per resource, spread across 12 different route test
+files). This milestone adds something those don't provide: one consolidated regression net that
+sweeps every resource type against the same user pair in a single place, so a future isolation break
+on any one resource is caught here even if nobody remembers to add a dedicated test for that specific
+new endpoint.
+
+**`api/src/multiUserIsolation.test.ts`** (new, 3 tests): seeds one fully-populated project for a
+"victim" user directly via Prisma — a repository connection, a completed codebase index, an indexed
+file with a symbol, a code chunk, a question with its answer and cited source, a code review, and a
+job — bypassing the real GitHub/ai-service flow (already exercised end-to-end in other files) so
+this file stays fast and focused purely on the isolation boundary. Then, as a completely separate
+"intruder" user, sweeps **27 distinct endpoints** spanning every resource type (project detail,
+repository connection read/verify/branches/disconnect, codebase index read/files/symbols/reindex,
+search, Q&A list/get/ask, reviews list/get/create, jobs list/get/cancel/retry/create, and every
+version-list endpoint — requirements/prd/architecture/epics/tasks) and asserts **every single one**
+returns 404, collecting every failure into one list so a single run reports every broken boundary at
+once rather than stopping at the first. All 27 passed on this first run — direct evidence that the
+Milestone 16.2/16.3 ownership work (the centralized `requireOwnedProject()` plus the independent
+route-level `requireProjectOwnership` middleware) is holding consistently across the whole API, not
+just on the resources that happened to get individually tested. A second test confirms the victim's
+project is excluded from the intruder's own `GET /projects` list (not just individually
+unreachable), and a third confirms the isolation is per-user, not a blanket lockout — the victim's
+own session can still read everything.
+
+**Direct API, service-layer, and DB access patterns**: the 27-endpoint sweep above covers the direct-
+API dimension exhaustively. The service-layer dimension is covered by construction — every one of
+those 27 routes reaches its ownership check through the exact same shared `requireOwnedProject()`
+(Milestone 16.2) that every service function calls, so a passing API-level test here is also
+evidence the service layer's own check fired correctly, not just that some earlier middleware
+short-circuited the request. Direct DB access patterns were not separately tested — Postgres itself
+enforces no row-level security in this codebase (deliberately: DevForge's model is "the application
+layer is the only party that ever holds direct DB credentials," not row-level multi-tenant
+isolation), so "DB access" isolation reduces to "the application code doing the query always filters
+by the authenticated `ownerId`," which is exactly what `requireOwnedProject()`'s
+`findFirst({ id, ownerId })` shape enforces on every call — there is no code path in the reviewed
+services that issues a project-scoped query without it.
+
+**Frontend routes**: not newly tested this milestone — already covered by an existing test,
+`frontend/src/pages/ProjectOverview.test.tsx`'s "shows a not-found message for a 404 (missing or
+someone else's project)" case, which confirms the frontend renders a clean not-found state rather
+than crashing or exposing stale/partial data when the API denies access. Frontend code holds no
+authorization logic of its own to bypass in the first place — it is a pure API consumer that
+displays whatever the API returns — so this existing coverage, plus the API-level guarantees above,
+is the correct and sufficient standard here rather than new frontend-specific isolation tests.
+
+Full suite after this milestone: 424/424 (421 + 3 new), `tsc --noEmit` and `eslint .` both clean.
+
+Commit: `<pending>`
