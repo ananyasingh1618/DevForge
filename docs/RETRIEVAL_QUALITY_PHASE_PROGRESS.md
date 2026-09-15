@@ -45,7 +45,19 @@ Commit: `8074b37`
 
 ## Milestone 2 — Retrieval diagnostics
 
-`<pending>`
+Added `hybridScore.ts` (mirrored identically in `api/src/lib/` and `evaluation/src/`): pure
+scoring-signal functions — `tokenize()` (camelCase/snake_case/kebab-case-aware word splitting),
+`lexicalOverlapScore()`, `identifierMatchScore()`, `exactIdentifierBoost()`,
+`filePathMatchScore()`, and `combinedScore()` (fixed, documented weights, semantic score
+dominant). Added `retrievalDiagnostics.ts` (api) / `diagnostics.ts` (evaluation): a pure,
+rank-ordered per-candidate breakdown with near-duplicate grouping (same file, overlapping
+lines), deliberately excluding raw chunk content from its output (verified by a dedicated
+"never leaks content" test scanning the serialized output for source text/credential-shaped
+strings). Not wired into any HTTP response or ranking behavior yet — Milestone 3 does the
+wiring. 28 new tests in each package (56 total). Full suites green: `api` 286 (258 + 28),
+`evaluation` 80 (52 + 28).
+
+Commit: `af01e1a`
 
 ## Milestone 3 — Retrieval ranking improvements
 
