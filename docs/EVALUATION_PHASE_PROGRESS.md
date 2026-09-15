@@ -33,7 +33,21 @@ Commit: `fd64a78`
 
 ## Milestone 2 — Evaluation dataset and ground truth
 
-`<pending>`
+Added the `evaluation/` pnpm workspace package and its dataset: 9 real, hand-authored TypeScript
+fixture files (`src/dataset/fixtures/`) covering authentication/session handling, database
+access, an API controller, error handling, configuration loading, GitHub-integration-flavored
+code, service-to-service communication, a clean file with no meaningful findings, and a file
+whose comment contains an embedded prompt-injection attempt — 16 chunks total
+(`fixtureRepo.ts`), each with a stable id and hand-verified `startLine`/`endLine` (confirmed by
+reading each fixture file back with line numbers before writing the manifest, not estimated).
+Ground truth: 9 retrieval cases, 6 Q&A cases, 9 review cases (`retrievalCases.ts`/`qaCases.ts`/
+`reviewCases.ts`), each with a stable, never-renumbered string id and a hand-authored
+`mockAnswer`/`mockFindings` for the deterministic default run. No real credentials, private
+repository content, personal data, unlicensed source, or VoxMind files anywhere in the dataset —
+every fixture file's own header comment says so explicitly (and Milestone 8's dataset tests
+check this programmatically).
+
+Commit: `571c7d9`
 
 ## Milestone 3 — Retrieval evaluation harness
 
