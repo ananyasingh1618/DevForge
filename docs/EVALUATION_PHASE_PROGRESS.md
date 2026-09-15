@@ -161,3 +161,48 @@ monorepo suite after this milestone: `api` 258, `frontend` 101, `evaluation` 52 
 `pnpm typecheck` and `pnpm lint` both clean across every package.
 
 Commit: `2703e07`
+
+### Part B — Docker verification
+
+Full volume-wiped rebuild: `docker compose down -v` → `docker compose up -d --build` (all four
+images rebuilt: `postgres`, `api`, `frontend`, `ai-service`). All four services came up healthy.
+The `api` container's startup log confirms all 11 migrations applied automatically in order,
+ending with `20260914201014_add_evaluation_runs`.
+
+Ran the 12-step verification the task specifies:
+1–3. Stopped, wiped, and rebuilt the complete stack (above).
+4–5. All 11 migrations applied automatically; all four services healthy.
+6. `DATABASE_URL=...localhost:5433... pnpm eval` (default, mock mode — no ai-service call, no
+   credential) run from the host against the Dockerized Postgres: exit code 0.
+7. Confirmed `evaluation/reports/latest.json` and `latest.md` were written, and a new row landed
+   in the Dockerized `evaluation_runs` table (confirmed via `GET /evaluations` against the live
+   API).
+8. Regression failures surfaced clearly: the run's own two documented case-level misses
+   (`retrieval-fire-and-forget-notifications`, `qa-notification-failures`) print with case id,
+   score, and the exact failure reason(s) in both the CLI output and the JSON/Markdown reports —
+   and the overall run still reports `PASSED` (all 11 regression gates green), correctly
+   distinguishing a known dataset-proxy limitation from an actual regression (see Milestone 6).
+9. No paid credential was set anywhere in this environment for this run — confirmed by `docker
+   compose exec api env` showing no `ANTHROPIC_API_KEY`/`VOYAGE_API_KEY`, and the run still
+   completing and persisting successfully.
+10. `docker compose logs api`/`logs ai-service` and both report files scanned for GitHub-token-
+    and Anthropic-key-shaped strings — none found.
+11. Re-verified the full honest-failure chain for every prior phase through this same live
+    stack: Phase 8 search / Phase 9 Q&A / Phase 10 review all return `400 NO_COMPLETED_INDEX`
+    with no repository connected; Phase 6 connect returns `503 GITHUB_INTEGRATION_NOT_CONFIGURED`
+    with the encryption key unset; Phase 2 requirements analysis returns
+    `503 AI_PROVIDER_UNAVAILABLE` with no Anthropic key — all still honest, none regressed by
+    this phase. Also re-ran `tests/` (the real-HTTP integration suite) against the live Docker
+    stack: 12 passed.
+12. Playwright-confirmed the `/evaluations` page renders correctly against the production-built
+    frontend container, showing the real persisted run (`Passed`, `22/24 cases`) — screenshot
+    saved.
+
+Restoration: `docker compose down` (no `-v`) → `docker compose up -d postgres` →
+`scripts/setup-test-db.sh` (recreated `devforge_test`, all 11 migrations applied) →
+`prisma migrate status` on `devforge` confirms "Database schema is up to date!" → `npm run test`
+at the repo root: `api` 258, `frontend` 101, `evaluation` 52 — all green. No orphaned `tsx`/
+`uvicorn`/`vite` processes remained afterward except VoxMind's own (PID 16012, untouched
+throughout — confirmed via `ps aux` before, during, and after every Docker/process operation).
+
+Commit: `<pending>` (docs-only; no source changes in this part)
