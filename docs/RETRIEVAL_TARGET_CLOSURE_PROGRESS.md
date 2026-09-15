@@ -144,4 +144,4 @@ weight variants were also tested and found neutral-to-negative — not adopted. 
 Golden-dataset pass rate: **108/109** (67 retrieval + 21 Q&A + 21 review), all 13 regression gates
 pass. Full `api` suite: 323/323 (zero regressions). Full `evaluation` suite: 121/121.
 
-Commit: `<pending>`
+Commit: `5543fec`
