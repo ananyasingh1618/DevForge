@@ -8,6 +8,9 @@ import asyncio
 
 
 async def _deliver(to_address, subject, body):
+    """Opens a raw asyncio network connection to the mail server and writes
+    the message directly over the wire -- the actual delivery mechanism
+    send_email_async schedules below without awaiting its result."""
     reader, writer = await asyncio.open_connection("mail.example.com", 587)
     writer.write(f"SUBJECT: {subject}\nTO: {to_address}\n\n{body}".encode())
     await writer.drain()

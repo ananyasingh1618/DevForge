@@ -1,7 +1,7 @@
 import { cosineSimilarity, deterministicEmbedding } from "../deterministicEmbedding.js";
 import { chunkContent, FIXTURE_CHUNKS, type FixtureChunk } from "../dataset/fixtureRepo.js";
 import { RETRIEVAL_CASES, type RetrievalCase } from "../dataset/retrievalCases.js";
-import { combinedScore, computeScoreSignals } from "../hybridScore.js";
+import { combinedScore, computeScoreSignals, HYBRID_WEIGHTS } from "../hybridScore.js";
 import type { AggregateMetrics, CaseResult, FeatureReport } from "../types.js";
 
 /** Mirrors api/src/services/retrieval.ts's own RELATIVE_SCORE_CUTOFF exactly
@@ -45,13 +45,21 @@ export function rankChunks(query: string, chunks: FixtureChunk[] = FIXTURE_CHUNK
       symbolName: chunk.symbolName,
       filePath: chunk.filePath,
     });
-    return { chunk, score: semanticScore, combined: combinedScore(signals) };
+    const combined = combinedScore(signals);
+    // Mirrors api/src/services/retrieval.ts's own cutoff-basis desensitization
+    // exactly (Part A, Milestone A3/A4 — see
+    // docs/RETRIEVAL_TARGET_CLOSURE_REPORT.md, "Case 3"): the threshold's
+    // reference point excludes the binary exact-identifier jackpot, so one
+    // candidate's exact match doesn't unfairly raise the bar for every
+    // other candidate. Ranking order still uses the full combined score.
+    const cutoffBasis = combined - HYBRID_WEIGHTS.exactIdentifier * signals.exactIdentifierScore;
+    return { chunk, score: semanticScore, combined, cutoffBasis };
   });
 
   withCombined.sort((a, b) => b.combined - a.combined);
 
-  const topCombined = withCombined[0]!.combined;
-  const threshold = topCombined * RELATIVE_SCORE_CUTOFF;
+  const topCutoffBasis = Math.max(...withCombined.map((c) => c.cutoffBasis));
+  const threshold = topCutoffBasis * RELATIVE_SCORE_CUTOFF;
 
   const selected: RankedChunk[] = [];
   for (const { chunk, score, combined } of withCombined) {

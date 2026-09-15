@@ -6,7 +6,7 @@ import { decryptToken, isGithubIntegrationConfigured } from "../lib/githubTokenC
 import { generateEmbeddingsViaAiService } from "../lib/aiServiceClient.js";
 import { chunkFile } from "../lib/chunking.js";
 import { cosineSimilarity } from "../lib/similarity.js";
-import { combinedScore, computeScoreSignals } from "../lib/hybridScore.js";
+import { combinedScore, computeScoreSignals, HYBRID_WEIGHTS } from "../lib/hybridScore.js";
 import { buildSearchObservabilityEvent, logSearchObservability } from "../lib/searchObservability.js";
 import type { SearchRequestInput } from "../schemas/retrieval.js";
 
@@ -303,7 +303,22 @@ export const RELATIVE_SCORE_CUTOFF = 0.78;
 /** Re-ranks by the hybrid combined score (semantic dominant, refined by
  * lexical/identifier/file-path signals) and applies the adaptive cutoff
  * above. Exported and separately unit-testable so this selection logic
- * doesn't require a database or a real embedding call to verify. */
+ * doesn't require a database or a real embedding call to verify.
+ *
+ * The cutoff threshold's *reference point* (Part A, Milestone A3/A4 —
+ * see docs/RETRIEVAL_TARGET_CLOSURE_REPORT.md, "Case 3") is each
+ * candidate's combined score with the binary exact-identifier jackpot
+ * subtracted back out, not the raw top combined score. Root-caused via a
+ * real failing case: when a query names one candidate's identifier
+ * verbatim (e.g. asking about `removeFromCart` when the real target is
+ * the function it delegates to), that one candidate's exact-match bonus
+ * alone can make its score an outlier well above the general relevance
+ * ceiling — since the threshold is `topScore * RELATIVE_SCORE_CUTOFF`,
+ * one candidate's jackpot was unfairly raising the bar every *other*
+ * candidate had to clear, even a clearly-relevant runner-up. Ranking
+ * order is unaffected (an exact match still deserves to rank first) —
+ * only the cutoff's own reference point is desensitized to this one
+ * binary signal. */
 export function selectRankedResults(query: string, candidates: SearchResult[], limit: number): SearchResult[] {
   if (candidates.length === 0) return [];
 
@@ -313,13 +328,15 @@ export function selectRankedResults(query: string, candidates: SearchResult[], l
       symbolName: c.symbolName,
       filePath: c.filePath,
     });
-    return { result: c, combined: combinedScore(signals) };
+    const combined = combinedScore(signals);
+    const cutoffBasis = combined - HYBRID_WEIGHTS.exactIdentifier * signals.exactIdentifierScore;
+    return { result: c, combined, cutoffBasis };
   });
 
   withCombined.sort((a, b) => b.combined - a.combined);
 
-  const topScore = withCombined[0]!.combined;
-  const threshold = topScore * RELATIVE_SCORE_CUTOFF;
+  const topCutoffBasis = Math.max(...withCombined.map((c) => c.cutoffBasis));
+  const threshold = topCutoffBasis * RELATIVE_SCORE_CUTOFF;
 
   const selected: SearchResult[] = [];
   for (const { result, combined } of withCombined) {

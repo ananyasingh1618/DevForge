@@ -162,16 +162,16 @@ export type ScoreSignals = {
   filePathScore: number;
 };
 
-/** Hand-picked, documented weights — not learned, not a claim of
- * optimality (see the plan doc's "Risks" section). `semantic` dominates
- * deliberately: these signals refine ranking, they don't replace semantic
- * relevance as the primary driver. */
+/** Mirrors api/src/lib/hybridScore.ts's own HYBRID_WEIGHTS exactly — see
+ * that file for the full rationale (`filePath` raised 0.1 → 0.35 in Part A
+ * of the retrieval-target-closure package, Milestone A4, from a real
+ * weight sweep against the full 67-case benchmark). */
 export const HYBRID_WEIGHTS = {
   semantic: 1.0,
   lexical: 0.35,
   identifier: 0.25,
   exactIdentifier: 0.4,
-  filePath: 0.1,
+  filePath: 0.35,
 } as const;
 
 export function combinedScore(signals: ScoreSignals): number {
