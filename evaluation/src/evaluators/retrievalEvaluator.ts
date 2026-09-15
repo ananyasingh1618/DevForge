@@ -6,10 +6,11 @@ import type { AggregateMetrics, CaseResult, FeatureReport } from "../types.js";
 
 /** Mirrors api/src/services/retrieval.ts's own RELATIVE_SCORE_CUTOFF exactly
  * — see that file and docs/RETRIEVAL_QUALITY_PHASE_PLAN.md for the full
- * rationale. Kept as a literal, re-verified-equal constant (not imported —
- * this package has no dependency on `api`) by
- * retrievalEvaluator.test.ts's own "mirrors production" test. */
-export const RELATIVE_SCORE_CUTOFF = 0.7;
+ * rationale (tightened 0.7 → 0.78 in Phase 14, Milestone 14.2). Kept as a
+ * literal, re-verified-equal constant (not imported — this package has no
+ * dependency on `api`) by retrievalEvaluator.test.ts's own "mirrors
+ * production" test. */
+export const RELATIVE_SCORE_CUTOFF = 0.78;
 
 /** Mirrors Phase 8's own default search limit (api/src/schemas/retrieval.ts's
  * `limit` default is 10; MAX_SOURCES for Q&A/review is 8) — 5 is used here

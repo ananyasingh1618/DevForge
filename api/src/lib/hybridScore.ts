@@ -17,9 +17,101 @@
  * up in `pnpm eval`.
  */
 
+/**
+ * A standard, general-purpose English stopword list (the same handful of
+ * articles/prepositions/auxiliary verbs any IR textbook's stopword list
+ * would include — not tied to any specific codebase or query). Added in
+ * Phase 14 (docs/RETRIEVAL_QUALITY_PHASE_PLAN.md's Phase 14 addendum,
+ * Milestone 14.2) after a real, measured finding: a natural-language
+ * question like "Is there a SQL injection risk in the user repository
+ * code?" shares generic words ("is", "there", "a", "in", "the", "no")
+ * with completely unrelated chunks' own prose doc-comments, inflating
+ * `lexicalOverlapScore` for reasons having nothing to do with topical
+ * relevance — confirmed directly by inspecting a real false-positive
+ * top-ranked candidate's own signal breakdown before this fix (lexical
+ * score 0.5 from stopword overlap alone). Excluding these words from
+ * tokenize()'s output is the standard, well-established fix.
+ */
+const STOPWORDS = new Set([
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "the",
+  "an",
+  "of",
+  "to",
+  "in",
+  "on",
+  "at",
+  "for",
+  "and",
+  "or",
+  "but",
+  "not",
+  "no",
+  "how",
+  "what",
+  "which",
+  "who",
+  "why",
+  "when",
+  "where",
+  "there",
+  "here",
+  "this",
+  "that",
+  "these",
+  "those",
+  "with",
+  "without",
+  "from",
+  "into",
+  "onto",
+  "about",
+  "before",
+  "after",
+  "instead",
+  "unlike",
+  "rather",
+  "than",
+  "does",
+  "did",
+  "done",
+  "doing",
+  "have",
+  "has",
+  "had",
+  "will",
+  "would",
+  "should",
+  "could",
+  "can",
+  "each",
+  "every",
+  "only",
+  "such",
+  "some",
+  "any",
+  "same",
+  "also",
+  "even",
+  "it",
+  "its",
+  "as",
+  "by",
+  "if",
+]);
+
 /** Splits camelCase/PascalCase/snake_case/kebab-case identifiers into real
  * word tokens (so a query word like "password" matches the identifier
- * `passwordHash`), then normalizes to lowercase words of length > 1. */
+ * `passwordHash`), normalizes to lowercase words of length > 1, and drops
+ * common English stopwords (see STOPWORDS above) — a query/candidate word
+ * only counts toward lexical/identifier/file-path overlap when it's an
+ * actual, topically-meaningful word. */
 export function tokenize(text: string): string[] {
   const withBoundaries = text
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -28,7 +120,33 @@ export function tokenize(text: string): string[] {
   return withBoundaries
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 1);
+    .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+}
+
+/**
+ * Two tokens are considered a match when they're identical, or — a light,
+ * general "safe stemming" fallback (Phase 14, Milestone 14.2; see
+ * docs/RETRIEVAL_QUALITY_PHASE_PLAN.md's Phase 14 addendum) — when both
+ * are long enough (≥6 characters) and share a ≥5-character common prefix.
+ * This catches ordinary English word-family variants a real stemmer would
+ * (e.g. "notify"/"notification"/"notifications",
+ * "validate"/"validation", "config"/"configuration") without pulling in a
+ * real stemming library or any dataset-specific word list — confirmed by
+ * a real, measured case: a query asking about "notifications" wasn't
+ * lexically matching a chunk whose only identifier was
+ * `notifyUserFireAndForget`, purely because "notify" and "notifications"
+ * are different tokens under exact-match comparison. Deliberately
+ * conservative (long minimum length, long minimum shared prefix) to avoid
+ * false-positive matches between short, unrelated words.
+ */
+function tokensMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 6 || b.length < 6) return false;
+  return a.slice(0, 5) === b.slice(0, 5);
+}
+
+function anyTokenMatches(token: string, candidates: string[]): boolean {
+  return candidates.some((c) => tokensMatch(token, c));
 }
 
 /** Fraction of the query's own tokens that appear anywhere in the
@@ -36,8 +154,7 @@ export function tokenize(text: string): string[] {
  * independent of and complementary to semantic embedding similarity. */
 export function lexicalOverlapScore(queryTokens: string[], contentTokens: string[]): number {
   if (queryTokens.length === 0) return 0;
-  const contentSet = new Set(contentTokens);
-  const matched = queryTokens.filter((t) => contentSet.has(t)).length;
+  const matched = queryTokens.filter((t) => anyTokenMatches(t, contentTokens)).length;
   return matched / queryTokens.length;
 }
 
@@ -48,7 +165,8 @@ export function identifierMatchScore(queryTokenSet: Set<string>, symbolName: str
   if (!symbolName) return 0;
   const symbolTokens = tokenize(symbolName);
   if (symbolTokens.length === 0) return 0;
-  const matched = symbolTokens.filter((t) => queryTokenSet.has(t)).length;
+  const queryTokens = [...queryTokenSet];
+  const matched = symbolTokens.filter((t) => anyTokenMatches(t, queryTokens)).length;
   return matched / symbolTokens.length;
 }
 
@@ -66,7 +184,8 @@ export function exactIdentifierBoost(query: string, symbolName: string | null): 
 export function filePathMatchScore(queryTokenSet: Set<string>, filePath: string): number {
   const pathTokens = tokenize(filePath);
   if (pathTokens.length === 0) return 0;
-  const matched = pathTokens.filter((t) => queryTokenSet.has(t)).length;
+  const queryTokens = [...queryTokenSet];
+  const matched = pathTokens.filter((t) => anyTokenMatches(t, queryTokens)).length;
   return matched / pathTokens.length;
 }
 

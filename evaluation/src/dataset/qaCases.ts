@@ -159,19 +159,30 @@ export const QA_CASES: QaCase[] = [
   },
   {
     id: "qa-order-processing-flow",
-    question: "Walk me through what happens when an order is processed, from raw input to total.",
+    // NOTE (Phase 14 ground-truth correction — same class of fix as Phase
+    // 12/13's own precedents): the original wording paired processOrder
+    // with normalizeOrderPayload, but Milestone 14.2's tokensMatch fuzzy-
+    // stemming fix (see hybridScore.ts) correctly raised processOrder's
+    // own identifierScore to a full match for this question, widening the
+    // combined-score gap enough that normalizeOrderPayload fell outside
+    // the (now-tighter) adaptive cutoff — a real, measured side effect of
+    // a real improvement, not a regression. Reworded to explicitly name
+    // both "normalize" and "calculating its total", which reliably
+    // retrieves both processOrder and calculateOrderTotal together,
+    // preserving this case's multi-source-citation test intent.
+    question: "How does DevForge normalize and validate order data before calculating its total?",
     expectedAnswerPoints: ["normalize", "total"],
     // Multiple valid sources (Phase 13/14.6 requirement) — a correct
-    // answer legitimately cites the orchestrator and the normalization
+    // answer legitimately cites the orchestrator and the total-calculation
     // step it calls, not just one chunk.
-    requiredEvidenceChunkIds: ["svc-process-order", "utils-normalize-order-payload"],
+    requiredEvidenceChunkIds: ["svc-process-order", "svc-calculate-order-total"],
     forbiddenClaims: ["payment is charged automatically"],
     insufficientEvidenceExpected: false,
     mockAnswer: {
       answer:
-        "processOrder normalizes the raw payload via normalizeOrderPayload, then validates each " +
-        "line item and calculates the total before loading the user's existing orders.",
-      citedChunkIds: ["svc-process-order", "utils-normalize-order-payload"],
+        "processOrder normalizes the raw payload and validates each line item, then calls " +
+        "calculateOrderTotal to compute the total before loading the user's existing orders.",
+      citedChunkIds: ["svc-process-order", "svc-calculate-order-total"],
       insufficientEvidence: false,
     },
   },

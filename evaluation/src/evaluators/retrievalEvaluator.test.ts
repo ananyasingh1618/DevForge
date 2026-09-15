@@ -93,7 +93,7 @@ describe("rankChunks — adaptive relative-score cutoff", () => {
     // assertion is the deliberate tripwire: if the two values ever drift,
     // this test fails immediately instead of the two packages silently
     // measuring different algorithms. See docs/RETRIEVAL_QUALITY_PHASE_PLAN.md.
-    expect(RELATIVE_SCORE_CUTOFF).toBe(0.7);
+    expect(RELATIVE_SCORE_CUTOFF).toBe(0.78);
   });
 
   it("can return fewer than K chunks when the score falls off a cliff after the top result", () => {

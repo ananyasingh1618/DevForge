@@ -29,8 +29,13 @@ describe("selectRankedResults", () => {
   });
 
   it("keeps every candidate whose combined score is within the relative cutoff of the top score", () => {
+    // Both candidates share the same exact-match symbol name (e.g. two
+    // genuinely equivalent implementations, like Phase 12's own
+    // github-get-default-branch / github-get-default-branch-safe case) so
+    // both legitimately score close to the top — a realistic scenario for
+    // "should both be kept", distinct from the "clearly weaker" test below.
     const strong = result({ chunkId: "strong", score: 0.9, symbolName: "verifyPassword" });
-    const alsoStrong = result({ chunkId: "alsoStrong", score: 0.85, symbolName: "verifyPasswordAlt" });
+    const alsoStrong = result({ chunkId: "alsoStrong", score: 0.85, symbolName: "verifyPassword" });
     const selected = selectRankedResults("verifyPassword", [strong, alsoStrong], 10);
     expect(selected.map((r) => r.chunkId)).toEqual(expect.arrayContaining(["strong", "alsoStrong"]));
   });

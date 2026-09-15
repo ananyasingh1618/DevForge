@@ -257,11 +257,21 @@ export async function search(
  * response with low-confidence noise. The always-keep-the-top-result rule
  * below means a genuinely irrelevant query never returns literally nothing
  * when at least one chunk exists — an honestly-empty result (no chunks at
- * all) is unaffected and unchanged. Chosen empirically against the Phase
- * 11 evaluation dataset's own score distributions (see the progress log's
- * Milestone 3 entry) — general and query-independent, never keyed to a
- * specific query or chunk id. */
-export const RELATIVE_SCORE_CUTOFF = 0.7;
+ * all) is unaffected and unchanged.
+ *
+ * Tightened 0.7 → 0.78 in Phase 14 (docs/RETRIEVAL_QUALITY_PHASE_PLAN.md's
+ * Phase 14 addendum, Milestone 14.2): re-measured against Phase 13's
+ * larger, 67-case benchmark via evaluation/src/comparison/
+ * rankingStrategyComparison.ts, 0.78 is a strict improvement over 0.7 on
+ * every measured axis — precision@K and useful-context-rate both rise
+ * substantially while recall@K and mean reciprocal rank are unchanged (the
+ * handful of cases 0.7 already missed entirely were missing from the
+ * ranked pool outright, not merely cut by the cutoff, so tightening it
+ * costs nothing there). General and query-independent, never keyed to a
+ * specific query or chunk id — see that comparison's own persisted report
+ * (evaluation/reports/ranking-comparison.md) for the full six-strategy
+ * before/after table this value was chosen from. */
+export const RELATIVE_SCORE_CUTOFF = 0.78;
 
 /** Re-ranks by the hybrid combined score (semantic dominant, refined by
  * lexical/identifier/file-path signals) and applies the adaptive cutoff
