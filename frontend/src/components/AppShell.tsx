@@ -20,6 +20,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             DevForge
           </Link>
           <div className="flex items-center gap-3">
+            <Link to="/evaluations" className="text-sm text-text-muted hover:text-text">
+              Evaluations
+            </Link>
             {user && <span className="text-sm text-text-muted">{user.email}</span>}
             <Button variant="ghost" onClick={handleLogout}>
               Log out
