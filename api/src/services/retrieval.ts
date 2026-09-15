@@ -8,6 +8,7 @@ import { generateEmbeddingsViaAiService } from "../lib/aiServiceClient.js";
 import { chunkFile } from "../lib/chunking.js";
 import { cosineSimilarity } from "../lib/similarity.js";
 import { combinedScore, computeScoreSignals, HYBRID_WEIGHTS } from "../lib/hybridScore.js";
+import { redactSecrets } from "../lib/secretRedaction.js";
 import { buildSearchObservabilityEvent, logSearchObservability } from "../lib/searchObservability.js";
 import type { SearchRequestInput } from "../schemas/retrieval.js";
 
@@ -73,6 +74,12 @@ async function buildChunksForIndex(
       symbols: file.symbols.map((s) => ({ id: s.id, startLine: s.startLine, endLine: s.endLine })),
     });
     for (const chunk of chunks) {
+      // Redact high-confidence secret shapes before this chunk is ever
+      // persisted, embedded, or sent to an LLM prompt — see
+      // lib/secretRedaction.ts. Applied here, once, at index time, so every
+      // downstream reader of CodeChunk.content (search results, Q&A
+      // sources, review sources, embeddings) sees the same redacted text.
+      const redactedContent = redactSecrets(chunk.content);
       rows.push({
         id: randomUUID(),
         projectId,
@@ -82,7 +89,7 @@ async function buildChunksForIndex(
         branch,
         commitSha,
         chunkIndex: chunk.chunkIndex,
-        content: chunk.content,
+        content: redactedContent,
         contentHash: chunk.contentHash,
         language: chunk.language,
         startLine: chunk.startLine,

@@ -269,6 +269,58 @@ describe("happy path", () => {
     expect(embeddingCount).toBe(1);
   });
 
+  it("never persists or returns a secret embedded in indexed repository content (Phase 16, Milestone 16.4)", async () => {
+    const cookie = await registerAndGetCookie("search-secretredaction@example.com");
+    const projectId = await createProject(cookie);
+
+    const SOURCE_WITH_SECRET =
+      'export const config = {\n  awsKey: "AKIAIOSFODNN7EXAMPLE",\n  githubToken: "ghp_1234567890abcdefghij1234567890abcdEF",\n};\n';
+
+    mockFetchResponses([
+      { status: 200, body: GITHUB_USER_BODY },
+      { status: 200, body: GITHUB_REPO_BODY },
+    ]);
+    await request(app)
+      .post(`/projects/${projectId}/repository/connect`)
+      .set("Cookie", cookie)
+      .send({ token: "ghp_faketoken1234567890", owner: "octocat", repo: "Hello-World" });
+
+    mockFetchResponses([
+      { status: 200, body: { commit: { sha: "commit-secret1" } } },
+      {
+        status: 200,
+        body: { tree: [{ path: "src/config.ts", type: "blob", sha: "sha-config", size: SOURCE_WITH_SECRET.length }], truncated: false },
+      },
+      { status: 200, body: { content: base64(SOURCE_WITH_SECRET), encoding: "base64" } },
+      {
+        status: 200,
+        body: { language: "typescript", status: "parsed", symbols: [], error: null },
+      },
+    ]);
+    await request(app).post(`/projects/${projectId}/codebase-index/start`).set("Cookie", cookie);
+
+    mockFetchResponses([
+      { status: 200, body: { content: base64(SOURCE_WITH_SECRET), encoding: "base64" } }, // buildChunksForIndex's getBlob
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // ensureEmbeddings
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding
+    ]);
+    const res = await request(app)
+      .post(`/projects/${projectId}/search`)
+      .set("Cookie", cookie)
+      .send({ query: "config" });
+
+    expect(res.status).toBe(200);
+    const responseText = JSON.stringify(res.body);
+    expect(responseText).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(responseText).not.toContain("ghp_1234567890abcdefghij1234567890abcdEF");
+
+    // Confirmed redacted at rest, not just filtered on the way out.
+    const storedChunk = await prisma.codeChunk.findFirst({ where: { projectId } });
+    expect(storedChunk?.content).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(storedChunk?.content).not.toContain("ghp_1234567890abcdefghij1234567890abcdEF");
+    expect(storedChunk?.content).toContain("[REDACTED-SECRET]");
+  });
+
   it("reuses persisted chunks/embeddings on a second search — no re-fetch, no re-embed", async () => {
     const cookie = await registerAndGetCookie("search-reuse@example.com");
     const projectId = await createProject(cookie);

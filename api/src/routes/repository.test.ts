@@ -145,6 +145,32 @@ describe("POST /projects/:projectId/repository/connect", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("returns 400 for a repo name of exactly '..' — a GitHub-path-confusion defense added in Milestone 16.4", async () => {
+    const cookie = await registerAndGetCookie("repo-dotdot@example.com");
+    const projectId = await createProject(cookie);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const res = await request(app)
+      .post(`/projects/${projectId}/repository/connect`)
+      .set("Cookie", cookie)
+      .send({ token: "ghp_faketoken1234567890", owner: "octocat", repo: ".." });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a repo name of exactly '.'", async () => {
+    const cookie = await registerAndGetCookie("repo-dot@example.com");
+    const projectId = await createProject(cookie);
+    const res = await request(app)
+      .post(`/projects/${projectId}/repository/connect`)
+      .set("Cookie", cookie)
+      .send({ token: "ghp_faketoken1234567890", owner: "octocat", repo: "." });
+    expect(res.status).toBe(400);
+  });
+
   it("returns 400 for a token that's too short", async () => {
     const cookie = await registerAndGetCookie("repo-shorttoken@example.com");
     const projectId = await createProject(cookie);
@@ -359,6 +385,30 @@ describe("PATCH /projects/:projectId/repository", () => {
       .patch(`/projects/${projectId}/repository`)
       .set("Cookie", cookie)
       .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 for a branch name containing '..' — schema-level defense in depth added in Milestone 16.4", async () => {
+    const cookie = await registerAndGetCookie("repo-branch-dotdot@example.com");
+    const projectId = await createProject(cookie);
+    await connectRepository(cookie, projectId);
+    const res = await request(app)
+      .patch(`/projects/${projectId}/repository`)
+      .set("Cookie", cookie)
+      .send({ branch: "feature/../../escape" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 for a branch name containing a control character", async () => {
+    const cookie = await registerAndGetCookie("repo-branch-control@example.com");
+    const projectId = await createProject(cookie);
+    await connectRepository(cookie, projectId);
+    const res = await request(app)
+      .patch(`/projects/${projectId}/repository`)
+      .set("Cookie", cookie)
+      .send({ branch: "main\x00evil" });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
