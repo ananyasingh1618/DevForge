@@ -257,3 +257,53 @@ Full suite after this milestone: 419/419 (406 + 13 new: 11 in the new `app.secur
 --noEmit` and `eslint .` both clean.
 
 Commit: `5800a81`
+
+## Milestone 16.6 — Secrets and sensitive-data controls
+
+Built the dedicated cross-surface secret-pattern test suite the plan doc scoped for this milestone,
+on top of (not duplicating) Milestone 16.4's `secretRedaction.test.ts`, which already unit-tests the
+redaction function itself in isolation.
+
+**Shared detection primitive**: added `containsSecretPattern()` to `api/src/lib/secretRedaction.ts`
+— a superset of the same `SECRET_PATTERNS` list `redactSecrets()` uses, plus one detection-only
+addition (`Authorization: Bearer <token>` header shape). Kept as detection-only, not added to the
+redaction list: blanket-redacting anything containing the literal words "Authorization" or "Bearer"
+out of arbitrary repository content would be a much riskier false-positive surface than scanning
+*DevForge's own output* for that shape, where it has no legitimate reason to appear at all.
+
+**`api/src/secretScan.test.ts`** (new, 2 tests): drives a full, realistic stack flow — register,
+create a project, connect a repository using a *realistically-shaped* 40-character GitHub token
+(not the short `ghp_faketoken1234567890` fixture value used elsewhere in the suite, which is
+deliberately too short to match the real token-shape regex and wouldn't catch a genuine leak), index
+a file containing an embedded database connection string with a real-shaped password and an AWS
+access key, search, create and cancel a job, update the branch, and disconnect — then scans **every
+single API response body** captured across that entire flow, plus **every captured
+`console.log`/`console.error` line**, with `containsSecretPattern()`. A second test does the same
+sweep across the full auth lifecycle (register/login/me/logout) for a realistic password value. This
+tests the actual observed behavior across many endpoints at once, rather than checking only the
+specific fields a developer thought to assert on individually — closing the milestone's own "verify
+secrets can't appear in... citations... search diagnostics... job metadata... Docker output" scope
+by construction (every response and log line from the whole flow is covered, not resource-by-
+resource).
+
+**Verified, not just assumed, for two more listed surfaces**:
+- **DB debug output**: confirmed `api/src/lib/prisma.ts` constructs `new PrismaClient({ adapter })`
+  with no `log` option at all — Prisma's own query/parameter logging is off by construction, so
+  there is no query-debug surface that could ever print a chunk's content or a token value.
+- **Eval reports**: confirmed the separate `evaluation/` package's `runEval.ts` never reads or
+  prints an API key value anywhere — it reads only `AI_SERVICE_URL` (a URL, not a secret) from
+  `process.env`, and the actual `ANTHROPIC_API_KEY`/embedding-provider credentials are consumed
+  entirely server-side by `ai-service`, never passed through or logged by the evaluation CLI's own
+  code path. No secret material flows through eval report generation at all, by construction, not
+  by a redaction step bolted on afterward.
+
+**Frontend surface**: not covered by this milestone's new tests — the frontend never receives a
+GitHub token in any API response in the first place (`sanitize()` strips `encryptedToken` before any
+response leaves the API, confirmed in Milestone 16.1's inventory and re-confirmed live in this
+milestone's own full-flow scan), so there is no secret value for frontend code to mishandle. This is
+a structural argument, not a frontend-side test — an explicit, honest scope boundary rather than a
+claim of frontend-test coverage that doesn't exist.
+
+Full suite after this milestone: 421/421 (419 + 2 new), `tsc --noEmit` and `eslint .` both clean.
+
+Commit: `<pending>`

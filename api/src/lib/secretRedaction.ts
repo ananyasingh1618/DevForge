@@ -46,3 +46,23 @@ export function redactSecrets(content: string): string {
   }
   return result;
 }
+
+// A superset used only for detection (Milestone 16.6's cross-surface
+// secret-pattern test suite), never for redaction — an `Authorization:
+// Bearer <token>` header shape is a reliable thing to *scan output for*
+// (it should never appear in a log line, error response, or job metadata
+// field at all), but would be a much riskier pattern to blanket-redact out
+// of arbitrary repository *content*, where the literal words "Authorization"
+// and "Bearer" can appear in ordinary code/docs with no secret attached.
+const DETECTION_ONLY_PATTERNS: RegExp[] = [
+  ...SECRET_PATTERNS.map((p) => p.pattern),
+  /\bAuthorization:\s*Bearer\s+\S{10,}/gi,
+];
+
+/** True if `text` contains anything matching a known secret shape (see
+ * `SECRET_PATTERNS` above) or an `Authorization: Bearer <token>` header —
+ * used by tests to scan API responses, logs, and other output surfaces for
+ * a leaked credential, never to gate real request handling. */
+export function containsSecretPattern(text: string): boolean {
+  return DETECTION_ONLY_PATTERNS.some((pattern) => new RegExp(pattern.source, pattern.flags).test(text));
+}
