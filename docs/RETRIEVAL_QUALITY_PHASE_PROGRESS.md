@@ -421,3 +421,41 @@ included; `citationValidityRate` stays at 100% and `emptyReviewCorrectness` stay
 dataset now: 67 retrieval / 21 Q&A / 21 review (109 total). Benchmark audit clean.
 
 Commit: `1f6cc41`
+
+## Milestone 14.8 — Full regression and verification
+
+Ran the full verification checklist: `npm run typecheck` (api/frontend/tests/evaluation, clean),
+`npm run lint` (clean, one pre-existing unrelated frontend warning), `npm run build` (clean),
+`npm run test` (api 323/323, frontend 111/111, evaluation 121/121 — 555 total), `.venv/bin/python
+-m pytest` (ai-service 117/117, unchanged — confirms zero ai-service files touched this phase).
+
+Full Docker volume-wipe rebuild: `docker compose down -v` → `up -d --build` → all four services
+(`postgres`/`api`/`ai-service`/`frontend`) healthy → all 11 migrations auto-applied on the fresh
+database (confirmed via `_prisma_migrations`). Live `pnpm eval` against the fresh Docker Postgres
+(no credentials): 106/109 golden-dataset cases, **all 13 regression gates PASSED**, persisted to
+`evaluation_runs`. `tests/` integration suite: 12/12 live against the real running stack. Secret
+scan of `evaluation/reports/latest.{json,md}` and `docker compose logs` — clean (an initial
+apparent match against local test-fixture source files was a shell-output-capture artifact,
+re-confirmed clean by redirecting `docker compose logs` to a file and grepping that: 64 lines
+total, only migration/health-check output, zero matches). Playwright: Search-page "No repository
+connected" gate and the Evaluations page (showing the real, live-persisted "Passed · 106/109 cases
+· mock" run) both screenshotted and confirmed rendering correctly against the Dockerized frontend.
+New Milestone 14.5 observability logging was confirmed exercised (not just unit-tested) via `api`'s
+own "happy path" Supertest suite, which calls the real `search()` function end-to-end against a
+real test-database connection — the same code path a live Docker request would take.
+
+VoxMind confirmed untouched via `ps aux` before, during, and after the entire Docker rebuild (PID
+16012 plus its 5 native Postgres connections, unchanged throughout). Environment restored after
+verification: `docker compose down` (no `-v`) → `docker compose up -d postgres` → `devforge_test`
+recreated via `scripts/setup-test-db.sh` (all 11 migrations) → `devforge`'s own `prisma migrate
+status` confirmed up to date with no further action needed → final `npm run test` sanity run green
+across all three packages a second time (api 323/323, frontend 111/111, evaluation 121/121). One
+unrelated, pre-existing flaky failure (`tasks.test.ts`, the same documented parallel-worker
+Set-Cookie flakiness noted in every earlier phase of this session) surfaced once during an earlier
+full-suite run this same milestone (immediately after the Milestone 14.5 observability change) and
+was re-confirmed clean in isolation on the spot; every subsequent full-suite run, including this
+milestone's own final one, was clean on the first try.
+
+No production code changed in this milestone — verification only.
+
+Commit: `<pending>`
