@@ -29,7 +29,7 @@ actual structural/quality-floor violations do fail it.
 
 Deliverables: `docs/EVALUATION_PHASE_PLAN.md`, this progress log.
 
-Commit: `<pending>`
+Commit: `fd64a78`
 
 ## Milestone 2 — Evaluation dataset and ground truth
 
