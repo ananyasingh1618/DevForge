@@ -326,7 +326,7 @@ regression gates still passing (including the zero-tolerance Q&A invalid-citatio
 required real diagnostic work — see above — to keep at exactly 0% through this milestone's
 changes, not merely left alone).
 
-Commit: `<pending>`
+Commit: `995350d`
 
 ## Milestone 14.3 — Chunk and context selection
 
@@ -338,4 +338,4 @@ correctly and precisely bounded. Re-affirms Phase 12's own prior conclusion (no 
 raw file content at ranking time) rather than assuming it without checking. See the plan doc's
 Phase 14 addendum for the full reasoning.
 
-Commit: `<pending>` (combined with Milestone 14.2 above)
+Commit: `995350d` (combined with Milestone 14.2 above)
