@@ -358,4 +358,4 @@ is the correct and sufficient standard here rather than new frontend-specific is
 
 Full suite after this milestone: 424/424 (421 + 3 new), `tsc --noEmit` and `eslint .` both clean.
 
-Commit: `<pending>`
+Commit: `c778df8`
