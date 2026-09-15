@@ -43,6 +43,13 @@ export const FIXTURE_CHUNKS: FixtureChunk[] = [
   { chunkId: "github-get-default-branch-safe", filePath: "github/githubClient.ts", symbolName: "getDefaultBranchSafe", symbolType: "function", startLine: 28, endLine: 37, language: "typescript" },
   { chunkId: "services-notify-fire-and-forget", filePath: "services/notificationService.ts", symbolName: "notifyUserFireAndForget", symbolType: "function", startLine: 14, endLine: 20, language: "typescript" },
   { chunkId: "services-notify-user", filePath: "services/notificationService.ts", symbolName: "notifyUser", symbolType: "function", startLine: 27, endLine: 38, language: "typescript" },
+  // Phase 12, Milestone 6: adversarial chunks added after the ranking
+  // improvements in Milestone 3 were designed and tuned, specifically to
+  // catch overfitting — see docs/RETRIEVAL_QUALITY_PHASE_PLAN.md.
+  { chunkId: "auth-legacy-check-password", filePath: "auth/legacyAuth.ts", symbolName: "checkLegacyPassword", symbolType: "function", startLine: 15, endLine: 17, language: "typescript" },
+  { chunkId: "auth-legacy-find-user-by-email", filePath: "auth/legacyAuth.ts", symbolName: "findUserByEmail", symbolType: "function", startLine: 27, endLine: 29, language: "typescript" },
+  { chunkId: "utils-security-helpers-format-iso-date", filePath: "utils/securityHelpers.ts", symbolName: "formatIsoDate", symbolType: "function", startLine: 12, endLine: 14, language: "typescript" },
+  { chunkId: "services-rate-limiter-allow-request", filePath: "services/rateLimiter.ts", symbolName: "allowRequest", symbolType: "function", startLine: 23, endLine: 38, language: "typescript" },
   // startLine 7/10 (not 1) on these two whole-file chunks deliberately excludes each
   // file's shared dataset-boilerplate header comment (identical prose across every
   // fixture file) — consistent with how the other 14 chunks already start well past

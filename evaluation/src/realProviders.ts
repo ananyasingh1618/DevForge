@@ -16,6 +16,7 @@ import { rankChunks, TOP_K } from "./evaluators/retrievalEvaluator.js";
 import { BRANCH_LABEL, chunkContent, COMMIT_LABEL, REPOSITORY_LABEL } from "./dataset/fixtureRepo.js";
 import { QA_CASES, type QaCase } from "./dataset/qaCases.js";
 import { REVIEW_CASES, type ReviewCase, type MockFinding } from "./dataset/reviewCases.js";
+import { groundAnswer } from "./qaAnswerGrounding.js";
 import type { QaAnswer } from "./evaluators/qaEvaluator.js";
 
 function buildSources(ranked: ReturnType<typeof rankChunks>) {
@@ -40,8 +41,16 @@ async function postJson(url: string, body: unknown): Promise<{ status: number; b
   return { status: res.status, body: parsed };
 }
 
-export async function realQaAnswers(aiServiceUrl: string, cases: QaCase[] = QA_CASES): Promise<Map<string, QaAnswer>> {
-  const result = new Map<string, QaAnswer>();
+export type RealQaResult = { answers: Map<string, QaAnswer>; fallbackCount: number };
+
+/** Applies the identical grounding safety net production's
+ * services/qa.ts applies (see qaAnswerGrounding.ts) before scoring a real
+ * answer — so real-mode evaluation measures what a user would actually
+ * see, not raw, ungrounded provider output, and so a fallback's
+ * occurrence is counted (Milestone 6's own reporting requirement). */
+export async function realQaAnswers(aiServiceUrl: string, cases: QaCase[] = QA_CASES): Promise<RealQaResult> {
+  const answers = new Map<string, QaAnswer>();
+  let fallbackCount = 0;
   for (const c of cases) {
     const ranked = rankChunks(c.question, undefined, TOP_K);
     const sources = buildSources(ranked);
@@ -56,12 +65,15 @@ export async function realQaAnswers(aiServiceUrl: string, cases: QaCase[] = QA_C
       throw new Error(`ai-service /qa/answer returned ${status} for case "${c.id}": ${JSON.stringify(body)}`);
     }
     const content = (body as { content: { answer: string; cited_source_numbers: number[]; insufficient_evidence: boolean } }).content;
-    const citedChunkIds = content.cited_source_numbers
-      .filter((n) => n >= 1 && n <= ranked.length)
-      .map((n) => ranked[n - 1]!.chunk.chunkId);
-    result.set(c.id, { answer: content.answer, citedChunkIds, insufficientEvidence: content.insufficient_evidence });
+    const grounded = groundAnswer(
+      { answer: content.answer, citedSourceNumbers: content.cited_source_numbers, insufficientEvidence: content.insufficient_evidence },
+      ranked.length,
+    );
+    if (grounded.overridden) fallbackCount++;
+    const citedChunkIds = [...grounded.citedOrders].map((n) => ranked[n - 1]!.chunk.chunkId);
+    answers.set(c.id, { answer: grounded.answer, citedChunkIds, insufficientEvidence: grounded.insufficientEvidence });
   }
-  return result;
+  return { answers, fallbackCount };
 }
 
 export async function realReviewFindings(

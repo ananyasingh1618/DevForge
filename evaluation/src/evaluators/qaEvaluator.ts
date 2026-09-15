@@ -83,6 +83,15 @@ export function evaluateQa(
   cases: QaCase[] = QA_CASES,
   answers: Map<string, QaAnswer> = new Map(cases.map((c) => [c.id, c.mockAnswer])),
   k = TOP_K,
+  /** How many answers were already overridden by qaAnswerGrounding.ts's
+   * deterministic fallback before reaching this evaluator (0 in mock mode,
+   * since dataset mock answers are pre-vetted and never need it; real mode
+   * — realProviders.ts — applies the identical grounding production uses
+   * and reports the real count here). Included as-is in the aggregate,
+   * not recomputed, since by the time an answer reaches this function any
+   * fallback has already happened and cannot be detected from its output
+   * alone. See docs/RETRIEVAL_QUALITY_PHASE_PLAN.md, Milestone 6. */
+  fallbackCount = 0,
 ): FeatureReport {
   const results = cases.map((c) => evaluateCase(c, answers.get(c.id) ?? c.mockAnswer, k));
   const n = results.length || 1;
@@ -115,6 +124,14 @@ export function evaluateQa(
     unsupportedClaimRate: unsupportedClaimCases / n,
     insufficientEvidenceAccuracy: insufficientEvidenceCorrectCount / n,
     expectedPointCoverage: results.reduce((sum, r) => sum + r.score, 0) / n,
+    // Milestone 6 reporting: how many answers needed the deterministic
+    // insufficient-evidence fallback (qaAnswerGrounding.ts), and how many
+    // were regenerated via a second provider call — always 0, since this
+    // phase deliberately implements a bounded fallback instead of
+    // unbounded retries (see docs/RETRIEVAL_QUALITY_PHASE_PLAN.md,
+    // Milestone 4's "Avoid unbounded retries" requirement).
+    fallbackCount,
+    regenerationCount: 0,
     caseCount: n,
   };
 

@@ -50,10 +50,12 @@ function fmtPct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
 }
 
-/** Every aggregate metric is a 0..1 fraction except `caseCount`, a plain count. */
+/** Every aggregate metric is a 0..1 fraction except these, which are plain counts. */
+const PLAIN_COUNT_METRICS = new Set(["caseCount", "fallbackCount", "regenerationCount"]);
+
 function featureTable(report: FeatureReport): string {
   const rows = Object.entries(report.aggregate)
-    .map(([k, v]) => `| ${k} | ${k === "caseCount" ? v : fmtPct(v)} |`)
+    .map(([k, v]) => `| ${k} | ${PLAIN_COUNT_METRICS.has(k) ? v : fmtPct(v)} |`)
     .join("\n");
   return `| Metric | Value |\n|---|---|\n${rows}`;
 }

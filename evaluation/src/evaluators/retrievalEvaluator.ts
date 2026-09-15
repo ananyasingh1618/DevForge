@@ -114,6 +114,13 @@ export function evaluateRetrieval(
     return actual.rankedIds.length > 0 ? relevant / actual.rankedIds.length : 0;
   });
 
+  // Rank distribution (Milestone 6 reporting): reciprocal rank (r.score) is
+  // 1/rank when the first expected chunk was found, 0 on a miss — a clean,
+  // exact way to recover each case's actual rank without a second pass.
+  const rankAt1 = results.filter((r) => r.score === 1).length;
+  const rankAt2to3 = results.filter((r) => r.score > 1 / 3 && r.score < 1).length;
+  const rankAt4PlusOrMissed = n - rankAt1 - rankAt2to3;
+
   const aggregate: AggregateMetrics = {
     recallAtK: hits / n,
     hitRate: hits / n,
@@ -122,6 +129,11 @@ export function evaluateRetrieval(
     emptyResultRate: emptyResults / n,
     duplicateSourceCaseRate: duplicateCases / n,
     contextSizeCompliant: contextCompliant ? 1 : 0,
+    // Fraction of cases whose first relevant result ranked exactly 1st /
+    // ranked 2nd-3rd / ranked 4th-or-later-or-missed entirely — sums to 1.
+    rankDistributionTop1Rate: rankAt1 / n,
+    rankDistributionTop2To3Rate: rankAt2to3 / n,
+    rankDistribution4PlusOrMissedRate: rankAt4PlusOrMissed / n,
     caseCount: n,
   };
 

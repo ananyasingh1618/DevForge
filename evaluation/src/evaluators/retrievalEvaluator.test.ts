@@ -114,3 +114,32 @@ describe("rankChunks — adaptive relative-score cutoff", () => {
     expect(ranked.length).toBeLessThanOrEqual(3);
   });
 });
+
+describe("evaluateRetrieval — rank distribution", () => {
+  it("puts a case that ranks the expected chunk 1st into the top-1 bucket", () => {
+    const cases: RetrievalCase[] = [
+      { id: "c1", query: "password comparison", expectedChunkIds: ["a"], acceptableAlternativeChunkIds: [], notes: "" },
+    ];
+    const report = evaluateRetrieval(cases, 5, CHUNKS);
+    expect(report.aggregate.rankDistributionTop1Rate).toBe(1);
+    expect(report.aggregate.rankDistributionTop2To3Rate).toBe(0);
+    expect(report.aggregate.rankDistribution4PlusOrMissedRate).toBe(0);
+  });
+
+  it("puts a total miss into the 4-plus-or-missed bucket", () => {
+    const cases: RetrievalCase[] = [
+      { id: "c1", query: "xyz", expectedChunkIds: ["does-not-exist"], acceptableAlternativeChunkIds: [], notes: "" },
+    ];
+    const report = evaluateRetrieval(cases, 5, CHUNKS);
+    expect(report.aggregate.rankDistribution4PlusOrMissedRate).toBe(1);
+  });
+
+  it("the three rank-distribution buckets always sum to 1", () => {
+    const report = evaluateRetrieval();
+    const sum =
+      report.aggregate.rankDistributionTop1Rate! +
+      report.aggregate.rankDistributionTop2To3Rate! +
+      report.aggregate.rankDistribution4PlusOrMissedRate!;
+    expect(sum).toBeCloseTo(1, 10);
+  });
+});

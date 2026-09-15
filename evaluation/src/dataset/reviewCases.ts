@@ -280,4 +280,35 @@ export const REVIEW_CASES: ReviewCase[] = [
       },
     ],
   },
+  // --- Phase 12, Milestone 6: adversarial cases, added after the review
+  // pipeline was already audited/hardened in Milestone 5, using content
+  // not reviewed anywhere else in the dataset.
+  {
+    id: "review-suspicious-but-valid-rate-limiter",
+    scope: "Review the rate limiter for correctness issues.",
+    relevantChunkIds: ["services-rate-limiter-allow-request"],
+    expectedFindings: [],
+    knownNonFindings: [
+      "allowRequest's manual Map bookkeeping (no framework, a raw setTimeout for cleanup) looks " +
+        "unusual at a glance, but every increment is paired with its own scheduled decrement, so " +
+        "the map cannot grow unbounded — this is not a real defect and must not be flagged solely " +
+        "for looking unfamiliar.",
+    ],
+    notes: "Adversarial: tests that an unfamiliar-looking but actually-correct pattern is not flagged.",
+    mockFindings: [],
+  },
+  {
+    id: "review-legacy-admin-lookup-no-injection",
+    scope: "Review the legacy admin user lookup for security issues.",
+    relevantChunkIds: ["auth-legacy-find-user-by-email"],
+    expectedFindings: [],
+    knownNonFindings: [
+      "findUserByEmail (legacy admin panel) reads from an in-memory Map via .get(), which has no " +
+        "query-injection surface at all — must not be flagged as a SQL-injection-style issue by " +
+        "analogy with the unrelated, differently-implemented db/userRepository.ts function of the " +
+        "same name.",
+    ],
+    notes: "Adversarial: tests that a same-named-but-differently-implemented function isn't flagged by mistaken analogy.",
+    mockFindings: [],
+  },
 ];

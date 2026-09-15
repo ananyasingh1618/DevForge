@@ -119,4 +119,22 @@ export const QA_CASES: QaCase[] = [
       insufficientEvidence: true,
     },
   },
+  // --- Phase 12, Milestone 6: adversarial case, added after Milestone 4's
+  // grounding fallback was implemented, using content (two-factor auth)
+  // not asked about anywhere else in the dataset.
+  {
+    id: "qa-insufficient-evidence-two-factor-auth",
+    question: "Does DevForge support two-factor authentication at login?",
+    expectedAnswerPoints: [],
+    requiredEvidenceChunkIds: [],
+    forbiddenClaims: ["two-factor", "2FA", "TOTP", "authenticator app"],
+    insufficientEvidenceExpected: true,
+    mockAnswer: {
+      answer:
+        "No relevant code was found in the indexed repository for this question. Try rephrasing " +
+        "it, or ask about a more specific file, function, or feature.",
+      citedChunkIds: [],
+      insufficientEvidence: true,
+    },
+  },
 ];

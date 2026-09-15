@@ -18,11 +18,15 @@
  *     below a floor low enough that only a real regression could cross
  *     it. Only this decides `report.passed`.
  *
- * Thresholds below are chosen relative to this dataset's own size (9
- * retrieval cases, 6 Q&A cases, 9 review cases with 9 expected findings
- * total) — see docs/EVALUATION_PHASE_PLAN.md ("Regression thresholds") for
- * the full justification of each number, not just this file's short
- * comments.
+ * Thresholds below are chosen relative to this dataset's own size — as of
+ * Phase 12, 14 retrieval cases, 7 Q&A cases, 11 review cases (grown from
+ * Phase 11's 9/6/9 by Milestone 6's own adversarial additions; see
+ * docs/RETRIEVAL_QUALITY_PHASE_PLAN.md, "Regression thresholds", for the
+ * full before/after justification of every number below, not just this
+ * file's short comments). Re-tightened in Phase 12 as the measured
+ * baseline genuinely improved — never loosened to make an implementation
+ * pass; see that same doc's own before/after table for the numbers this
+ * was tightened from.
  */
 
 import type { EvaluationReport } from "./types.js";
@@ -47,21 +51,24 @@ export function checkRegressionGates(report: EvaluationReport): GateResult[] {
   return [
     // --- Structural safety invariants: must always be exactly met. ---
     //
-    // Q&A's own invalid-citation rate is deliberately NOT in this
-    // zero-tolerance group, even though it sounds like the same kind of
-    // check as review's: it's computed against THIS package's own
-    // deterministic retrieval proxy's actual ranked output (a true
-    // grounding check — "did the answer cite something really given to
-    // it"), and in mock mode the hand-authored mock answers assume ideal
-    // retrieval. A proxy-embedding miss on one lexically-distant query
-    // (see src/deterministicEmbedding.ts's own documented limitation) can
-    // make an otherwise-correct mock citation register as "invalid" here
-    // without any real citation-safety violation — production's actual
-    // structural guarantee (Node independently re-validates every citation
-    // against the real retrieved range before persisting — see
-    // api/src/services/qa.ts) is exercised by Phase 9's own Supertest
-    // suite, not re-tested by this evaluation package. See the quality
-    // floor below instead.
+    // Q&A's invalidCitationRate moved into this zero-tolerance group in
+    // Phase 12 (it was a 25%-floor quality gate in Phase 11): Milestone 3's
+    // retrieval fix removed the one case that coupled this metric to the
+    // deterministic proxy's own lexical limitations (see
+    // docs/RETRIEVAL_QUALITY_PHASE_PLAN.md, Milestone 1's root-cause
+    // analysis), so a genuine 0% is now achievable and expected on every
+    // run, matching the task's own "invalid source references must remain
+    // zero after validation" requirement. Production's actual structural
+    // guarantee (Node independently re-validates every citation before
+    // persisting — see api/src/lib/qaAnswerGrounding.ts) is exercised by
+    // its own dedicated unit/Supertest suite, not re-tested by this
+    // evaluation package; this gate now tracks it faithfully instead of
+    // tolerating a known gap.
+    {
+      name: "No invalid Q&A citations (against this run's actual retrieval output)",
+      passed: qa.aggregate.invalidCitationRate === 0,
+      detail: `invalidCitationRate = ${qa.aggregate.invalidCitationRate}`,
+    },
     {
       name: "No invalid review citations (every finding cites a real, in-scope source)",
       passed: review.aggregate.citationValidityRate === 1,
@@ -83,22 +90,28 @@ export function checkRegressionGates(report: EvaluationReport): GateResult[] {
       detail: secretMatch ? `matched pattern ${secretMatch}` : "none found",
     },
     // --- Quality floors: loose enough that only a real regression crosses
-    // them, tight enough to still catch one. See the file header comment
-    // and docs/EVALUATION_PHASE_PLAN.md for why each number was chosen. ---
+    // them, tight enough to still catch one. Raised in Phase 12 to reflect
+    // the genuinely improved, now-adversarially-tested baseline — see
+    // docs/RETRIEVAL_QUALITY_PHASE_PLAN.md's before/after table. ---
     {
-      name: "Retrieval recall@K stays at or above 75% (at most 2 of 9 cases may miss)",
-      passed: retrieval.aggregate.recallAtK! >= 0.75,
+      name: "Retrieval recall@K stays at or above 85% (Phase 12 baseline: 100% on 14 cases, incl. 5 new adversarial ones)",
+      passed: retrieval.aggregate.recallAtK! >= 0.85,
       detail: `recallAtK = ${retrieval.aggregate.recallAtK}`,
     },
     {
-      name: "Q&A required-evidence citation recall stays at or above 75%",
-      passed: qa.aggregate.citationRecall! >= 0.75,
-      detail: `citationRecall = ${qa.aggregate.citationRecall}`,
+      name: "Retrieval precision@K stays at or above 40% (Phase 12 baseline: 55.7%, up from Phase 11's 28.9%)",
+      passed: retrieval.aggregate.precisionAtK! >= 0.4,
+      detail: `precisionAtK = ${retrieval.aggregate.precisionAtK}`,
     },
     {
-      name: "Q&A invalid-citation rate (against this run's actual retrieval output) stays at or below 25%",
-      passed: qa.aggregate.invalidCitationRate! <= 0.25,
-      detail: `invalidCitationRate = ${qa.aggregate.invalidCitationRate}`,
+      name: "Retrieval mean reciprocal rank stays at or above 65% (Phase 12 baseline: 82.1%, up from Phase 11's 66.1%)",
+      passed: retrieval.aggregate.meanReciprocalRank! >= 0.65,
+      detail: `meanReciprocalRank = ${retrieval.aggregate.meanReciprocalRank}`,
+    },
+    {
+      name: "Q&A required-evidence citation recall stays at or above 85%",
+      passed: qa.aggregate.citationRecall! >= 0.85,
+      detail: `citationRecall = ${qa.aggregate.citationRecall}`,
     },
     {
       name: "Q&A unsupported-claim rate stays at 0%",
@@ -106,8 +119,8 @@ export function checkRegressionGates(report: EvaluationReport): GateResult[] {
       detail: `unsupportedClaimRate = ${qa.aggregate.unsupportedClaimRate}`,
     },
     {
-      name: "Review finding recall stays at or above 75%",
-      passed: review.aggregate.findingRecall! >= 0.75,
+      name: "Review finding recall stays at or above 85%",
+      passed: review.aggregate.findingRecall! >= 0.85,
       detail: `findingRecall = ${review.aggregate.findingRecall}`,
     },
     {
@@ -116,7 +129,7 @@ export function checkRegressionGates(report: EvaluationReport): GateResult[] {
       detail: `falsePositiveRate = ${review.aggregate.falsePositiveRate}`,
     },
     {
-      name: "Review empty-review correctness stays at 100% (no invented findings on clean/injected code)",
+      name: "Review empty-review correctness stays at 100% (no invented findings on clean/injected/suspicious-but-valid code)",
       passed: review.aggregate.emptyReviewCorrectness === 1,
       detail: `emptyReviewCorrectness = ${review.aggregate.emptyReviewCorrectness}`,
     },

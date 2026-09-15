@@ -27,10 +27,12 @@ async function main() {
 
   const retrieval = evaluateRetrieval();
 
-  const qaAnswers = useReal ? await realQaAnswers(aiServiceUrl) : mockQaAnswers();
+  const { answers: qaAnswers, fallbackCount } = useReal
+    ? await realQaAnswers(aiServiceUrl)
+    : { answers: mockQaAnswers(), fallbackCount: 0 };
   const reviewFindings = useReal ? await realReviewFindings(aiServiceUrl) : mockReviewFindings();
 
-  const qa = evaluateQa(undefined, qaAnswers);
+  const qa = evaluateQa(undefined, qaAnswers, undefined, fallbackCount);
   const review = evaluateReview(undefined, reviewFindings);
 
   const report = buildReport(useReal ? "real" : "mock", retrieval, qa, review);

@@ -80,4 +80,53 @@ export const RETRIEVAL_CASES: RetrievalCase[] = [
     acceptableAlternativeChunkIds: [],
     notes: "Exercises retrieval over the dataset's one clean, no-findings file.",
   },
+  // --- Phase 12, Milestone 6: adversarial cases, added after Milestone 3's
+  // ranking improvements were implemented and tuned, to catch overfitting.
+  // See docs/RETRIEVAL_QUALITY_PHASE_PLAN.md ("Anti-overfitting strategy").
+  {
+    id: "retrieval-similar-symbol-disambiguation",
+    query: "Where is the legacy password check function used for old session records?",
+    expectedChunkIds: ["auth-legacy-check-password"],
+    acceptableAlternativeChunkIds: [],
+    notes:
+      "Adversarial: auth-verify-password is a similarly-named, similarly-purposed function in " +
+      "a different file — the query's own wording ('legacy', 'old session records') is the only " +
+      "thing that should disambiguate which one is meant.",
+  },
+  {
+    id: "retrieval-same-identifier-different-file",
+    query: "How does the legacy admin panel look up a user by email?",
+    expectedChunkIds: ["auth-legacy-find-user-by-email"],
+    acceptableAlternativeChunkIds: [],
+    notes:
+      "Adversarial: db-find-user-by-email is a function with the exact same name in a different " +
+      "file, for an unrelated purpose — the query's own wording ('admin panel') is the only " +
+      "thing that should disambiguate which same-named function is meant.",
+  },
+  {
+    id: "retrieval-misleading-filename",
+    query: "Where is a date formatted as an ISO date string?",
+    expectedChunkIds: ["utils-security-helpers-format-iso-date"],
+    acceptableAlternativeChunkIds: [],
+    notes:
+      "Adversarial: the file is named securityHelpers.ts despite having nothing to do with " +
+      "security — tests that retrieval follows actual content, not a suggestive filename.",
+  },
+  {
+    id: "retrieval-vague-wording",
+    query: "something about checking if two things match",
+    // Deliberately vague on purpose — any of these three genuinely
+    // plausible candidates counts as a reasonable hit; unlike every other
+    // case in this dataset, there is no single sharp right answer to force.
+    expectedChunkIds: ["auth-verify-password", "auth-legacy-check-password", "auth-require-auth"],
+    acceptableAlternativeChunkIds: [],
+    notes: "Adversarial: deliberately vague, underspecified query — recall is satisfied by any one of several genuinely plausible candidates.",
+  },
+  {
+    id: "retrieval-exact-identifier-query",
+    query: "checkLegacyPassword",
+    expectedChunkIds: ["auth-legacy-check-password"],
+    acceptableAlternativeChunkIds: [],
+    notes: "Adversarial: the query is nothing but a raw identifier — directly exercises exactIdentifierBoost.",
+  },
 ];

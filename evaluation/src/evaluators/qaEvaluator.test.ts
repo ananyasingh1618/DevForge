@@ -82,4 +82,16 @@ describe("evaluateQa", () => {
     const report = evaluateQa([c], new Map([[c.id, malformed]]));
     expect(report.cases[0]!.passed).toBe(false);
   });
+
+  it("reports a zero fallback/regeneration count by default (mock mode never needs either)", () => {
+    const report = evaluateQa();
+    expect(report.aggregate.fallbackCount).toBe(0);
+    expect(report.aggregate.regenerationCount).toBe(0);
+  });
+
+  it("reports a caller-supplied fallback count as-is, for real-mode runs", () => {
+    const report = evaluateQa(undefined, undefined, undefined, 3);
+    expect(report.aggregate.fallbackCount).toBe(3);
+    expect(report.aggregate.regenerationCount).toBe(0);
+  });
 });
