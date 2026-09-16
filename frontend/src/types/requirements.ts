@@ -15,6 +15,8 @@ export type RequirementsContent = {
   users: string[];
   functionalRequirements: RequirementItem[];
   nonFunctionalRequirements: RequirementItem[];
+  features: string[];
+  risks: string[];
   constraints: string[];
   assumptions: string[];
   openQuestions: string[];
@@ -43,6 +45,8 @@ export type RequirementsDiff = {
   functionalRequirements: RequirementItemDiff;
   nonFunctionalRequirements: RequirementItemDiff;
   users: ArrayFieldDiff;
+  features: ArrayFieldDiff;
+  risks: ArrayFieldDiff;
   constraints: ArrayFieldDiff;
   assumptions: ArrayFieldDiff;
   openQuestions: ArrayFieldDiff;

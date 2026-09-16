@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RequirementsSection } from "./RequirementsSection.js";
 import { ApiError } from "../services/apiClient.js";
@@ -37,6 +37,8 @@ function makeVersion(overrides: Partial<RequirementsVersion> = {}): Requirements
         },
       ],
       nonFunctionalRequirements: [],
+      features: ["Coffee logging"],
+      risks: ["No usage data yet to validate demand"],
       constraints: [],
       assumptions: ["Single-user for now"],
       openQuestions: ["Does decaf count?"],
@@ -121,6 +123,31 @@ describe("RequirementsSection — populated state", () => {
     await user.click(activateButton);
 
     expect(mockedApi.activateRequirementsVersionRequest).toHaveBeenCalledWith("p1", "v1");
+  });
+
+  it("renders Features and Risks fields and includes edits to them in the PATCH payload", async () => {
+    mockedApi.listRequirementsVersionsRequest.mockResolvedValue({ versions: [makeVersion()] });
+    mockedApi.updateRequirementsVersionRequest.mockResolvedValue({ version: makeVersion() });
+    render(<RequirementsSection projectId="p1" />);
+    await screen.findByText("Tracks coffee consumption during reviews.");
+
+    const featuresBox = screen.getByLabelText("Features") as HTMLTextAreaElement;
+    const risksBox = screen.getByLabelText("Risks") as HTMLTextAreaElement;
+    expect(featuresBox.value).toBe("Coffee logging");
+    expect(risksBox.value).toBe("No usage data yet to validate demand");
+
+    fireEvent.change(featuresBox, { target: { value: "Coffee logging\nWeekly digest email" } });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(mockedApi.updateRequirementsVersionRequest).toHaveBeenCalledWith(
+      "p1",
+      "v1",
+      expect.objectContaining({
+        features: ["Coffee logging", "Weekly digest email"],
+        risks: ["No usage data yet to validate demand"],
+      }),
+    );
   });
 
   it("saves edited fields via PATCH and surfaces a server error if it fails", async () => {

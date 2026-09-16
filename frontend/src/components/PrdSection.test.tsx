@@ -34,6 +34,8 @@ function makeRequirementsVersion(
       users: ["Individual budgeters"],
       functionalRequirements: [],
       nonFunctionalRequirements: [],
+      features: [],
+      risks: [],
       constraints: [],
       assumptions: [],
       openQuestions: [],

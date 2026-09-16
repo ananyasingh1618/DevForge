@@ -189,6 +189,8 @@ function VersionDetail({
         {(
           [
             ["users", "Users"],
+            ["features", "Features"],
+            ["risks", "Risks"],
             ["constraints", "Constraints"],
             ["assumptions", "Assumptions"],
             ["openQuestions", "Open questions"],
