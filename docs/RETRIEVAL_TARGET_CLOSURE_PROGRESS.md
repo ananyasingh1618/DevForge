@@ -408,4 +408,4 @@ code paths). Full `evaluation` suite: 168/168 (all pre-existing tests updated fo
 API, no test deleted or weakened). See §9 for the full sweep tables this pass's decisions are based
 on, and the honest remaining-gap analysis for what would be needed to close the last two targets.
 
-Commit: (pending — see final report)
+Commit: `a9d9bcf`
