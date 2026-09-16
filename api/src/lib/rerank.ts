@@ -165,6 +165,42 @@ function isBaseNameOf(base: string, variant: string): boolean {
   return v !== b && v.startsWith(`${b}_`);
 }
 
+// A structural "pure-delegate wrapper" signal, added after diagnosing two
+// real direct-hit misses that share one root cause: a thin wrapper
+// function (its entire body is a single `return otherFn(...)` call, no
+// logic of its own) outranks the implementation it delegates to, because
+// the wrapper's own name lexically/identifier-matches the query's surface
+// vocabulary more directly than the implementation's name does — even
+// though only the implementation's body contains the actual behavior a
+// "what happens when..."/"what operations does X support" question asks
+// about (e.g. `addToCart(cart, sku, qty) { return addItem(cart, sku,
+// qty); }` outranking `addItem`'s own body, which contains the actual
+// duplicate-item-merge logic the query describes). This is deliberately
+// never applied for `entry-point`-intent queries: a query that explicitly
+// asks about "the public entry point ... what does it delegate to"
+// (already a distinct, correctly-classified intent) is *specifically
+// asking about the wrapper itself*, and must not be penalized for being
+// one — verified directly against `retrieval-cross-file-cart-public-api`,
+// whose own expected answer is this exact kind of wrapper, before and
+// after adopting this signal, confirming the intent gate protects it.
+const PURE_DELEGATE_PENALTY = 0.2;
+
+/** True if `content`'s entire function body is exactly one statement —
+ * `return calleeSymbolName(...)` — i.e. the candidate has no logic of its
+ * own and simply forwards to another symbol wholesale. General across any
+ * brace-delimited language this codebase indexes (TS/JS); a candidate
+ * whose body contains any additional statement, condition, or logic
+ * before/after the delegating call is never mistaken for a pure
+ * delegate. */
+function isPureDelegateTo(content: string, calleeSymbolName: string): boolean {
+  const bodyMatch = content.match(/\{([\s\S]*)\}\s*$/);
+  if (!bodyMatch) return false;
+  const body = bodyMatch[1]!.trim();
+  const escaped = calleeSymbolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^return\\s+${escaped}\\s*\\([^;]*\\);?$`);
+  return pattern.test(body);
+}
+
 /** True if `filePath`'s basename (ignoring extension) is a conventional
  * "public surface" filename — `index` (TS/JS/JS barrel-file convention) or
  * `__init__` (the equivalent Python package-entry convention). General
@@ -325,6 +361,19 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
       isBaseNameOf(c.symbolName, topByBaseScore.symbolName)
     ) {
       bonus += BASE_NAME_BONUS;
+    }
+
+    // Pure-delegate wrapper de-preference — see PURE_DELEGATE_PENALTY's
+    // own comment. Never applied for entry-point-intent queries.
+    if (intent !== "entry-point" && c.symbolName) {
+      const outgoing = graph.get(c.chunkId) ?? new Set();
+      for (const calleeId of outgoing) {
+        const callee = candidates.find((x) => x.chunkId === calleeId);
+        if (callee?.symbolName && isPureDelegateTo(c.content, callee.symbolName)) {
+          bonus -= PURE_DELEGATE_PENALTY;
+          break;
+        }
+      }
     }
 
     return {

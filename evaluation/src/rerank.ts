@@ -83,6 +83,22 @@ function isBaseNameOf(base: string, variant: string): boolean {
   return v !== b && v.startsWith(`${b}_`);
 }
 
+// Mirrors api/src/lib/rerank.ts's own PURE_DELEGATE_PENALTY exactly — see
+// that file for the full rationale (a thin wrapper whose entire body is a
+// single delegating call outranking the implementation it delegates to,
+// never applied for entry-point-intent queries).
+const PURE_DELEGATE_PENALTY = 0.2;
+
+/** Mirrors api/src/lib/rerank.ts's own isPureDelegateTo exactly. */
+function isPureDelegateTo(content: string, calleeSymbolName: string): boolean {
+  const bodyMatch = content.match(/\{([\s\S]*)\}\s*$/);
+  if (!bodyMatch) return false;
+  const body = bodyMatch[1]!.trim();
+  const escaped = calleeSymbolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^return\\s+${escaped}\\s*\\([^;]*\\);?$`);
+  return pattern.test(body);
+}
+
 /** True if `filePath`'s basename (ignoring extension) is a conventional
  * "public surface" filename — `index` (TS/JS/JS barrel-file convention) or
  * `__init__` (the equivalent Python package-entry convention). General
@@ -215,6 +231,19 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
       isBaseNameOf(c.symbolName, topByBaseScore.symbolName)
     ) {
       bonus += BASE_NAME_BONUS;
+    }
+
+    // Pure-delegate wrapper de-preference — see PURE_DELEGATE_PENALTY's
+    // own comment. Never applied for entry-point-intent queries.
+    if (intent !== "entry-point" && c.symbolName) {
+      const outgoing = graph.get(c.chunkId) ?? new Set();
+      for (const calleeId of outgoing) {
+        const callee = candidates.find((x) => x.chunkId === calleeId);
+        if (callee?.symbolName && isPureDelegateTo(c.content, callee.symbolName)) {
+          bonus -= PURE_DELEGATE_PENALTY;
+          break;
+        }
+      }
     }
 
     return {
