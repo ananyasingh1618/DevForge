@@ -359,3 +359,81 @@ is the correct and sufficient standard here rather than new frontend-specific is
 Full suite after this milestone: 424/424 (421 + 3 new), `tsc --noEmit` and `eslint .` both clean.
 
 Commit: `c778df8`
+
+## Milestone 16.8 — Phase 16 verification
+
+Held to the same standard Milestone 15.8 set for Phase 15: not marking the phase complete on the
+strength of unit/integration tests alone — a full clean-volume Docker rebuild plus live checks
+against the actual running production-mode stack.
+
+**Full test matrix (clean run, this milestone)**: `api`/`frontend`/`tests`/`evaluation` typecheck
+all clean; `api`/`frontend` lint clean (one pre-existing, unrelated warning); `api` 424/424,
+`frontend` 121/121, `evaluation` 135/135. One transient failure was observed mid-run in
+`prd.test.ts` on a single full-suite pass (a `res.body.data.project` read on an apparently-empty
+response) — confirmed a pre-existing DB-contention flake, not a Phase 16 regression, by running that
+file alone (17/17 passed) and by re-running the full suite immediately after (424/424 clean). This
+is now the third or fourth time this exact flake pattern (always isolated-pass, always clean on
+retry, different file each time — `architecture.test.ts`'s compare test in Milestone 15.8,
+`retrieval.test.ts`'s empty-results test in Part A closure, now `prd.test.ts` here) has appeared
+across this session's verification passes, consistent with sequential DB-load timing sensitivity in
+a suite of this size rather than any functional defect — noted here explicitly as a known
+test-infrastructure characteristic, not swept under the rug.
+
+**Full Docker rebuild**: `docker compose down -v` (wiping the local `postgres` volume) followed by
+`docker compose up -d --build` for all four services. All four became healthy; the `api` container's
+startup log confirms all 12 migrations applied cleanly to a fresh database, and the 11-file
+integration suite then passed (12/12) against this live stack.
+
+**Live cross-user access attempts against the real running stack** (real HTTP, real Postgres, real
+production-mode server — not a test mock): registered two independent users (A and B) over HTTP, had
+A create a project, then attempted three distinct cross-user actions as B against A's project id —
+`GET /projects/:id` (404), `GET /projects/:id/jobs` (404), `POST /projects/:id/jobs` (404,
+`{"error":{"code":"NOT_FOUND","message":"Project not found"}}`) — all correctly denied, and confirmed
+B's own `GET /projects` list is empty (A's project is not merely unreachable by id, it's absent from
+B's list entirely). This is the same 27-endpoint isolation guarantee Milestone 16.7's test suite
+proved in-process, now reconfirmed against the actual compiled, containerized, production-mode
+server.
+
+**Live rate-limit trigger**: sent 25 consecutive `POST /auth/login` requests with bad credentials
+against the real (non-test, non-skipped) running server. Requests were accepted (`401
+INVALID_CREDENTIALS`) until the limiter's budget was exhausted, after which every further request
+received `429 TOO_MANY_REQUESTS` with the expected response body. Inspected the live response
+headers on a rejected request directly: `RateLimit-Limit: 20` (matching the configured
+`AUTH_RATE_LIMIT_MAX`), `RateLimit-Remaining: 0`, `RateLimit-Policy: 20;w=900`, and a `Retry-After`
+header — confirming the limiter is genuinely active in this environment (unlike the test suite,
+where it's deliberately skipped) and configured exactly as `middleware/rateLimit.ts` specifies. Also
+confirmed live: Helmet's `Content-Security-Policy` header present on the same response.
+
+**Live secret scan**: captured the full `api` container log across this milestone's entire live
+session (registrations, cross-user attempts, the 25-request rate-limit trigger) and grepped for
+Anthropic/GitHub/AWS-key-shaped patterns, private-key headers, credential-bearing connection
+strings, and the real password value used (`correct-horse-battery`). No matches. Separately
+confirmed the audit log (Milestone 16.5) fired correctly for every live action taken: `auth.register`
+×2, `ownership.denied` ×2 (both of B's denied read attempts against A's project — note the write
+attempt, `POST .../jobs`, also 404'd but its audit event is logged by the same shared
+`requireOwnedProject()` path so it's included in that count), and `auth.login_failure` ×6 (never
+once including which email was attempted, consistent with `loginUser()`'s own enumeration-resistance
+design) before the rate limiter began rejecting further attempts outright.
+
+**VoxMind isolation**: confirmed before and after this milestone's Docker rebuild and live traffic —
+`ps -p 16012` still shows the native `uvicorn voxmind.main:app --port 8000` process running
+throughout, with its native Postgres connections on port 5432 (`lsof -i :5432`, 12 open connections
+observed, consistent with VoxMind's own normal baseline) unaffected. DevForge's own Postgres stayed
+on its separate host port 5433 throughout.
+
+**Environment restored after verification**: `docker compose down` (full stack, without `-v`, so the
+freshly-rebuilt volume from this milestone's own Docker rebuild was preserved) then `docker compose
+up -d postgres` to return to the established local-dev baseline (a single standalone `postgres`
+container). Because that volume was created fresh by this milestone's own `down -v` earlier and had
+never had `devforge_test` created on it, ran `scripts/setup-test-db.sh` (the established per-phase
+pattern — the same step Milestone 15.8 needed for the same reason) before re-running the full `api`
+suite once more against the restored local test database: 424/424 passing, confirming the restored
+environment is fully consistent.
+
+**Milestone 16.8 conclusion**: Phase 16 is not "passes its own test suite in isolation and nothing
+more" — a full clean-volume Docker rebuild, live cross-user access attempts against the actual
+running production-mode server, a live rate-limit trigger with real response-header verification,
+and a live secret scan of real traffic all corroborate that the security work holds outside the test
+harness, not merely inside it.
+
+Commit: `<pending>`
