@@ -40,6 +40,15 @@ services:
       FRONTEND_ORIGIN: http://localhost:4173
       # Docker-internal hostname for ai-service, analogous to postgres above.
       AI_SERVICE_URL: http://ai-service:8001
+      # Optional: passed through from the host shell's own environment (or
+      # a root .env file docker compose loads automatically) if set. This is
+      # a locally-generated AES-256-GCM encryption key (openssl rand -base64
+      # 32 / node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"),
+      # never a third-party credential — used only to encrypt a connected
+      # repository's GitHub personal access token at rest. Unset -> repository
+      # connection returns a real 503 GITHUB_INTEGRATION_NOT_CONFIGURED,
+      # never a fabricated connection.
+      GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:-}
     ports:
       - "4000:4000"
     healthcheck:

@@ -47,6 +47,18 @@ T = TypeVar("T", bound=BaseModel)
 GEMINI_SERVER_ERROR_RETRIES = 2
 GEMINI_SERVER_ERROR_BACKOFF_SECONDS = (1, 2)
 
+# Bug found live (Phase "Gemini workflow" verification): without an explicit
+# per-call timeout, a single generate_content() call has no bound at all —
+# under real degraded conditions it can hang well past the Node API's own
+# 60s fetch timeout (api/src/lib/aiServiceClient.ts), which then aborts and
+# reports a misleading AI_SERVICE_UNREACHABLE even though ai-service was
+# still working, not actually unreachable. A 25s per-call timeout keeps a
+# single attempt bounded; combined with the bounded retry above, the
+# worst case (25s + 1s + 25s + 2s + 25s = 78s) still fits comfortably
+# under aiServiceClient.ts's increased LLM-call timeout (100s — see its own
+# comment on why it differs from the default 60s).
+GEMINI_HTTP_TIMEOUT_MS = 25_000
+
 
 def call_anthropic_structured(
     *,
@@ -109,6 +121,7 @@ def call_gemini_structured(
                     response_mime_type="application/json",
                     response_schema=response_model,
                     max_output_tokens=max_tokens,
+                    http_options=genai_types.HttpOptions(timeout=GEMINI_HTTP_TIMEOUT_MS),
                 ),
             )
             break

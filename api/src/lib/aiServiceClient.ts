@@ -282,12 +282,25 @@ function mapAiTaskContentToCamelCase(raw: AiTaskContent) {
   };
 }
 
+// LLM-backed generate/analyze/answer/review calls get a longer timeout than
+// the 60s default (used below for parsing/embeddings, which don't retry on
+// the ai-service side): ai-service's own bounded retry for a transient
+// Gemini "high demand" ServerError (structured_llm.py) has a worst case of
+// ~78s (3 attempts x 25s HTTP timeout + backoff). A bug found live during
+// Gemini workflow verification: with the old shared 60s timeout, Node
+// aborted and reported a misleading AI_SERVICE_UNREACHABLE at exactly 60s,
+// even though ai-service was still legitimately working (not actually
+// unreachable) and would very likely have returned a real answer seconds
+// later. 100s leaves real headroom above ai-service's own worst case.
+const LLM_CALL_TIMEOUT_MS = 100_000;
+
 /** Shared request/error handling for both ai-service calls below — the only
  * difference between analyzing requirements and generating a PRD is the
  * path, the outbound body, and which error code maps to which Node code. */
 async function postToAiService(
   path: string,
   body: unknown,
+  timeoutMs = 60_000,
 ): Promise<(AiErrorBody & Record<string, unknown>) | null> {
   let res: Response;
   try {
@@ -295,7 +308,7 @@ async function postToAiService(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new AppError(
@@ -335,7 +348,7 @@ async function postToAiService(
  * distinct, honest errors, never a fallback "success".
  */
 export async function analyzeRequirementsViaAiService(idea: string): Promise<RequirementsContent> {
-  const body = await postToAiService("/requirements/analyze", { idea });
+  const body = await postToAiService("/requirements/analyze", { idea }, LLM_CALL_TIMEOUT_MS);
 
   if (!body?.content) {
     throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
@@ -362,9 +375,11 @@ export async function analyzeRequirementsViaAiService(idea: string): Promise<Req
  * no fallback fabricates a result.
  */
 export async function generatePrdViaAiService(requirements: RequirementsContent): Promise<PrdContent> {
-  const body = await postToAiService("/prd/generate", {
-    requirements: mapRequirementsContentToSnakeCase(requirements),
-  });
+  const body = await postToAiService(
+    "/prd/generate",
+    { requirements: mapRequirementsContentToSnakeCase(requirements) },
+    LLM_CALL_TIMEOUT_MS,
+  );
 
   if (!body?.content) {
     throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
@@ -391,9 +406,11 @@ export async function generatePrdViaAiService(requirements: RequirementsContent)
 export async function generateArchitectureViaAiService(
   prd: PrdContent,
 ): Promise<ArchitectureContent> {
-  const body = await postToAiService("/architecture/generate", {
-    prd: mapPrdContentToSnakeCase(prd),
-  });
+  const body = await postToAiService(
+    "/architecture/generate",
+    { prd: mapPrdContentToSnakeCase(prd) },
+    LLM_CALL_TIMEOUT_MS,
+  );
 
   if (!body?.content) {
     throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
@@ -422,9 +439,11 @@ export async function generateArchitectureViaAiService(
 export async function generateEpicsViaAiService(
   architecture: ArchitectureContent,
 ): Promise<EpicContent> {
-  const body = await postToAiService("/epics/generate", {
-    architecture: mapArchitectureContentToSnakeCase(architecture),
-  });
+  const body = await postToAiService(
+    "/epics/generate",
+    { architecture: mapArchitectureContentToSnakeCase(architecture) },
+    LLM_CALL_TIMEOUT_MS,
+  );
 
   if (!body?.content) {
     throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
@@ -451,9 +470,11 @@ export async function generateEpicsViaAiService(
  * fallback fabricates a result.
  */
 export async function generateTasksViaAiService(epics: EpicContent): Promise<TaskContent> {
-  const body = await postToAiService("/tasks/generate", {
-    epics: mapEpicContentToSnakeCase(epics),
-  });
+  const body = await postToAiService(
+    "/tasks/generate",
+    { epics: mapEpicContentToSnakeCase(epics) },
+    LLM_CALL_TIMEOUT_MS,
+  );
 
   if (!body?.content) {
     throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
@@ -653,20 +674,24 @@ export async function answerQuestionViaAiService(
   commit: string,
   sources: QaSourceForProvider[],
 ): Promise<QaAnswer> {
-  const body = await postToAiService("/qa/answer", {
-    question,
-    repository,
-    branch,
-    commit,
-    sources: sources.map((s) => ({
-      source_number: s.sourceNumber,
-      path: s.path,
-      symbol_name: s.symbolName,
-      start_line: s.startLine,
-      end_line: s.endLine,
-      content: s.content,
-    })),
-  });
+  const body = await postToAiService(
+    "/qa/answer",
+    {
+      question,
+      repository,
+      branch,
+      commit,
+      sources: sources.map((s) => ({
+        source_number: s.sourceNumber,
+        path: s.path,
+        symbol_name: s.symbolName,
+        start_line: s.startLine,
+        end_line: s.endLine,
+        content: s.content,
+      })),
+    },
+    LLM_CALL_TIMEOUT_MS,
+  );
 
   if (!body?.content) {
     throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");
@@ -793,20 +818,24 @@ export async function analyzeReviewViaAiService(
   commit: string,
   sources: ReviewSourceForProvider[],
 ): Promise<ReviewFromAi> {
-  const body = await postToAiService("/review/analyze", {
-    scope,
-    repository,
-    branch,
-    commit,
-    sources: sources.map((s) => ({
-      source_number: s.sourceNumber,
-      path: s.path,
-      symbol_name: s.symbolName,
-      start_line: s.startLine,
-      end_line: s.endLine,
-      content: s.content,
-    })),
-  });
+  const body = await postToAiService(
+    "/review/analyze",
+    {
+      scope,
+      repository,
+      branch,
+      commit,
+      sources: sources.map((s) => ({
+        source_number: s.sourceNumber,
+        path: s.path,
+        symbol_name: s.symbolName,
+        start_line: s.startLine,
+        end_line: s.endLine,
+        content: s.content,
+      })),
+    },
+    LLM_CALL_TIMEOUT_MS,
+  );
 
   if (!body?.content) {
     throw new AppError(502, "AI_RESPONSE_INVALID", "The AI service returned no content.");

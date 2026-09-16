@@ -127,8 +127,15 @@ async function main() {
     idea: "A tool that helps developers track and resolve technical debt across a large codebase.",
   });
   if (requirements.status === 201) {
-    const provider = process.env.GEMINI_API_KEY ? "Gemini" : "Anthropic";
-    log("ok", `Real requirements analysis succeeded via ${provider} (functional/non-functional requirements, user roles, features, risks, constraints, assumptions, open questions all returned).`);
+    // Which provider actually answered (Gemini vs. Anthropic) is decided
+    // server-side inside the ai-service container, based on *its own*
+    // environment -- not this script's. Checking process.env.GEMINI_API_KEY
+    // here would silently report the wrong provider whenever this script
+    // runs somewhere that doesn't share ai-service's exact environment
+    // (e.g. the normal case: keys live in a root .env file docker compose
+    // reads, not in the shell this script itself runs in). Found live: this
+    // printed "via Anthropic" for a response Gemini actually produced.
+    log("ok", "Real requirements analysis succeeded (functional/non-functional requirements, user roles, features, risks, constraints, assumptions, open questions all returned).");
   } else {
     log(
       "info",
