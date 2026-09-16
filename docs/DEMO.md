@@ -36,6 +36,15 @@ The script exercises all 12 steps of the required demonstration workflow:
 
 Steps 4–7 are expected to show "not configured" responses in an environment with no external credentials — **this is correct, documented behavior, not a demo failure.** The script prints ℹ️ (not ❌) for these and explains why. A genuinely broken step (one that should always work regardless of credentials — health, registration, project creation, job creation/tracking/retry) prints ❌ and exits non-zero, since those are real bugs if they ever fail.
 
+## Screenshots
+
+Taken live against the running local stack (`docker compose up -d`), after Phase 18's two UI fixes (see [README.md](../README.md#changelog)):
+
+| | |
+|---|---|
+| ![Projects empty state](screenshots/01-projects-empty-state.png) Empty project list with a clear call-to-action | ![Project overview](screenshots/02-project-overview.png) A created project's overview page |
+| ![404 page](screenshots/03-404-page.png) The 404 page for an unmatched route (previously blank) | ![Mobile header fixed](screenshots/04-mobile-header-fixed.png) Mobile header (390px) — "Log out" now stays reachable, no horizontal overflow |
+
 ## Verified
 
 This script was run to completion multiple times against the real local `docker-compose` stack (no credentials present) during Phase 18 development — every run completed deterministically with the exact same step-by-step shape, cleaning up its own generated demo users afterward (`DELETE FROM users WHERE email LIKE 'demo-%@example.com'`). It is not a description of an intended demo — it is a real, runnable one.
