@@ -9,10 +9,22 @@ in this project, and a raw `httpx` call is a thinner boundary than adding
 one. There is no fallback that fabricates a vector — every failure path (no
 key configured, provider error, malformed response) raises a typed error
 instead.
+
+Bounded 429 retry (below) was added after a real, live account-level
+condition: a Voyage account with no payment method on file is capped at 3
+requests/minute (confirmed via a real 429 response body — Voyage does not
+send a Retry-After header, so the backoff here is a fixed, conservative
+interval derived from that published limit, not a guess). Indexing a
+repository of any real size makes many sequential embedding batch calls
+(api/src/services/retrieval.ts's EMBED_BATCH_SIZE), so without this retry
+a real, free-tier account would see the *second* batch fail outright —
+this is a genuine, current constraint of the account tier, not a bug, and
+the fix is to pace around it rather than fail on the first collision.
 """
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 
 import httpx
@@ -23,6 +35,12 @@ from app.lib.provider_config import get_voyage_api_key
 VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings"
 MODEL = "voyage-code-3"
 DIMENSIONS = 1024
+
+# See the module docstring: a no-payment-method Voyage account is capped at
+# 3 requests/minute. 21s spacing keeps a retried request safely under that
+# (60s / 3 = 20s minimum); 3 retries covers the whole rolling window once.
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_BACKOFF_SECONDS = 21
 
 
 class EmbeddingProvider(ABC):
@@ -40,24 +58,32 @@ class VoyageEmbeddingProvider(EmbeddingProvider):
         self._dimensions = dimensions
 
     def embed(self, texts: list[str], input_type: str) -> tuple[str, int, list[list[float]]]:
-        try:
-            response = httpx.post(
-                VOYAGE_API_URL,
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "input": texts,
-                    "model": self._model,
-                    "input_type": input_type,
-                    "output_dimension": self._dimensions,
-                },
-                timeout=30.0,
-            )
-        except httpx.RequestError as e:
-            raise ProviderRequestError(f"Could not reach the embedding provider: {e}") from e
+        response: httpx.Response | None = None
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            try:
+                response = httpx.post(
+                    VOYAGE_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "input": texts,
+                        "model": self._model,
+                        "input_type": input_type,
+                        "output_dimension": self._dimensions,
+                    },
+                    timeout=30.0,
+                )
+            except httpx.RequestError as e:
+                raise ProviderRequestError(f"Could not reach the embedding provider: {e}") from e
 
+            if response.status_code == 429 and attempt < RATE_LIMIT_RETRIES:
+                time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
+                continue
+            break
+
+        assert response is not None  # the loop above always assigns it at least once
         if response.status_code != 200:
             raise ProviderRequestError(_error_message_for(response))
 

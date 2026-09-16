@@ -125,6 +125,18 @@ function toChunkResults(
  * services/retrieval.ts).
  */
 export function chunkFile(file: FileForChunking): ChunkResult[] {
+  // A genuinely empty (or whitespace-only) file — e.g. a Python package's
+  // conventional empty __init__.py — has nothing worth chunking. Without
+  // this check, "".split("\n") returns [""] (length 1, not 0), so the
+  // symbol-less-file fallback below would build a single chunk whose
+  // content is "" instead of correctly producing zero chunks. Found live:
+  // a real embedding provider (Voyage) rejects an entire batch request
+  // outright when any text in it is an empty string, so one such chunk
+  // could break embedding for every other chunk batched alongside it.
+  if (file.content.trim() === "") {
+    return [];
+  }
+
   // A trailing newline (the overwhelmingly common case for real source
   // files) makes split("\n") emit one phantom empty trailing element —
   // without trimming it, a symbol-less file's fallback chunk would report

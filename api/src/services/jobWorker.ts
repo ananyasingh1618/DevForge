@@ -22,7 +22,26 @@ import type { Job, JobType } from "@prisma/client";
  * every prior phase established.
  */
 
-const JOB_TIMEOUT_MS = 4 * 60 * 1000; // shorter than jobs.ts's own 5-minute lease
+const JOB_TIMEOUT_MS = 4 * 60 * 1000; // shorter than jobs.ts's own lease (see LEASE_DURATION_MS there)
+
+// qa/review can trigger a full lazy chunk-embedding pass on a project's
+// first use after indexing (retrieval.ts's ensureEmbeddings) — normally
+// fast, but a real, live condition found this session: a Voyage account
+// with no payment method on file is capped at 3 requests/minute, and
+// ai-service's own embedding provider paces around that with a bounded
+// retry (see ai-service/app/agents/embeddings/provider.py). For a
+// repository with many chunks, that pacing can legitimately take well
+// past the default 4-minute job timeout even though the job is genuinely
+// making progress, not stuck — confirmed live against a real ~1300-chunk
+// repository. indexing/evaluation don't embed anything themselves
+// (embedding is lazy, triggered by search/qa/review, not by indexing) so
+// they keep the default. jobs.ts's LEASE_DURATION_MS must stay longer
+// than the largest value here.
+const JOB_TIMEOUT_MS_BY_TYPE: Partial<Record<JobType, number>> = {
+  qa: 20 * 60 * 1000,
+  review: 20 * 60 * 1000,
+};
+
 const POLL_INTERVAL_MS = 1000;
 const STALE_JOB_SWEEP_INTERVAL_MS = 60 * 1000;
 const LEASE_RENEWAL_INTERVAL_MS = 60 * 1000;
@@ -175,7 +194,7 @@ export function startWorker(workerId: string): WorkerHandle {
     if (stopped) return;
     currentJob = currentJob
       .then(() => jobs.claimNextJob(workerId))
-      .then((job) => (job ? runOneClaimedJob(job) : undefined))
+      .then((job) => (job ? runOneClaimedJob(job, JOB_TIMEOUT_MS_BY_TYPE[job.type] ?? JOB_TIMEOUT_MS) : undefined))
       .catch(() => {
         // A claim/dispatch-level failure (e.g. a transient DB blip) should
         // never crash the worker loop — the next poll tries again.

@@ -151,8 +151,21 @@ describe("chunkFile — files without symbols", () => {
     expect(chunkFile(withoutTrailingNewline)[0]!.endLine).toBe(2);
   });
 
-  it("handles an empty file without throwing", () => {
+  it("produces zero chunks for a genuinely empty file, not a chunk with empty content", () => {
+    // Regression test: "".split("\n") returns [""] (length 1, not 0), so
+    // without an explicit empty-content check, this used to fall through
+    // to windowLines() and produce a single chunk whose content was "".
+    // Found live: a real embedding provider (Voyage) rejects an entire
+    // batch request outright when any text in it is an empty string — a
+    // real Python package's conventional empty __init__.py file produced
+    // exactly this chunk and broke embedding for every other chunk
+    // batched alongside it.
     const file = { fileId: "f8", language: "python", content: "", symbols: [] };
-    expect(() => chunkFile(file)).not.toThrow();
+    expect(chunkFile(file)).toEqual([]);
+  });
+
+  it("produces zero chunks for a whitespace-only file", () => {
+    const file = { fileId: "f9", language: "python", content: "\n  \n\t\n", symbols: [] };
+    expect(chunkFile(file)).toEqual([]);
   });
 });

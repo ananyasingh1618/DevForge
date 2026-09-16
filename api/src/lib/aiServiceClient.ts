@@ -597,6 +597,15 @@ export type EmbeddingBatch = {
  * vectors out) doesn't fit postToAiService's single-content-object
  * assumption.
  */
+// A Voyage account with no payment method on file is capped at 3
+// requests/minute; ai-service's own embedding provider retries a 429 up to
+// 3 times with a 21s backoff (see ai-service/app/agents/embeddings/
+// provider.py's module docstring — a real, live account condition, not a
+// guess). Worst case is ~4 attempts x (request time + up to 21s backoff)
+// = comfortably under 100s; the previous 60s default could abort before
+// ai-service's own retry had a chance to finish.
+const EMBEDDING_CALL_TIMEOUT_MS = 100_000;
+
 export async function generateEmbeddingsViaAiService(
   texts: string[],
   inputType: "document" | "query",
@@ -607,7 +616,7 @@ export async function generateEmbeddingsViaAiService(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ texts, input_type: inputType }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(EMBEDDING_CALL_TIMEOUT_MS),
     });
   } catch {
     throw new AppError(

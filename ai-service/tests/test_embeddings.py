@@ -178,13 +178,50 @@ class TestVoyageEmbeddingProvider:
         with pytest.raises(ProviderRequestError, match="Authentication"):
             provider.embed(["a"], "document")
 
-    def test_maps_429_to_a_rate_limit_error(self, monkeypatch):
+    def test_maps_429_to_a_rate_limit_error_after_exhausting_retries(self, monkeypatch):
+        monkeypatch.setattr(provider_module.time, "sleep", lambda _seconds: None)
+        calls = []
         monkeypatch.setattr(
-            httpx, "post", lambda *a, **k: FakeHttpxResponse(429, {"detail": "rate limited"})
+            httpx,
+            "post",
+            lambda *a, **k: (calls.append(1), FakeHttpxResponse(429, {"detail": "rate limited"}))[1],
         )
         provider = provider_module.VoyageEmbeddingProvider(api_key="fake-key")
         with pytest.raises(ProviderRequestError, match="rate-limited"):
             provider.embed(["a"], "document")
+        # Real, live condition (a no-payment-method Voyage account, capped
+        # at 3 requests/minute) — see the module's own docstring. This
+        # proves the bounded retry actually happened, not just that the
+        # final error surfaces correctly.
+        assert len(calls) == provider_module.RATE_LIMIT_RETRIES + 1
+
+    def test_retries_a_429_with_backoff_then_succeeds(self, monkeypatch):
+        sleep_calls = []
+        monkeypatch.setattr(provider_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+        responses = [
+            FakeHttpxResponse(429, {"detail": "rate limited"}),
+            FakeHttpxResponse(200, _voyage_success_body([[0.1] * 1024])),
+        ]
+        monkeypatch.setattr(httpx, "post", lambda *a, **k: responses.pop(0))
+        provider = provider_module.VoyageEmbeddingProvider(api_key="fake-key")
+
+        model, dimensions, embeddings = provider.embed(["a"], "document")
+
+        assert len(embeddings) == 1
+        assert sleep_calls == [provider_module.RATE_LIMIT_BACKOFF_SECONDS]
+
+    def test_never_retries_a_401(self, monkeypatch):
+        monkeypatch.setattr(provider_module.time, "sleep", lambda _seconds: None)
+        calls = []
+        monkeypatch.setattr(
+            httpx,
+            "post",
+            lambda *a, **k: (calls.append(1), FakeHttpxResponse(401, {"detail": "invalid key"}))[1],
+        )
+        provider = provider_module.VoyageEmbeddingProvider(api_key="fake-key")
+        with pytest.raises(ProviderRequestError, match="Authentication"):
+            provider.embed(["a"], "document")
+        assert len(calls) == 1
 
     def test_maps_a_network_failure_to_a_provider_request_error(self, monkeypatch):
         def raise_request_error(*_args, **_kwargs):

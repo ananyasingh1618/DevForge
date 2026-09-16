@@ -17,7 +17,13 @@ import { recordJobOutcome } from "../lib/metrics.js";
  * read-then-write race, no lost update.
  */
 
-const LEASE_DURATION_MS = 5 * 60 * 1000; // 5 minutes — see renewLease()/recoverStaleJobs()
+// Must stay longer than the largest per-type job timeout in jobWorker.ts
+// (JOB_TIMEOUT_MS_BY_TYPE, currently 20 minutes for qa/review) — if lease
+// renewal ever fails (it's deliberately best-effort; see jobWorker.ts's own
+// comment on that), the lease expiring *before* a still-legitimately-
+// running job's own timeout would let a stale-job sweep reclaim and requeue
+// a job this worker is still actively processing, risking duplicate work.
+const LEASE_DURATION_MS = 25 * 60 * 1000;
 const DEFAULT_MAX_RETRIES = 3;
 
 /** The one authoritative transition table. Every other function in this
