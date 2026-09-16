@@ -105,7 +105,17 @@ async function buildChunksForIndex(
   }
 }
 
-const EMBED_BATCH_SIZE = 32;
+// Lowered from 32 after a real, live failure: a genuine free-tier Voyage
+// account (no payment method on file) caps requests at 10,000 tokens/minute
+// as well as 3 requests/minute. A real batch of 32 chunks (each up to
+// chunking.ts's MAX_CHUNK_CHARS=4000) from this project's own codebase
+// measured ~32,000 characters (~8,000-10,000 tokens) — right at that cap,
+// so the request was rejected outright, and no amount of the embedding
+// provider's own retry/backoff (app/agents/embeddings/provider.py) could
+// fix it, since the request itself, not the timing, was the problem. 8
+// keeps a typical real batch comfortably under a quarter of that limit
+// even if every chunk in it happens to be near the max size.
+const EMBED_BATCH_SIZE = 8;
 
 /** Embeds every chunk (for this index/commit) that doesn't already have an
  * embedding for the given model, in fixed-size batches to keep any single
