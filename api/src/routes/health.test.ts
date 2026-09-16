@@ -103,3 +103,16 @@ describe("unmatched route", () => {
     expect(res.body.error.code).toBe("NOT_FOUND");
   });
 });
+
+describe("malformed request body (Phase 17, Milestone 17.6)", () => {
+  it("returns a clean 400 VALIDATION_ERROR, not a 500, for unparseable JSON", async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post("/auth/register")
+      .set("Content-Type", "application/json")
+      .send("{not valid json");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+});

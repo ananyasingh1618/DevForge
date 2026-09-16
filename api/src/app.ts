@@ -101,6 +101,24 @@ export function createApp() {
       return;
     }
 
+    // express.json() throws a body-parser SyntaxError (not an AppError) for
+    // a malformed JSON request body — without this check it fell through to
+    // the generic 500 branch below, which is safe (nothing leaked) but
+    // wrong: a client sending unparseable JSON made a bad request, not one
+    // that broke the server, and deserves a 400 like every other validation
+    // failure. Found live while verifying malformed-request behavior
+    // (Phase 17, Milestone 17.6).
+    if (err instanceof SyntaxError && "status" in err && (err as SyntaxError & { status?: number }).status === 400) {
+      logger.warn("request_error", {
+        requestId: req.requestId,
+        category: "client",
+        code: "VALIDATION_ERROR",
+        status: 400,
+      });
+      res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Malformed JSON request body" } });
+      return;
+    }
+
     const message = err instanceof Error ? err.message : String(err);
     logger.error("unhandled_exception", {
       requestId: req.requestId,
