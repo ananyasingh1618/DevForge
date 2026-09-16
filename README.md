@@ -8,7 +8,9 @@ AI Software Engineering & Codebase Intelligence Platform.
 > (Retrieval & Semantic Search) + Phase 9 (Codebase Q&A) + Phase 10 (AI Code Review) +
 > Phase 11 (Evaluation, Quality Measurement & Review Improvements) + Phase 12 (Retrieval
 > Quality & Grounding Improvements) + Phase 13 (Benchmark Expansion, Relevance Calibration &
-> Retrieval Validation) + Phase 14 (Retrieval & Indexing Architecture Improvements) complete.**
+> Retrieval Validation) + Phase 14 (Retrieval & Indexing Architecture Improvements) + Phase 15
+> (Production Job Architecture & Repository-Scale Reliability) + Phase 16 (Security,
+> Permissions & Multi-User Isolation) complete.**
 > This repository implements authentication, a
 > project workspace, AI-assisted requirements analysis, AI-assisted PRD generation, AI-assisted
 > architecture generation, AI-assisted epic/task generation, a secure GitHub repository
@@ -29,7 +31,14 @@ AI Software Engineering & Codebase Intelligence Platform.
 > JavaScript, and Python; Phase 14 used that larger, harder benchmark to fix two real ranking
 > defects (recall@K 83.6%→95.3%, useful-context-rate 38.1%→52.9%) and add incremental
 > indexing (skips re-parsing files unchanged since the last index) and bounded search
-> observability logging. See
+> observability logging. Phase 15 added a persistent, Postgres-native job system (no new
+> infrastructure) so indexing/Q&A/review can run as durable background jobs instead of only
+> synchronously inside a request — with bounded retries, cooperative cancellation, crash
+> recovery, and a small authenticated job API/UI — see "Background jobs" below. Phase 16
+> hardened authorization for real multi-user use: a second, independent route-level ownership
+> check on top of every service's own (already-correct) check, rate limiting, secure headers,
+> audit logging, deterministic secret redaction on indexed repository content, and a
+> consolidated cross-user isolation test suite — see "Security" below. See
 > [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 > [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 > [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
@@ -44,11 +53,20 @@ AI Software Engineering & Codebase Intelligence Platform.
 > [docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md) (Phase 12
 > and, in its own later section, Phase 14), and
 > [docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md](docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md)
-> (Phase 13) for the detailed, verified log of every milestone that built each phase, and
+> (Phase 13),
+> [docs/RETRIEVAL_TARGET_CLOSURE_PROGRESS.md](docs/RETRIEVAL_TARGET_CLOSURE_PROGRESS.md) (the
+> retrieval-target-closure pass ahead of Phase 15/16),
+> [docs/PHASE_15_JOB_ARCHITECTURE_PROGRESS.md](docs/PHASE_15_JOB_ARCHITECTURE_PROGRESS.md), and
+> [docs/PHASE_16_SECURITY_PROGRESS.md](docs/PHASE_16_SECURITY_PROGRESS.md) for the detailed,
+> verified log of every milestone that built each phase, and
 > [docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md](docs/RETRIEVAL_QUALITY_COMPLETION_REPORT.md)
-> (Phase 12, plus a Phase 14 addendum) and
+> (Phase 12, plus a Phase 14 addendum),
 > [docs/BENCHMARK_EXPANSION_COMPLETION_REPORT.md](docs/BENCHMARK_EXPANSION_COMPLETION_REPORT.md)
-> (Phase 13) for each phase's own before/after metrics and completion report.
+> (Phase 13),
+> [docs/RETRIEVAL_TARGET_CLOSURE_REPORT.md](docs/RETRIEVAL_TARGET_CLOSURE_REPORT.md),
+> [docs/PHASE_15_COMPLETION_REPORT.md](docs/PHASE_15_COMPLETION_REPORT.md), and
+> [docs/PHASE_16_COMPLETION_REPORT.md](docs/PHASE_16_COMPLETION_REPORT.md) for each phase's own
+> before/after metrics and completion report.
 
 ## Overview
 
@@ -227,6 +245,30 @@ regression instead of relying on manual spot-checking.
   run, history, and (Phase 12) a small "vs. previous run" comparison with a regression
   indicator on a run's detail view. Evaluation results are **measurements against a small
   fixture dataset, not proof of complete correctness** — see "Known limitations."
+- **Background jobs** (Phase 15): indexing, Q&A, and code review can each also run as a
+  durable, persistent job instead of only synchronously inside a request — `POST /projects/:id/jobs`
+  (body `{ type, input, idempotencyKey? }`) creates one, tracked through
+  `queued → running → completed/failed/cancelled/timed_out`. A small in-process worker (started
+  alongside the API server) claims queued jobs via Postgres `SELECT ... FOR UPDATE SKIP LOCKED`
+  (no Redis/broker — see "Tech stack"), retries transient failures with a bounded count, times out
+  a stuck job, supports cooperative cancellation, and recovers a job whose worker crashed (a
+  lease-expiry sweep requeues or permanently fails it). A `Jobs` page per project shows live
+  status with safe, bounded polling (never indefinite). `evaluation`-typed jobs are a real,
+  schema-supported type but are deliberately never auto-dispatched by the worker — running the
+  separate `evaluation/` CLI from a request-triggered background process would be a new
+  code-execution capability, not a background version of an existing one.
+- **Security hardening** (Phase 16): every project-scoped resource has a second, independent
+  ownership check at the route boundary (`requireProjectOwnership` middleware) in addition to
+  each service's own — both return the same 404 (never 403) on denial, so a caller can never
+  tell "doesn't exist" from "exists but isn't yours." Rate limiting (`/auth/login`/
+  `/auth/register`: 20 requests/15 min; every other route: 1,000/15 min), secure headers
+  (`helmet`), and structured audit logging (register/login/logout/ownership-denied/repository-
+  connect-disconnect, no new database table) are all live in every non-test environment. Any
+  secret-shaped text found inside indexed repository content (an AWS key, a GitHub token, a
+  private-key block, a JWT, a credential-embedded connection string) is deterministically
+  redacted before it is ever persisted, embedded, or sent to a prompt — independent of, and in
+  addition to, the ai-service system prompts' own long-standing instruction never to repeat a
+  secret. See "Security" below for the full model.
 - Opaque, server-side sessions: a random token lives only in an httpOnly cookie; only its
   SHA-256 hash is ever persisted.
 - The full stack (Postgres, API, frontend, and the AI service) runs via a single
@@ -303,6 +345,39 @@ unchanged hash, so a transient failure or a since-fixed parser bug gets a fresh 
 time. Deleted-file cleanup (via Prisma's own cascade deletes) and reindex idempotency were both
 confirmed already correct, each with a new regression test proving it.
 
+### Security (Phase 16)
+
+Authentication (session-cookie, DB-backed opaque tokens) does not by itself imply authorization
+anywhere in this codebase. Every project-scoped resource is protected by two independent layers:
+a shared `requireOwnedProject()` (`api/src/lib/ownership.ts`) that every service function calls
+before touching that project's data, and a second, genuinely redundant `requireProjectOwnership`
+Express middleware mounted on every nested `/projects/:projectId/...` router, immediately after
+`requireAuth` — so a future ownership bug introduced into one service function would still be
+caught at the route boundary. Both return the identical 404 `NOT_FOUND` on denial (never 403),
+consistently, so a response can never reveal whether a resource exists but belongs to someone
+else. `EvaluationRun` is the one resource type with no per-user scope, by explicit, tested design
+(it wraps a fixed, non-personal evaluation dataset, not user data).
+
+Repository content is treated as untrusted input at every layer that touches it: GitHub API calls
+are host-pinned (no SSRF), repo/branch names are validated against both a character-class schema
+and (for branches) a live GitHub-returned allowlist, there is no local archive extraction anywhere
+(file content is fetched via the GitHub blob API and decoded in-process, so zip-slip/symlink-escape
+don't apply), and both the Q&A and code-review system prompts explicitly frame retrieved content
+(and the review scope) as data, never instructions, with neither LLM call ever granted tool-use
+capability. A deterministic secret-redaction pass (`api/src/lib/secretRedaction.ts`) additionally
+strips high-confidence secret shapes out of chunk content before it is ever stored or embedded —
+independent of, and in addition to, the system prompts' own instruction not to repeat a secret.
+
+Rate limiting (`express-rate-limit`, strict on `/auth/register`/`/auth/login`, generous
+elsewhere), secure headers (`helmet`), and structured audit logging (`api/src/lib/auditLog.ts` —
+same one-JSON-line-per-event pattern as Phase 14's search observability, no new database table)
+round out the API-security layer. CORS is a single fixed allowed origin
+(`env.FRONTEND_ORIGIN`) with credentials; there is deliberately no separate CSRF token layer — a
+documented decision, not an oversight (see `docs/PHASE_16_SECURITY_PROGRESS.md`'s Milestone 16.5
+entry for the full reasoning: fixed-origin CORS already blocks a preflighted cross-origin state
+change, and the session cookie's `SameSite=Lax` already excludes it from a cross-site POST in
+every current major browser).
+
 ## Tech stack
 
 | Area | Choice | Why |
@@ -326,6 +401,8 @@ confirmed already correct, each with a new regression test proving it.
 | Codebase Q&A | Anthropic Claude (`claude-opus-5`) structured output, gated by the same `ANTHROPIC_API_KEY` as every other generation agent — reused, not duplicated | The structured answer schema has no field for a model-supplied file path, symbol, or line number — only a numeric selection from the fixed, real source list Node already built from Phase 8 retrieval, making citation hallucination structurally impossible rather than merely prompt-discouraged. Documented in `docs/QA_PHASE_PLAN.md` |
 | AI code review | Anthropic Claude (`claude-opus-5`) structured output, gated by the same `ANTHROPIC_API_KEY`, reusing Phase 8 retrieval and Phase 9's `selectSources()` evidence cap unchanged | Same citation-safety schema as Q&A applied to a list of findings instead of one answer — each finding can only cite numbered sources by number, never a path/symbol/line, and a finding left with zero valid citations is dropped entirely. Documented in `docs/CODE_REVIEW_PHASE_PLAN.md` |
 | Evaluation | A separate `evaluation/` pnpm package; a dependency-free character-n-gram embedding proxy for retrieval (Phase 12: re-ranked by the same hybrid-score/adaptive-cutoff algorithm production uses), hand-authored mock answers/findings for Q&A/review, real `ai-service` calls only in an explicit opt-in `--real` mode | Deterministic, reproducible, zero-cost-by-default measurement was prioritized over new AI capability, per the phase's own instruction — no paid Voyage AI/Anthropic credential is ever required for the suite to run or gate CI. Documented in `docs/EVALUATION_PHASE_PLAN.md` and `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md` |
+| Background jobs | A plain PostgreSQL `Job` table, claimed via `SELECT ... FOR UPDATE SKIP LOCKED`; a small polling worker started in-process alongside the API server | No Redis/broker/worker framework — this project's real scale (a single-project-at-a-time developer tool) doesn't need dedicated-broker throughput, and Postgres already gives durability, exactly-once claiming, and retry tracking for free. Matches this project's own established minimalism precedent (see "Vector storage & ranking" below). Documented in `docs/PHASE_15_JOB_ARCHITECTURE_PLAN.md` |
+| Rate limiting & secure headers | `express-rate-limit`, `helmet` | Small, focused libraries for a real, previously-nonexistent gap (Phase 16) — not a new service or infrastructure component |
 | Local/dev orchestration | Docker Compose | Postgres, API, frontend, ai-service, each with a healthcheck |
 
 ## Repository structure
@@ -355,8 +432,14 @@ devforge/
                     CODE_REVIEW_PHASE_PROGRESS.md, EVALUATION_PHASE_PLAN.md,
                     EVALUATION_PHASE_PROGRESS.md, RETRIEVAL_QUALITY_PHASE_PLAN.md,
                     RETRIEVAL_QUALITY_PHASE_PROGRESS.md,
-                    RETRIEVAL_QUALITY_COMPLETION_REPORT.md — the verified milestone-by-
-                    milestone log for each phase
+                    RETRIEVAL_QUALITY_COMPLETION_REPORT.md, BENCHMARK_EXPANSION_PHASE_PLAN.md,
+                    BENCHMARK_EXPANSION_PHASE_PROGRESS.md,
+                    BENCHMARK_EXPANSION_COMPLETION_REPORT.md,
+                    RETRIEVAL_TARGET_CLOSURE_REPORT.md, RETRIEVAL_TARGET_CLOSURE_PROGRESS.md,
+                    PHASE_15_JOB_ARCHITECTURE_PLAN.md, PHASE_15_JOB_ARCHITECTURE_PROGRESS.md,
+                    PHASE_15_COMPLETION_REPORT.md, PHASE_16_SECURITY_PLAN.md,
+                    PHASE_16_SECURITY_PROGRESS.md, PHASE_16_COMPLETION_REPORT.md — the verified
+                    milestone-by-milestone log for each phase
   scripts/         Local dev/setup scripts (test-database bootstrap)
   docker-compose.yml
 ```
@@ -433,10 +516,16 @@ ANTHROPIC_API_KEY=sk-ant-... VOYAGE_API_KEY=pa-... docker compose up -d --build
 ```
 
 This builds and runs all four services — Postgres, ai-service, the API (which runs `prisma
-migrate deploy` automatically on container start and depends on both Postgres and ai-service
-being healthy), and the frontend (built and served as a static production bundle) — each
-gated by a healthcheck so dependents wait for their dependencies to actually be ready, not
-just started. Verified end to end from a volume-wiped clean start (`docker compose down -v
+migrate deploy` automatically on container start, starts the Phase 15 job worker in the same
+process right after, and depends on both Postgres and ai-service being healthy), and the
+frontend (built and served as a static production bundle) — each gated by a healthcheck so
+dependents wait for their dependencies to actually be ready, not just started. The API
+container's `CMD` uses `exec node dist/server.js` (not a plain `node dist/server.js` run as a
+shell subprocess) specifically so `docker stop`'s `SIGTERM` reaches the Node process directly and
+its graceful-shutdown handler (`worker.stop()`, draining any in-flight job) actually runs —
+verified live: `docker compose stop api` produces a real `"Received SIGTERM, shutting down
+gracefully..."` log line and exits in a fraction of a second rather than hitting Docker's forced-
+kill timeout. Verified end to end from a volume-wiped clean start (`docker compose down -v
 && docker compose up -d --build`), including the api-container → ai-service-container network
 call over the Docker-internal hostname for requirements analysis, PRD generation, architecture
 generation, epic/task generation, codebase Q&A, AI code review, source parsing (confirmed `pip
@@ -564,6 +653,11 @@ failure.
 | GET | `/projects/:id/reviews/:reviewId` | session | Get one review with its full findings and evidence; 404 if it doesn't belong to this project |
 | GET | `/evaluations` | session | List the most recent evaluation runs (see `evaluation/`'s `pnpm eval`), newest first. Not project-scoped — every authenticated user sees the same rows, since the evaluation dataset is a fixed fixture, not a real connected repository |
 | GET | `/evaluations/:runId` | session | Get one evaluation run's full report (aggregate metrics, every per-case result, regression-gate results); 404 if it doesn't exist |
+| POST | `/projects/:id/jobs` | session | Create a job — body `{ type: "indexing"\|"qa"\|"review"\|"evaluation", input?, idempotencyKey?, maxRetries? }`; `evaluation` is accepted but never auto-dispatched by the worker (fails cleanly with `JOB_TYPE_NOT_DISPATCHABLE`); resubmitting the same `idempotencyKey` returns the existing job rather than creating a duplicate |
+| GET | `/projects/:id/jobs` | session | List jobs for this project, newest first — query `?status=&type=&limit=` |
+| GET | `/projects/:id/jobs/:jobId` | session | Get one job's full status/progress/output/error; 404 if it doesn't belong to this project |
+| POST | `/projects/:id/jobs/:jobId/cancel` | session | Cancel a queued job immediately, or request cancellation of a running one (checked cooperatively, not preemptively — see `docs/PHASE_15_JOB_ARCHITECTURE_PLAN.md`); 409 `INVALID_JOB_TRANSITION` if already in a terminal state |
+| POST | `/projects/:id/jobs/:jobId/retry` | session | Manually retry a `failed` job (bounded by its own `maxRetries`, same as automatic retry); 409 if the job never failed or retries are exhausted |
 
 `ai-service` also exposes `POST /requirements/analyze`, `POST /prd/generate`,
 `POST /architecture/generate`, `POST /epics/generate`, `POST /tasks/generate`,
@@ -682,8 +776,21 @@ no `project_id`/`owner_id` at all: an evaluation run isn't owned by a project or
 `evaluation/`'s dataset is a fixed, version-controlled fixture rather than a real connected
 repository (see `docs/EVALUATION_PHASE_PLAN.md`). Written by `evaluation/`'s own CLI via raw
 `pg` (the same cross-package pattern `tests/` already uses against this same schema), not
-through Prisma directly, since `evaluation/` has no dependency on `api`'s generated client. See
-`api/prisma/schema.prisma` for the exact fields.
+through Prisma directly, since `evaluation/` has no dependency on `api`'s generated client.
+`jobs` (id, project_id → projects `ON DELETE CASCADE`, type
+(`indexing`/`qa`/`review`/`evaluation`), status
+(`queued`/`running`/`completed`/`failed`/`cancelled`/`timed_out`), input/output `jsonb`,
+progress `jsonb`, error_code, error_message, retry_count, max_retries, idempotency_key,
+correlation_id, worker_id, lease_expires_at, cancel_requested, started_at, completed_at,
+cancelled_at, timestamps; **unique on `(project_id, type, idempotency_key)`** — Postgres treats
+`NULL` as distinct for uniqueness, so a job created without a key never collides with another;
+indexed on `(status, created_at)`, `(project_id, created_at)`, and `(status, lease_expires_at)`
+for the worker's own claim/sweep queries) — every state transition goes through one conditional
+`UPDATE ... WHERE id = $1 AND status IN (...)` primitive (`transitionJob()`,
+`api/src/services/jobs.ts`), so an invalid transition (e.g. `completed` → `running`) is rejected
+atomically rather than racily; see `docs/PHASE_15_JOB_ARCHITECTURE_PLAN.md` for the full state
+machine and every explicitly-invalid transition. See `api/prisma/schema.prisma` for the exact
+fields.
 
 ## Known limitations
 
@@ -699,15 +806,42 @@ through Prisma directly, since `evaluation/` has no dependency on `api`'s genera
   review's findings. There is no multi-turn context in either: DevForge does not remember an
   earlier question/review when handling a later one, even within the same visible history list.
   A "follow-up question" or "run another review" is simply another independent request.
-- Codebase indexing, code search, codebase Q&A, and AI code review all run synchronously within
-  one HTTP request — there is no background job queue anywhere in this codebase. Indexing is
-  bounded by a 500-file cap and a 300 KB per-file cap; files beyond a cap are recorded with a
-  real `skipped_index_limit`/`skipped_too_large` status rather than silently dropped. Both Q&A
-  and code review are bounded to at most 8 evidence sources and 16,000 combined characters of
-  code context (after deduplicating overlapping evidence, via the same shared
-  `qaSourceSelection.ts` cap), so a very broad question or review scope may not surface every
-  relevant location — only the highest-scored, non-overlapping ones within that budget. A
-  background worker is the natural fix for all of this and is future work.
+- Codebase indexing, code search, codebase Q&A, and AI code review can each still run
+  synchronously within one HTTP request (`POST /codebase-index/start`, `/search`, `/qa`,
+  `/reviews`, unchanged from earlier phases) — Phase 15 added an *additional* durable job path
+  (`POST /projects/:id/jobs`) that wraps the exact same service functions for callers that want a
+  trackable, retryable, cancellable background run instead, but did not remove or replace the
+  synchronous endpoints. Indexing is bounded by a 500-file cap and a 300 KB per-file cap; files
+  beyond a cap are recorded with a real `skipped_index_limit`/`skipped_too_large` status rather
+  than silently dropped. Both Q&A and code review are bounded to at most 8 evidence sources and
+  16,000 combined characters of code context (after deduplicating overlapping evidence, via the
+  same shared `qaSourceSelection.ts` cap), so a very broad question or review scope may not
+  surface every relevant location — only the highest-scored, non-overlapping ones within that
+  budget.
+- **The job worker's cancellation is cooperative, not preemptive.** A `running` job's
+  cancellation flag is only checked at specific checkpoints (before dispatch, after dispatch
+  resolves) — a long-running synchronous service call in between will still complete before
+  cancellation takes effect. A genuine database-connection-loss mid-transaction scenario was not
+  specifically simulated in testing, beyond the worker's own generic "unrecognized exception →
+  transient, bounded retry" fallback. See `docs/PHASE_15_JOB_ARCHITECTURE_PROGRESS.md`'s
+  Milestone 15.3/15.7 entries.
+- **Secret redaction on indexed repository content covers known shapes only** (AWS keys,
+  GitHub/Slack/Anthropic-prefixed tokens, PEM private-key blocks, JWT-structure strings,
+  credential-embedded connection-string URLs) — deliberately not generic heuristics like
+  `password\s*=\s*.+`, which would false-positive heavily against ordinary source code. An
+  organization-specific internal token format not matching any listed shape would not be caught.
+  See `docs/PHASE_16_SECURITY_PROGRESS.md`'s Milestone 16.4 entry.
+- **No CSRF token layer.** A deliberate Phase 16 decision, not an oversight: fixed-origin CORS
+  already blocks a preflighted cross-origin state-changing request, and the session cookie's
+  `SameSite=Lax` already excludes it from a cross-site POST in every current major browser.
+  Revisit if this app's CORS/cookie posture ever changes (e.g. supporting multiple frontend
+  origins). See `docs/PHASE_16_SECURITY_PROGRESS.md`'s Milestone 16.5 entry.
+- **No row-level database isolation.** Postgres itself enforces no row-level security in this
+  codebase — multi-user isolation is entirely an application-layer guarantee (every project-scoped
+  query filters by the authenticated `ownerId` via the shared `requireOwnedProject()`), not a
+  database-level one. There is no code path in the reviewed services that queries a project-scoped
+  resource without it, but this was confirmed by code review, not a separate raw-SQL isolation
+  test.
 - Both Q&A answers and code reviews are pinned to exactly one `(branch, commitSha)` per
   project — the same one `/search` and indexing already use — with no way to ask/review a
   different branch or commit; there is no caller-supplied override at all on `POST /qa` or
@@ -842,17 +976,19 @@ through Prisma directly, since `evaluation/` has no dependency on `api`'s genera
 
 ## Future work
 
-A background job queue for indexing, search, Q&A, and code review (removing the synchronous-
-request size/file/evidence caps and the first-use latency); a proper BM25 lexical index and
-reciprocal-rank fusion in place of Phase 12's simpler hand-weighted hybrid score, and an
-ANN-backed vector store (e.g. pgvector) in place of today's linear-scan `Float[]` ranking, both
-for scale a single project's chunk count doesn't currently need; learned (rather than hand-
-picked) hybrid-score weights; true multi-turn conversation for Codebase Q&A and iterative
-context for AI code review (today each question/review is handled independently); support for a
-caller-supplied branch/commit override on both Q&A and review requests; wiring `pnpm eval` into
-an actual CI pipeline; a larger and/or real-Voyage-embedding-backed evaluation dataset for a
-truer retrieval-quality signal; and a human-labeled dataset large enough to measure real
-confidence calibration — per the full product specification. See
+A separate, independently-scalable worker process for Phase 15's job system (today it runs
+in-process alongside the API server — both share the exact same job-claiming/execution code, so
+this is a process-topology change, not a behavioral one); a real, non-cooperative cancellation
+mechanism for a running job; a CSRF token layer if this app's CORS/single-origin posture ever
+changes; a proper BM25 lexical index and reciprocal-rank fusion in place of Phase 12's simpler
+hand-weighted hybrid score, and an ANN-backed vector store (e.g. pgvector) in place of today's
+linear-scan `Float[]` ranking, both for scale a single project's chunk count doesn't currently
+need; learned (rather than hand-picked) hybrid-score weights; true multi-turn conversation for
+Codebase Q&A and iterative context for AI code review (today each question/review is handled
+independently); support for a caller-supplied branch/commit override on both Q&A and review
+requests; wiring `pnpm eval` into an actual CI pipeline; a larger and/or real-Voyage-embedding-
+backed evaluation dataset for a truer retrieval-quality signal; and a human-labeled dataset large
+enough to measure real confidence calibration — per the full product specification. See
 [docs/FOUNDATION_PROGRESS.md](docs/FOUNDATION_PROGRESS.md),
 [docs/REQUIREMENTS_PHASE_PROGRESS.md](docs/REQUIREMENTS_PHASE_PROGRESS.md),
 [docs/PRD_PHASE_PROGRESS.md](docs/PRD_PHASE_PROGRESS.md),
@@ -864,9 +1000,12 @@ confidence calibration — per the full product specification. See
 [docs/QA_PHASE_PROGRESS.md](docs/QA_PHASE_PROGRESS.md),
 [docs/CODE_REVIEW_PHASE_PROGRESS.md](docs/CODE_REVIEW_PHASE_PROGRESS.md),
 [docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md),
-[docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md), and
-[docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md](docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md) for
-what's been verified so far and how it was verified.
+[docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md](docs/RETRIEVAL_QUALITY_PHASE_PROGRESS.md),
+[docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md](docs/BENCHMARK_EXPANSION_PHASE_PROGRESS.md),
+[docs/RETRIEVAL_TARGET_CLOSURE_PROGRESS.md](docs/RETRIEVAL_TARGET_CLOSURE_PROGRESS.md),
+[docs/PHASE_15_JOB_ARCHITECTURE_PROGRESS.md](docs/PHASE_15_JOB_ARCHITECTURE_PROGRESS.md), and
+[docs/PHASE_16_SECURITY_PROGRESS.md](docs/PHASE_16_SECURITY_PROGRESS.md) for what's been
+verified so far and how it was verified.
 
 ## License
 
