@@ -253,8 +253,13 @@ describe("retrieval-before-provider ordering", () => {
     // review provider (also effectively "unconfigured" in this suite,
     // since no fetch response for /review/analyze is queued) is never
     // reached; if it had been, a different, distinguishable error would
-    // surface.
-    mockFetchResponses([{ status: 401, body: { message: "Bad credentials" } }]);
+    // surface. The query embedding (search()'s own fail-fast provider
+    // check) is attempted first and must succeed here so the 401 is
+    // actually consumed by the getBlob call it's meant to simulate.
+    mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 401, body: { message: "Bad credentials" } },
+    ]);
     const res = await request(app).post(`/projects/${projectId}/reviews`).set("Cookie", cookie).send({});
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe("GITHUB_INVALID_CREDENTIALS");
@@ -271,9 +276,9 @@ describe("successful review", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding
       { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } }, // buildChunksForIndex's getBlob
       { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // ensureEmbeddings
-      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding
       { status: 200, body: reviewAnswerBody() }, // /review/analyze
     ]);
 
@@ -320,8 +325,8 @@ describe("successful review", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: reviewAnswerBody() },
     ]);
@@ -337,8 +342,8 @@ describe("successful review", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       {
         status: 200,
@@ -370,8 +375,8 @@ describe("successful review", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       {
         status: 200,
@@ -452,8 +457,8 @@ describe("provider configuration and failure", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       {
         status: 503,
@@ -471,8 +476,8 @@ describe("provider configuration and failure", () => {
     const projectId = await createProject(cookie);
     await connectAndIndex(cookie, projectId);
 
+    // The query embedding fails fast, before any chunk-building fetch.
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       {
         status: 503,
         body: { error: { code: "PROVIDER_NOT_CONFIGURED", message: "No embedding provider is configured." } },
@@ -490,8 +495,8 @@ describe("provider configuration and failure", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 502, body: { error: { code: "AI_PROVIDER_ERROR", message: "The AI provider rate-limited this request." } } },
     ]);
@@ -515,8 +520,8 @@ describe("provider configuration and failure", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: { content: { summary: "", findings: "not-an-array" } } },
     ]);
@@ -532,8 +537,8 @@ describe("provider configuration and failure", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       {
         status: 200,
@@ -566,8 +571,8 @@ describe("no secret leakage", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: reviewAnswerBody() },
     ]);
@@ -583,8 +588,8 @@ describe("project isolation", () => {
     const projectA = await createProject(cookieA, "Project A");
     await connectAndIndex(cookieA, projectA);
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: reviewAnswerBody() },
     ]);

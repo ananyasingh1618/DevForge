@@ -191,6 +191,21 @@ export async function search(
     );
   }
 
+  // Fails fast (a single small embedding call) on a missing/unreachable
+  // embedding provider *before* the expensive chunk-building pass below —
+  // found live: on a real ~500-file repository's first search, an unset
+  // VOYAGE_API_KEY was previously only discovered after ~150s of chunk
+  // building (which re-fetches every file's content from GitHub, since raw
+  // content is never persisted — see buildChunksForIndex), because this
+  // same query-embedding call used to happen only after that pass. Reusing
+  // its result below means real, configured runs pay no extra cost at
+  // all — this is a reordering, not a new call.
+  const queryEmbedding = await generateEmbeddingsViaAiService([input.query], "query");
+  const queryVector = queryEmbedding.embeddings[0];
+  if (!queryVector) {
+    throw new AppError(502, "EMBEDDING_SERVICE_ERROR", "The embedding provider returned no vector for the query.");
+  }
+
   const existingChunkCount = await prisma.codeChunk.count({
     where: { codebaseIndexId: index.id, commitSha: index.commitSha },
   });
@@ -208,12 +223,6 @@ export async function search(
   }
 
   const model = await ensureEmbeddings(index.id, index.commitSha);
-
-  const queryEmbedding = await generateEmbeddingsViaAiService([input.query], "query");
-  const queryVector = queryEmbedding.embeddings[0];
-  if (!queryVector) {
-    throw new AppError(502, "EMBEDDING_SERVICE_ERROR", "The embedding provider returned no vector for the query.");
-  }
 
   // Embedding-based negation suppression (rerank.ts's NEGATED_SEMANTIC_PENALTY)
   // — one extra real embedding call, only when the query itself contains a

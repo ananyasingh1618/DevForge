@@ -255,7 +255,13 @@ describe("retrieval-before-provider ordering", () => {
     // the Q&A provider (also effectively "unconfigured" in this suite,
     // since no fetch response for /qa/answer is queued) is never reached;
     // if it had been, a different, distinguishable error would surface.
-    mockFetchResponses([{ status: 401, body: { message: "Bad credentials" } }]);
+    // The query embedding (search()'s own fail-fast provider check) is
+    // attempted first and must succeed here so the 401 is actually
+    // consumed by the getBlob call it's meant to simulate.
+    mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 401, body: { message: "Bad credentials" } },
+    ]);
     const res = await request(app)
       .post(`/projects/${projectId}/qa`)
       .set("Cookie", cookie)
@@ -275,9 +281,9 @@ describe("successful Q&A", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding
       { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } }, // buildChunksForIndex's getBlob
       { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // ensureEmbeddings
-      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding
       { status: 200, body: qaAnswerBody() }, // /qa/answer
     ]);
 
@@ -321,8 +327,8 @@ describe("successful Q&A", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: qaAnswerBody({ cited_source_numbers: [] }) },
     ]);
@@ -377,8 +383,8 @@ describe("provider configuration and failure", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       {
         status: 503,
@@ -399,8 +405,8 @@ describe("provider configuration and failure", () => {
     const projectId = await createProject(cookie);
     await connectAndIndex(cookie, projectId);
 
+    // The query embedding fails fast, before any chunk-building fetch.
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       {
         status: 503,
         body: { error: { code: "PROVIDER_NOT_CONFIGURED", message: "No embedding provider is configured." } },
@@ -421,8 +427,8 @@ describe("provider configuration and failure", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 502, body: { error: { code: "AI_PROVIDER_ERROR", message: "The AI provider rate-limited this request." } } },
     ]);
@@ -441,8 +447,8 @@ describe("provider configuration and failure", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: { content: { answer: "", cited_source_numbers: "not-an-array", insufficient_evidence: false } } },
     ]);
@@ -463,8 +469,8 @@ describe("no secret leakage", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: qaAnswerBody() },
     ]);
@@ -484,8 +490,8 @@ describe("citation grounding hardening (Phase 12)", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: qaAnswerBody({ cited_source_numbers: [99], insufficient_evidence: false }) },
     ]);
@@ -506,8 +512,8 @@ describe("citation grounding hardening (Phase 12)", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: qaAnswerBody({ cited_source_numbers: [-1, 0], insufficient_evidence: false }) },
     ]);
@@ -526,8 +532,8 @@ describe("citation grounding hardening (Phase 12)", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: qaAnswerBody({ cited_source_numbers: [1, 1, 1] }) },
     ]);
@@ -548,8 +554,8 @@ describe("citation grounding hardening (Phase 12)", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       {
         status: 200,
@@ -576,8 +582,8 @@ describe("citation grounding hardening (Phase 12)", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: qaAnswerBody({ cited_source_numbers: [42], insufficient_evidence: false }) },
     ]);
@@ -597,8 +603,8 @@ describe("project isolation", () => {
     const projectA = await createProject(cookieA, "Project A");
     await connectAndIndex(cookieA, projectA);
     mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
+      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: qaAnswerBody() },
     ]);

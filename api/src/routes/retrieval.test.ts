@@ -238,9 +238,9 @@ describe("happy path", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding — identical vector, called first (fail-fast on a missing provider before any chunk building)
       { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } }, // buildChunksForIndex's getBlob
       { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // ensureEmbeddings — one chunk
-      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding — identical vector
     ]);
 
     const res = await request(app)
@@ -300,9 +300,9 @@ describe("happy path", () => {
     await request(app).post(`/projects/${projectId}/codebase-index/start`).set("Cookie", cookie);
 
     mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding, called first (fail-fast ordering)
       { status: 200, body: { content: base64(SOURCE_WITH_SECRET), encoding: "base64" } }, // buildChunksForIndex's getBlob
       { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // ensureEmbeddings
-      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding
     ]);
     const res = await request(app)
       .post(`/projects/${projectId}/search`)
@@ -327,8 +327,8 @@ describe("happy path", () => {
     await connectAndIndex(cookie, projectId);
 
     mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding, called first (fail-fast ordering)
       { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
-      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
     ]);
     const firstRes = await request(app)
@@ -385,8 +385,12 @@ describe("happy path", () => {
     const projectId = await createProject(cookie);
     await connectAndIndex(cookie, projectId);
 
-    mockFetchResponses([
-      { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } }, // getBlob succeeds
+    // The query embedding is now attempted first (fail-fast on a missing
+    // provider before any chunk building — see retrieval.ts's own comment),
+    // so this is the only fetch that ever happens: the missing provider is
+    // discovered immediately, never reaching buildChunksForIndex's getBlob
+    // call at all.
+    const fetchSpy = mockFetchResponses([
       {
         status: 503,
         body: { error: { code: "PROVIDER_NOT_CONFIGURED", message: "No embedding provider is configured." } },
@@ -399,6 +403,7 @@ describe("happy path", () => {
       .send({ query: "add two numbers" });
     expect(res.status).toBe(503);
     expect(res.body.error.code).toBe("EMBEDDING_PROVIDER_UNAVAILABLE");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -408,8 +413,8 @@ describe("project isolation", () => {
     const projectA = await createProject(cookieA, "Project A");
     await connectAndIndex(cookieA, projectA);
     mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding, called first (fail-fast ordering)
       { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
-      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
     ]);
     const resA = await request(app)
@@ -422,8 +427,8 @@ describe("project isolation", () => {
     const projectB = await createProject(cookieB, "Project B");
     await connectAndIndex(cookieB, projectB);
     mockFetchResponses([
+      { status: 200, body: embedBody([[1, 0, 0, 0]]) }, // query embedding, called first (fail-fast ordering)
       { status: 200, body: { content: base64(TS_SOURCE), encoding: "base64" } },
-      { status: 200, body: embedBody([[1, 0, 0, 0]]) },
       { status: 200, body: embedBody([[1, 0, 0, 0]]) },
     ]);
     const resB = await request(app)
