@@ -1,7 +1,8 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
 import request from "supertest";
 import { createApp } from "../app.js";
 import { __resetMetricsForTests } from "../lib/metrics.js";
+import { prisma } from "../lib/prisma.js";
 
 describe("GET /health", () => {
   it("returns 200 with status ok", async () => {
@@ -34,6 +35,22 @@ describe("GET /ready", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: { status: "ready", database: "ok" } });
+  });
+
+  it("returns 503 NOT_READY, with no leaked internal detail, when the database is unreachable — verified live too (Phase 17, Milestone 17.6): stopping the real docker-compose postgres container made this same endpoint return exactly this 503 shape, and /health stayed 200 throughout", async () => {
+    const spy = vi.spyOn(prisma, "$queryRaw").mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:5432"));
+    const app = createApp();
+    const res = await request(app).get("/ready");
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ error: { code: "NOT_READY", message: "Database is not reachable." } });
+    // The raw connection error must never reach the client.
+    expect(JSON.stringify(res.body)).not.toContain("ECONNREFUSED");
+    spy.mockRestore();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 });
 
