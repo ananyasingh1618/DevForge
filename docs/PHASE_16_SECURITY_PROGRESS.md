@@ -436,4 +436,4 @@ running production-mode server, a live rate-limit trigger with real response-hea
 and a live secret scan of real traffic all corroborate that the security work holds outside the test
 harness, not merely inside it.
 
-Commit: `<pending>`
+Commit: `9250315`
