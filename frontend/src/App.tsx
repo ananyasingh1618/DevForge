@@ -12,6 +12,7 @@ import { CodebaseQa } from "./pages/CodebaseQa.js";
 import { CodeReview } from "./pages/CodeReview.js";
 import { Evaluations } from "./pages/Evaluations.js";
 import { Jobs } from "./pages/Jobs.js";
+import { NotFound } from "./pages/NotFound.js";
 
 export function App() {
   return (
@@ -92,6 +93,7 @@ export function App() {
             </RequireAuth>
           }
         />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthProvider>
   );

@@ -15,15 +15,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen">
       <header className="border-b border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           <Link to="/projects" className="text-sm font-semibold tracking-tight text-text">
             DevForge
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Link to="/evaluations" className="text-sm text-text-muted hover:text-text">
               Evaluations
             </Link>
-            {user && <span className="text-sm text-text-muted">{user.email}</span>}
+            {user && <span className="max-w-[160px] truncate text-sm text-text-muted">{user.email}</span>}
             <Button variant="ghost" onClick={handleLogout}>
               Log out
             </Button>
