@@ -10,7 +10,21 @@ AI Software Engineering & Codebase Intelligence Platform.
 > Quality & Grounding Improvements) + Phase 13 (Benchmark Expansion, Relevance Calibration &
 > Retrieval Validation) + Phase 14 (Retrieval & Indexing Architecture Improvements) + Phase 15
 > (Production Job Architecture & Repository-Scale Reliability) + Phase 16 (Security,
-> Permissions & Multi-User Isolation) complete.**
+> Permissions & Multi-User Isolation) + Phase 17 (Production Deployment, Observability &
+> Reliability) + Phase 18 (Final Product Hardening, Demonstration & Release) complete.**
+> Phase 17 added production-grade configuration validation (`api/src/env.ts`, fails fast with a
+> clear error on a missing/placeholder-looking required variable), structured JSON logging with
+> automatic secret redaction and request-ID correlation, real in-process Prometheus-format
+> metrics (`/metrics`, `/metrics.json`), a `/ready` database-readiness endpoint distinct from
+> `/health` liveness, hardened non-root Docker images for all three application containers,
+> tested backup/restore scripts, a GitHub Actions CI pipeline (install/build/test/typecheck/
+> lint/migrations/Docker build+health/security regression/retrieval regression), and a full
+> operational documentation set (see "Production deployment & operations" below). Phase 18
+> audited every user-facing flow end to end (fixing a real bug found live: a malformed JSON
+> request body was returning a 500 instead of a 400), added a deterministic, credential-free
+> end-to-end demo script (`scripts/demo.mjs` — see "Demo" below), and completed this README's
+> release-facing sections. See [docs/PHASE_17_18_COMPLETION_REPORT.md](docs/PHASE_17_18_COMPLETION_REPORT.md)
+> for the full verified record of both phases.
 > This repository implements authentication, a
 > project workspace, AI-assisted requirements analysis, AI-assisted PRD generation, AI-assisted
 > architecture generation, AI-assisted epic/task generation, a secure GitHub repository
@@ -438,9 +452,15 @@ devforge/
                     RETRIEVAL_TARGET_CLOSURE_REPORT.md, RETRIEVAL_TARGET_CLOSURE_PROGRESS.md,
                     PHASE_15_JOB_ARCHITECTURE_PLAN.md, PHASE_15_JOB_ARCHITECTURE_PROGRESS.md,
                     PHASE_15_COMPLETION_REPORT.md, PHASE_16_SECURITY_PLAN.md,
-                    PHASE_16_SECURITY_PROGRESS.md, PHASE_16_COMPLETION_REPORT.md — the verified
-                    milestone-by-milestone log for each phase
-  scripts/         Local dev/setup scripts (test-database bootstrap)
+                    PHASE_16_SECURITY_PROGRESS.md, PHASE_16_COMPLETION_REPORT.md,
+                    PHASE_17_18_COMPLETION_REPORT.md, CONFIGURATION.md, DEPLOYMENT.md,
+                    OPERATIONS.md, BACKUP_AND_RESTORE.md, CI_CD.md, INCIDENT_RESPONSE.md,
+                    ROLLBACK.md, TROUBLESHOOTING.md, PRODUCTION_SMOKE_TESTING.md, DEMO.md — the
+                    verified milestone-by-milestone log for each phase, plus Phase 17/18's
+                    operational and release documentation
+  scripts/         Local dev/setup scripts (test-database bootstrap, backup/restore,
+                    demo.mjs — see "Demo" above)
+  .github/workflows/ ci.yml — see docs/CI_CD.md
   docker-compose.yml
 ```
 
@@ -588,6 +608,49 @@ including `evaluation/`'s own) — see
 [docs/CODE_REVIEW_PHASE_PROGRESS.md](docs/CODE_REVIEW_PHASE_PROGRESS.md), and
 [docs/EVALUATION_PHASE_PROGRESS.md](docs/EVALUATION_PHASE_PROGRESS.md) for exactly which tests
 use a test double and which exercise a real "not configured"/real-API failure path.
+
+## Demo
+
+`scripts/demo.mjs` is a deterministic, credential-free end-to-end demo that drives the real
+running stack over its real HTTP API — register, create a project, attempt a repository
+connection, attempt requirements/PRD generation, attempt search/Q&A/review, create and poll a
+background job to a terminal state, then retry it to demonstrate recovery. It requires no
+GitHub/Anthropic/Voyage credentials to run to completion: every step that needs one honestly
+reports DevForge's own real "not configured" response instead, matching the honesty guarantee
+documented throughout this README.
+
+```bash
+docker compose up -d
+node scripts/demo.mjs
+```
+
+See [docs/DEMO.md](docs/DEMO.md) for the full step-by-step walkthrough of what it covers and
+how to run it with real credentials for a fully "live" demo instead.
+
+## Production deployment & operations
+
+Phase 17 added a full production-configuration, observability, and operational layer on top of
+the local Docker Compose stack described above — the same stack, hardened and instrumented, not
+a separate deployment path. Full details:
+
+| Doc | Covers |
+|---|---|
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable, required vs. optional, and the production-only startup guardrails |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | What the local production-like deployment actually is, container hardening, graceful shutdown, migrations, and a checklist for deploying to a real external target |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Health checks, structured logs, metrics, background-job behavior, security posture |
+| [docs/BACKUP_AND_RESTORE.md](docs/BACKUP_AND_RESTORE.md) | `scripts/backup-db.sh`/`restore-db.sh`, verified end to end with real data, plus RPO/RTO |
+| [docs/CI_CD.md](docs/CI_CD.md) | What `.github/workflows/ci.yml` actually runs and how to reproduce any job locally |
+| [docs/INCIDENT_RESPONSE.md](docs/INCIDENT_RESPONSE.md) | Every failure mode (database/ai-service/GitHub down, a malformed request, a service restart mid-work, cross-user access) and its live-verified behavior |
+| [docs/ROLLBACK.md](docs/ROLLBACK.md) | Rolling back a bad deploy or a database migration |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Fixes for the specific, recurring local-dev and deployment problems actually encountered while building this project |
+| [docs/PRODUCTION_SMOKE_TESTING.md](docs/PRODUCTION_SMOKE_TESTING.md) | The exact checklist to run after any deploy/rebuild/rollback |
+
+**Known, honestly-stated limitation**: there is no cloud account, container registry, or public
+DNS/TLS ingress available in this environment, so the "production deployment" above is real
+production-*configured* code running in real production-*shaped* containers entirely on
+`localhost` — not a publicly reachable URL. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#whats-actually-running-here) for exactly what would be
+needed to point this same, unmodified stack at a real cloud target.
 
 ## API summary
 
@@ -932,9 +995,20 @@ fields.
   for how this was directly observed and verified.
 - The frontend's dark/light theming follows OS preference (`prefers-color-scheme`); there's
   no in-app toggle yet.
-- No CI pipeline is configured yet — tests (and `pnpm eval`) are run locally as documented
-  above; `pnpm eval`'s own exit code is already CI-safe (0/1, no credential needed) but nothing
-  currently invokes it automatically on a push or PR.
+- **No cloud deployment or public URL.** Phase 17's "production deployment" is real
+  production-configured code running in real production-hardened Docker containers, entirely on
+  `localhost` — there is no cloud account, container registry, or public DNS/TLS ingress
+  available in this environment. See
+  [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#whats-actually-running-here) for exactly what deploying
+  this same, unmodified stack to a real external target would require.
+- **No automated backup schedule.** `scripts/backup-db.sh` is a verified, working manual/on-demand
+  backup tool, not a cron job — an operator running this in a real deployment needs to schedule it
+  themselves (or point `DATABASE_URL` at a managed Postgres with its own continuous backup). See
+  [docs/BACKUP_AND_RESTORE.md](docs/BACKUP_AND_RESTORE.md#recovery-point-objective-rpo-and-recovery-time-objective-rto).
+- `/metrics` and `/metrics.json` are unauthenticated, appropriate for this project's local/
+  self-hosted deployment model but a real limitation for a genuinely public multi-tenant
+  deployment — see
+  [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#production-checklist-if-deploying-to-a-real-external-target).
 - **Evaluation measures a small, hand-authored fixture dataset, not real-world code.** A
   passing `pnpm eval` run is evidence of no regression against this dataset's 109 cases — it is
   not a general quality guarantee, and it says nothing about DevForge's behavior on a large,
@@ -1006,6 +1080,55 @@ enough to measure real confidence calibration — per the full product specifica
 [docs/PHASE_15_JOB_ARCHITECTURE_PROGRESS.md](docs/PHASE_15_JOB_ARCHITECTURE_PROGRESS.md), and
 [docs/PHASE_16_SECURITY_PROGRESS.md](docs/PHASE_16_SECURITY_PROGRESS.md) for what's been
 verified so far and how it was verified.
+
+## Release checklist
+
+The exact set of checks run before this repository was considered feature-complete through
+Phase 18 — every item below was actually run, not assumed; see
+[docs/PHASE_17_18_COMPLETION_REPORT.md](docs/PHASE_17_18_COMPLETION_REPORT.md) for each item's
+real, measured result and commit hash:
+
+- [x] Full unit test suite (api + frontend + evaluation) passing
+- [x] Integration test suite (`tests/`) passing
+- [x] `ai-service` pytest suite passing
+- [x] `pnpm eval` retrieval/Q&A/review regression gate passing (no target regression)
+- [x] `pnpm typecheck` clean across every workspace package
+- [x] `pnpm lint` clean (0 errors)
+- [x] Clean Docker rebuild from a fresh context, all four services healthy
+- [x] Database migrations applied cleanly via `prisma migrate deploy`
+- [x] Backup and restore verified end to end against real data
+- [x] Security/cross-user-isolation regression suite passing
+- [x] Deterministic end-to-end demo (`scripts/demo.mjs`) run to completion
+- [x] Graceful shutdown and worker-interruption recovery verified live
+- [x] Failure-mode behavior verified for: database down, ai-service down, GitHub integration
+      unconfigured, a malformed request, cross-user access, a job timeout, a service restart
+      mid-work
+- [x] CI workflow (`.github/workflows/ci.yml`) covering all of the above as automated gates
+- [x] No secrets committed (`.env.example` files only, real `.env` gitignored)
+- [x] VoxMind untouched (this repository has no dependency on or reference to it)
+
+## Changelog
+
+- **Phase 17 — Production Deployment, Observability & Reliability**: production configuration
+  validation with fail-fast startup guardrails; structured JSON logging with automatic secret
+  redaction and request-ID correlation; real in-process metrics (`/metrics`, `/metrics.json`);
+  a `/ready` database-readiness endpoint; hardened non-root Docker images; tested backup/restore
+  scripts with documented RPO/RTO; a GitHub Actions CI pipeline; a complete operational
+  documentation set (deployment, configuration, operations, backup/restore, CI/CD, incident
+  response, rollback, troubleshooting, production smoke testing).
+- **Phase 18 — Final Product Hardening, Demonstration & Release**: a full product-wide audit of
+  every user-facing flow (fixing a real bug found live — malformed JSON returned 500 instead of
+  400); a deterministic, credential-free end-to-end demo script; this README's demo, production
+  deployment, release checklist, and changelog sections.
+- **Phase 16 — Security, Permissions & Multi-User Isolation**: route-level ownership middleware,
+  rate limiting, secure headers, audit logging, deterministic secret redaction on indexed content.
+- **Phase 15 — Production Job Architecture & Repository-Scale Reliability**: a durable
+  Postgres-native job queue with bounded retries, idempotency, stale-job recovery, and cooperative
+  cancellation.
+- **Phases 2–14**: requirements/PRD/architecture/epics/tasks generation, GitHub integration, AST
+  parsing and codebase indexing, semantic search, grounded codebase Q&A, grounded AI code review,
+  and a deterministic evaluation system — see each phase's own `docs/*_PROGRESS.md` and
+  `*_COMPLETION_REPORT.md` for full detail.
 
 ## License
 
