@@ -189,6 +189,19 @@ export function filePathMatchScore(queryTokenSet: Set<string>, filePath: string)
   return matched / pathTokens.length;
 }
 
+// A "qualifierMismatchCount" signal (penalizing a candidate for symbol
+// tokens the query doesn't mention, to break near-ties between sibling
+// functions like parseWebhookPayload/parseWebhookPayloadStrict) was
+// implemented and measured during the retrieval-target-closure
+// architecture work, gated to only apply once a candidate was already a
+// strong partial identifier match. Even gated, it measured net-negative
+// on the full benchmark in every tested combination — it reliably fixed
+// the narrow sibling-disambiguation shape it targeted, but reduced
+// recall@5, MRR, and direct-hit-rate elsewhere by more than it gained,
+// and inflated false-confidence-rate. Removed rather than shipped with a
+// zero weight — see docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md for the
+// full measured comparison this conclusion is based on.
+
 export type ScoreSignals = {
   semanticScore: number;
   lexicalScore: number;

@@ -115,6 +115,39 @@ describe("rankChunks — adaptive relative-score cutoff", () => {
   });
 });
 
+describe("rankChunks — coherence-aware cutoff (retrieval-target-closure architecture work)", () => {
+  it(
+    "surfaces a real cross-directory dependency (svc-process-order in services/, " +
+      "db-find-orders-by-user-id in db/) via the reference graph, not merely a shared directory",
+    () => {
+      // processOrder's own real fixture content literally calls
+      // findOrdersByUserId — the reference-graph link this coherence check
+      // relies on to keep a genuinely-related cross-directory chunk instead
+      // of cutting it purely for being in a different top-level directory.
+      const ranked = rankChunks("Which function does orderProcessor import to load a user's existing orders?", undefined, 5);
+      const ids = ranked.map((r) => r.chunk.chunkId);
+      expect(ids).toContain("db-find-orders-by-user-id");
+    },
+  );
+
+  it(
+    "does not drop a real, previously-broken case's required evidence — the exact grounding-safety " +
+      "regression this architecture work found: 'How does DevForge check a user's password during " +
+      "login?' ranks py-is-strong-password (a same-topic but wrong-language, wrong-file candidate) " +
+      "above auth-verify-password (the real answer) on raw score alone. At an earlier, higher " +
+      "coherence-strictness value, the correct answer — sitting in a different top-level directory " +
+      "from that wrongly-top-ranked candidate, with no detected reference link between them — was " +
+      "excluded entirely, not merely ranked lower, silently breaking this exact QA case's grounding " +
+      "(see qaEvaluator.test.ts's 'qa-password-check' case, and " +
+      "docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md for the full incident). INCOHERENCE_STRICTNESS's " +
+      "own value must stay low enough that this stays fixed.",
+    () => {
+      const ranked = rankChunks("How does DevForge check a user's password during login?", undefined, 5);
+      expect(ranked.map((r) => r.chunk.chunkId)).toContain("auth-verify-password");
+    },
+  );
+});
+
 describe("evaluateRetrieval — rank distribution", () => {
   it("puts a case that ranks the expected chunk 1st into the top-1 bucket", () => {
     const cases: RetrievalCase[] = [

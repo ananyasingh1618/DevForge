@@ -2,6 +2,7 @@ import { cosineSimilarity, deterministicEmbedding } from "../deterministicEmbedd
 import { chunkContent, FIXTURE_CHUNKS, type FixtureChunk } from "../dataset/fixtureRepo.js";
 import { RETRIEVAL_CASES, type RetrievalCase } from "../dataset/retrievalCases.js";
 import { combinedScore, computeScoreSignals, HYBRID_WEIGHTS } from "../hybridScore.js";
+import { applyIntentRerank, areLinked, buildReferenceGraph } from "../rerank.js";
 import type { AggregateMetrics, CaseResult, FeatureReport } from "../types.js";
 
 /** Mirrors api/src/services/retrieval.ts's own RELATIVE_SCORE_CUTOFF exactly
@@ -24,16 +25,28 @@ export const MAX_CONTEXT_CHARS = 16_000;
 
 export type RankedChunk = { chunk: FixtureChunk; score: number };
 
+/** Mirrors api/src/services/retrieval.ts's own INCOHERENCE_STRICTNESS
+ * exactly — see that file for the full rationale (retrieval-target-closure
+ * architecture work, docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md). */
+const INCOHERENCE_STRICTNESS = 1.15;
+
+function topLevelDirectory(filePath: string): string {
+  const idx = filePath.indexOf("/");
+  return idx === -1 ? "" : filePath.slice(0, idx);
+}
+
 /** Ranks every fixture chunk against a query by deterministic-embedding
  * cosine similarity, then re-ranks/selects by the hybrid combined score
- * (semantic + lexical + identifier + file-path) with the same relative-
- * to-top cutoff production's selectRankedResults() applies — the
+ * (semantic + lexical + identifier + file-path), intent-aware reranking,
+ * and a coherence-aware adaptive cutoff — mirroring
+ * api/src/services/retrieval.ts's own selectRankedResults() exactly (see
+ * that file's own doc comment for the full per-stage rationale). The
  * evaluation package's stand-in for Phase 8's search(), used by every
  * evaluator that needs retrieved evidence. `RankedChunk.score` stays pure
  * semantic cosine similarity, mirroring SearchResult's own preserved
  * `score` field contract. Can return fewer than `k` results when the
- * score falls off a cliff (see RELATIVE_SCORE_CUTOFF) — always keeps at
- * least the top-ranked chunk when any exist. */
+ * score falls off a cliff — always keeps at least the top-ranked chunk
+ * when any exist. */
 export function rankChunks(query: string, chunks: FixtureChunk[] = FIXTURE_CHUNKS, k = TOP_K): RankedChunk[] {
   if (chunks.length === 0) return [];
   const queryVector = deterministicEmbedding(query);
@@ -53,19 +66,40 @@ export function rankChunks(query: string, chunks: FixtureChunk[] = FIXTURE_CHUNK
     // candidate's exact match doesn't unfairly raise the bar for every
     // other candidate. Ranking order still uses the full combined score.
     const cutoffBasis = combined - HYBRID_WEIGHTS.exactIdentifier * signals.exactIdentifierScore;
-    return { chunk, score: semanticScore, combined, cutoffBasis };
+    return {
+      chunkId: chunk.chunkId,
+      symbolName: chunk.symbolName,
+      filePath: chunk.filePath,
+      content,
+      chunk,
+      score: semanticScore,
+      combined,
+      cutoffBasis,
+    };
   });
 
-  withCombined.sort((a, b) => b.combined - a.combined);
+  const reranked = applyIntentRerank(query, withCombined);
+  reranked.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
-  const topCutoffBasis = Math.max(...withCombined.map((c) => c.cutoffBasis));
-  const threshold = topCutoffBasis * RELATIVE_SCORE_CUTOFF;
+  const topAdjustedCutoffBasis = Math.max(...reranked.map((c) => c.adjustedCutoffBasis));
+  const baseThreshold = topAdjustedCutoffBasis * RELATIVE_SCORE_CUTOFF;
+
+  const referenceGraph = buildReferenceGraph(reranked);
+  const top = reranked[0]!;
 
   const selected: RankedChunk[] = [];
-  for (const { chunk, score, combined } of withCombined) {
+  for (const candidate of reranked) {
     if (selected.length >= k) break;
-    if (selected.length > 0 && combined < threshold) break;
-    selected.push({ chunk, score });
+    if (selected.length === 0) {
+      selected.push({ chunk: candidate.chunk, score: candidate.score });
+      continue;
+    }
+    const coherent =
+      topLevelDirectory(candidate.filePath) === topLevelDirectory(top.filePath) ||
+      areLinked(referenceGraph, candidate.chunkId, top.chunkId);
+    const effectiveThreshold = coherent ? baseThreshold : baseThreshold * INCOHERENCE_STRICTNESS;
+    if (candidate.adjustedScore < effectiveThreshold) continue;
+    selected.push({ chunk: candidate.chunk, score: candidate.score });
   }
   return selected;
 }

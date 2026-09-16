@@ -154,6 +154,12 @@ export function filePathMatchScore(queryTokenSet: Set<string>, filePath: string)
   return matched / pathTokens.length;
 }
 
+// Mirrors api/src/lib/hybridScore.ts exactly: a qualifierMismatchCount
+// signal was implemented and measured here too, and removed for the same
+// reason — see that file's own comment and
+// docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md for the full measured
+// comparison.
+
 export type ScoreSignals = {
   semanticScore: number;
   lexicalScore: number;

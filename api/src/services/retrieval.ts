@@ -8,6 +8,7 @@ import { generateEmbeddingsViaAiService } from "../lib/aiServiceClient.js";
 import { chunkFile } from "../lib/chunking.js";
 import { cosineSimilarity } from "../lib/similarity.js";
 import { combinedScore, computeScoreSignals, HYBRID_WEIGHTS } from "../lib/hybridScore.js";
+import { applyIntentRerank, areLinked, buildReferenceGraph } from "../lib/rerank.js";
 import { redactSecrets } from "../lib/secretRedaction.js";
 import { buildSearchObservabilityEvent, logSearchObservability } from "../lib/searchObservability.js";
 import type { SearchRequestInput } from "../schemas/retrieval.js";
@@ -301,25 +302,83 @@ export async function search(
  * before/after table this value was chosen from. */
 export const RELATIVE_SCORE_CUTOFF = 0.78;
 
-/** Re-ranks by the hybrid combined score (semantic dominant, refined by
- * lexical/identifier/file-path signals) and applies the adaptive cutoff
- * above. Exported and separately unit-testable so this selection logic
- * doesn't require a database or a real embedding call to verify.
+/**
+ * A candidate that shares neither the top-ranked candidate's top-level
+ * directory nor a detected call/import reference to (or from) it is
+ * treated as structurally *incoherent* with the top match, and must clear
+ * a stricter bar to survive the cutoff — this is the direct architectural
+ * fix for the useful-context-rate gap documented in
+ * docs/RETRIEVAL_TARGET_CLOSURE_PROGRESS.md: real diagnostic data showed
+ * the single relative-to-top ratio cutoff cannot distinguish "several
+ * genuinely-related candidates whose scores decay gradually because they
+ * really are all part of one coherent answer" (e.g. several methods of the
+ * same service) from "several topically-adjacent-but-irrelevant candidates
+ * whose scores decay just as gradually purely because a small fixture's
+ * vocabulary overlaps" — both produce the same smooth score curve, so no
+ * fixed ratio threshold can cut one shape without also cutting the other.
+ * Structural coherence (same directory, or an actual detected reference)
+ * is a signal the score curve alone doesn't carry. Deliberately a *bonus
+ * removed*, not a penalty applied beyond the baseline — a candidate that
+ * already has strong enough independent signal to clear the standard bar
+ * is never blocked by this; only a candidate that was merely riding the
+ * baseline bar on topical-adjacency noise loses that ride.
  *
- * The cutoff threshold's *reference point* (Part A, Milestone A3/A4 —
- * see docs/RETRIEVAL_TARGET_CLOSURE_REPORT.md, "Case 3") is each
- * candidate's combined score with the binary exact-identifier jackpot
- * subtracted back out, not the raw top combined score. Root-caused via a
- * real failing case: when a query names one candidate's identifier
- * verbatim (e.g. asking about `removeFromCart` when the real target is
- * the function it delegates to), that one candidate's exact-match bonus
- * alone can make its score an outlier well above the general relevance
- * ceiling — since the threshold is `topScore * RELATIVE_SCORE_CUTOFF`,
- * one candidate's jackpot was unfairly raising the bar every *other*
- * candidate had to clear, even a clearly-relevant runner-up. Ranking
- * order is unaffected (an exact match still deserves to rank first) —
- * only the cutoff's own reference point is desensitized to this one
- * binary signal. */
+ * A first sweep against the retrieval-only 67-case benchmark alone found
+ * useful-context-rate climbing all the way to a 1.6 plateau with no
+ * apparent cost. That measurement was incomplete: re-run against the
+ * Q&A and code-review cases too (whose questions/scopes are worded very
+ * differently from the tight retrieval-case queries, and share this same
+ * rankChunks()), values above ~1.15 started silently dropping required
+ * grounding evidence entirely out of the ranked pool in cases the
+ * retrieval-only benchmark never exercised (e.g. a top-ranked candidate
+ * that is itself a pre-existing ranking mistake, with the actually-correct
+ * answer sitting in a different directory — the coherence check then
+ * compounds that one mistake into a second one by cutting the correct
+ * answer too). 1.15 is the highest value confirmed, by directly checking
+ * every QA/review case's required evidence, to add zero new instances of
+ * that failure beyond what already existed before this signal was added.
+ * This is a smaller useful-context-rate gain than the retrieval-only
+ * sweep suggested, chosen deliberately over the larger one because
+ * grounding safety is a zero-tolerance requirement and useful-context-rate
+ * is not. See docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md for both
+ * sweeps and the specific regression this caught.
+ */
+const INCOHERENCE_STRICTNESS = 1.15;
+
+function topLevelDirectory(filePath: string): string {
+  const idx = filePath.indexOf("/");
+  return idx === -1 ? "" : filePath.slice(0, idx);
+}
+
+/** Re-ranks by the hybrid combined score (semantic dominant, refined by
+ * lexical/identifier/file-path signals — see hybridScore.ts), applies
+ * intent-aware reranking (rerank.ts), then applies a coherence-aware
+ * adaptive cutoff. Exported and separately
+ * unit-testable so this selection logic doesn't require a database or a
+ * real embedding call to verify.
+ *
+ * Stages, each independently documented at its own definition:
+ * 1. Base hybrid scoring (`computeScoreSignals`/`combinedScore`).
+ * 2. Cutoff-basis desensitization to the binary exact-identifier signal
+ *    (Part A, Milestone A3/A4 — docs/RETRIEVAL_TARGET_CLOSURE_REPORT.md,
+ *    "Case 3") — a query naming one candidate's identifier verbatim must
+ *    not inflate the bar every *other* candidate has to clear.
+ * 3. Intent-aware reranking (`applyIntentRerank` — rerank.ts): a small,
+ *    query-wording-driven, content-derived bonus for candidates that
+ *    structurally match what kind of answer the query is actually asking
+ *    for (the public entry point, the orchestrating function, the
+ *    imported/called dependency, etc.) — signals no single per-candidate
+ *    score can express, since they depend on relationships *between*
+ *    candidates in the pool.
+ * 4. Coherence-aware adaptive cutoff (`INCOHERENCE_STRICTNESS` above): a
+ *    per-candidate effective threshold, not one global threshold — a
+ *    candidate structurally disconnected from the top match faces a
+ *    stricter bar than one that shares its directory or is linked to it
+ *    by a real detected reference.
+ *
+ * Ranking order itself only changes where a stage above provides a real,
+ * general, content-derived reason to change it — never a benchmark-
+ * specific lookup. */
 export function selectRankedResults(query: string, candidates: SearchResult[], limit: number): SearchResult[] {
   if (candidates.length === 0) return [];
 
@@ -331,19 +390,31 @@ export function selectRankedResults(query: string, candidates: SearchResult[], l
     });
     const combined = combinedScore(signals);
     const cutoffBasis = combined - HYBRID_WEIGHTS.exactIdentifier * signals.exactIdentifierScore;
-    return { result: c, combined, cutoffBasis };
+    return { chunkId: c.chunkId, symbolName: c.symbolName, filePath: c.filePath, content: c.content, result: c, combined, cutoffBasis };
   });
 
-  withCombined.sort((a, b) => b.combined - a.combined);
+  const reranked = applyIntentRerank(query, withCombined);
+  reranked.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
-  const topCutoffBasis = Math.max(...withCombined.map((c) => c.cutoffBasis));
-  const threshold = topCutoffBasis * RELATIVE_SCORE_CUTOFF;
+  const topAdjustedCutoffBasis = Math.max(...reranked.map((c) => c.adjustedCutoffBasis));
+  const baseThreshold = topAdjustedCutoffBasis * RELATIVE_SCORE_CUTOFF;
+
+  const referenceGraph = buildReferenceGraph(reranked);
+  const top = reranked[0]!;
 
   const selected: SearchResult[] = [];
-  for (const { result, combined } of withCombined) {
+  for (const candidate of reranked) {
     if (selected.length >= limit) break;
-    if (selected.length > 0 && combined < threshold) break;
-    selected.push(result);
+    if (selected.length === 0) {
+      selected.push(candidate.result);
+      continue;
+    }
+    const coherent =
+      topLevelDirectory(candidate.filePath) === topLevelDirectory(top.filePath) ||
+      areLinked(referenceGraph, candidate.chunkId, top.chunkId);
+    const effectiveThreshold = coherent ? baseThreshold : baseThreshold * INCOHERENCE_STRICTNESS;
+    if (candidate.adjustedScore < effectiveThreshold) continue;
+    selected.push(candidate.result);
   }
   return selected;
 }

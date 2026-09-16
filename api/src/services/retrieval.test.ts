@@ -84,3 +84,51 @@ describe("selectRankedResults", () => {
     expect(RELATIVE_SCORE_CUTOFF).toBeLessThanOrEqual(1);
   });
 });
+
+describe("selectRankedResults — coherence-aware cutoff (retrieval-target-closure architecture work)", () => {
+  // A query whose tokens deliberately appear in none of these candidates'
+  // content/symbol/path, so lexical/identifier/file-path scores are all 0
+  // and each candidate's combined score reduces to its own semantic
+  // `score` alone — making the arithmetic below fully predictable rather
+  // than depending on incidental lexical overlap.
+  const NEUTRAL_QUERY = "xyzzy plugh wibble";
+
+  it("keeps a same-top-level-directory candidate whose score is between the coherent and incoherent thresholds", () => {
+    // threshold (coherent) = 0.9 * 0.78 = 0.702; a same-directory candidate
+    // scoring 0.75 clears that, so it must be kept.
+    const top = result({ chunkId: "top", score: 0.9, symbolName: "processOrder", content: "processOrder body", filePath: "services/orderProcessor.ts" });
+    const sameDir = result({ chunkId: "sameDir", score: 0.75, symbolName: "calculateOrderTotal", content: "different body", filePath: "services/otherFile.ts" });
+    const selected = selectRankedResults(NEUTRAL_QUERY, [top, sameDir], 10);
+    expect(selected.map((r) => r.chunkId)).toContain("sameDir");
+  });
+
+  it(
+    "excludes a different-directory candidate with no detected reference link once its score falls between " +
+      "the coherent and incoherent thresholds, even though it would have cleared the plain single-tier cutoff",
+    () => {
+      // Same 0.75 score as the kept "sameDir" candidate above — the only
+      // difference is the directory and the absence of a reference link —
+      // demonstrating the coherence check, not just a weaker score. This is
+      // the exact shape of the qa-password-check-style regression this
+      // cutoff must not reintroduce above its currently-verified-safe
+      // strictness — see INCOHERENCE_STRICTNESS's own doc comment.
+      const top = result({ chunkId: "top", score: 0.9, symbolName: "processOrder", content: "processOrder body", filePath: "services/orderProcessor.ts" });
+      const differentDir = result({ chunkId: "differentDir", score: 0.75, symbolName: "unrelatedHelper", content: "no reference to processOrder at all", filePath: "utils/somethingElse.ts" });
+      const selected = selectRankedResults(NEUTRAL_QUERY, [top, differentDir], 10);
+      expect(selected.map((r) => r.chunkId)).not.toContain("differentDir");
+    },
+  );
+
+  it("keeps a different-directory candidate that has a detected call/import reference to the top match, at the same score the undetected-reference test excludes", () => {
+    const top = result({
+      chunkId: "top",
+      score: 0.9,
+      symbolName: "processOrder",
+      filePath: "services/orderProcessor.ts",
+      content: "async function processOrder() { findOrdersByUserId(); }",
+    });
+    const referencedElsewhere = result({ chunkId: "referenced", score: 0.75, symbolName: "findOrdersByUserId", content: "function findOrdersByUserId() {}", filePath: "db/orderRepository.ts" });
+    const selected = selectRankedResults(NEUTRAL_QUERY, [top, referencedElsewhere], 10);
+    expect(selected.map((r) => r.chunkId)).toContain("referenced");
+  });
+});

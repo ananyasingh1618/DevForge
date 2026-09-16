@@ -285,3 +285,77 @@ Golden-dataset pass rate: 108/109 (the one remaining failure,
 Milestone A1 as a genuine retrieval miss with zero lexical/identifier signal — not re-litigated
 here). All 13 regression gates pass. Full `api` suite: 323/323. Full `evaluation` suite: 135/135.
 Part A is complete — proceeding to Phase 15.
+
+## Second pass — architectural improvement work (post-Phase-16)
+
+A later task explicitly directed continuing this work rather than accepting Milestone A7's
+"architectural ceiling" framing for Recall@3, Direct-hit rate, and Useful-context rate, with
+substantial new architecture attempted before any such conclusion is accepted again. Full detail,
+including every per-case diagnostic, the two real bugs found and fixed, and the two approaches
+implemented and discarded after real measurement, is in
+`docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` — this entry summarizes.
+
+**Real diagnostic work first** (not assumptions): re-ran the live evaluator and captured a full
+per-candidate signal breakdown (semantic/lexical/identifier/file-path, rank, grade) for every case
+touching the three target metrics, using a scratch diagnostic script mirroring the real production
+scoring functions exactly. Root-caused the direct-hit-rate shortfall into concrete classes: caller-
+outranks-callee for "dependency"-style queries, entry-point-vs-implementation confusion, sibling-
+function semantic noise, and negation the mock embedding can't parse. Root-caused useful-context-
+rate's shortfall into: structurally-disconnected candidates riding the single global cutoff's own
+gradual score decay.
+
+**Architecture added**: `api/src/lib/queryIntent.ts` (rule-based intent classification, 8 intents,
+wording-pattern-matched, never benchmark-specific), `api/src/lib/referenceGraph.ts` (lightweight
+call/import detection over a candidate pool's own content, no new parser or schema), `api/src/lib/
+rerank.ts` (`applyIntentRerank()` — a distinct reranking stage applying small, intent-gated,
+reference-graph-driven bonuses), and a coherence-aware adaptive cutoff in
+`api/src/services/retrieval.ts`'s `selectRankedResults()` (a per-candidate effective threshold,
+stricter for a candidate sharing neither the top match's directory nor a detected reference to it).
+All four mirrored identically in `evaluation/`, per the established cross-package convention.
+
+**Two real bugs found and fixed during this work, not merely described**:
+1. A first version of the qualifier-mismatch signal (targeting sibling-function disambiguation)
+   penalized *every* candidate with any unmatched symbol token — not just genuine siblings — while
+   giving symbol-less chunks a free pass, causing a severe measured regression (recall@5 hit rate
+   98.4%→92.2%, false-confidence-rate 0%→66.7%). Found via direct full-benchmark measurement, not
+   assumed safe. Re-designed with a 50%-match gate; still measured net-negative in every tested
+   combination even after the fix. Removed entirely rather than shipped at zero weight.
+2. `applyIntentRerank()`'s intent bonus was initially added to the cutoff-threshold's own reference
+   point (`adjustedCutoffBasis`), not just to ranking (`adjustedScore`) — this inflated the bar every
+   *other* candidate had to clear whenever the bonus landed on the already-top-ranked candidate,
+   cutting genuinely coherent runner-ups. Fixed by decoupling: bonuses affect ranking/selection, never
+   the threshold's own reference point. A dedicated regression test
+   (`api/src/lib/rerank.test.ts`) protects this specifically.
+
+**A real safety bug found and fixed before finalizing** (see the final report's §5 for the full
+account): an initial coherence-cutoff strictness value, chosen from a sweep against the retrieval-
+only benchmark alone, measured very well there (useful-context-rate 79.1%, recall@3 85.7%, both
+passing) but broke real Q&A grounding when checked against `QA_CASES`/`REVIEW_CASES` too — a required
+evidence chunk was excluded from the ranked pool entirely for a real, previously-passing case,
+confirmed by the real `qaEvaluator.test.ts`/`integration.test.ts` regression-gate tests actually
+failing. Re-swept and re-verified directly against every QA/review case's required evidence
+(not just the retrieval-only benchmark) at each candidate strictness value, and set to the highest
+value confirmed safe — prioritizing the task's own zero-tolerance grounding requirement over a
+more favorable-looking but unsafe metric configuration.
+
+**Two approaches implemented, measured, and explicitly discarded** (reported, not omitted, per the
+task's own instruction): the qualifier-mismatch penalty (above) and a "step-specificity" rule
+(boosting a referenced candidate when its own identifier match is at least as strong as its
+referencer's) — both measured net-negative on the full benchmark and not adopted.
+
+**Final measured result** (live `pnpm eval` run, `evaluation/reports/latest.json`): Direct-hit rate
+75.0%→78.1%, Useful-context rate 53.7%→63.1%, MRR 85.5%→87.1%, Precision@3 76.9%→79.6%,
+Precision@5 74.0%→78.8%, nDCG@5 88.2%→88.7% — all real, safety-verified gains, with every other
+previously-passing target (Recall@5, Precision@1, duplicate/empty/false-confidence rates, all
+grounding invariants) still passing and zero Q&A/review grounding regressions. Recall@3 unchanged
+at 84.9% (0.1 point short). Neither Direct-hit rate nor Useful-context rate reaches its ≥90% target.
+See `docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` for the full per-case data, the exact remaining
+root cause for each unmet target, and what further architectural work would be needed.
+
+Full `api` suite: 458/458 (+34 new tests). Full `evaluation` suite: 168/168 (+33 new tests).
+Full `frontend` suite: 121/121 (unaffected). Full integration suite: 12/12, run live against a
+freshly rebuilt Docker stack (`docker compose down -v && up -d --build`, all 12 migrations verified).
+Phase 15 job behavior and Phase 16 cross-user isolation both reconfirmed live over real HTTP against
+that same rebuilt stack. VoxMind confirmed untouched throughout. Phase 17 not started.
+
+Commit: `<pending>`
