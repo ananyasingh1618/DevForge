@@ -1,0 +1,295 @@
+name: CI
+
+# Phase 17, Milestone 17.7 (docs/CI_CD.md). Every job here is a real,
+# runnable check against this repository's actual scripts and services —
+# none of it is aspirational. See docs/CI_CD.md for what each job maps to
+# and how to reproduce it locally.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "10.16.1"
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Node workspace: install, build, typecheck, lint, unit tests (api,
+  # frontend, evaluation, integration-tests), against a real Postgres
+  # service container with migrations applied — not mocked.
+  # ---------------------------------------------------------------------
+  node:
+    name: Install, build, typecheck, lint, unit tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: devforge
+          POSTGRES_PASSWORD: devforge
+          POSTGRES_DB: devforge
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U devforge -d devforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://devforge:devforge@localhost:5433/devforge_test
+      SESSION_SECRET: ci-test-session-secret-not-for-production-000000000000
+      FRONTEND_ORIGIN: http://localhost:5173
+      AI_SERVICE_URL: http://localhost:8001
+      GITHUB_TOKEN_ENCRYPTION_KEY: 8Zz5+Q9vXk3mYtNc6bR1dWjLpFhGqSxT2uEoCaVn0yI=
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create devforge_test database and apply migrations
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: devforge
+          PGPASSWORD: devforge
+        run: bash scripts/setup-test-db.sh
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      - name: Unit tests (api, frontend, evaluation)
+        run: pnpm test
+
+      - name: Integration tests
+        run: pnpm test:integration
+
+      - name: env.ts production-guardrail regression tests
+        run: pnpm --filter @devforge/api exec vitest run src/env.test.ts
+
+  # ---------------------------------------------------------------------
+  # Python ai-service: install, lint-equivalent (pytest itself surfaces
+  # import/syntax errors), unit tests.
+  # ---------------------------------------------------------------------
+  ai-service:
+    name: ai-service install and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ai-service/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Unit tests
+        run: pytest -q
+
+  # ---------------------------------------------------------------------
+  # Retrieval and grounding regression gate — the same `pnpm eval` used
+  # throughout Phase 16's optimization work, run here as a hard CI gate so
+  # a future change cannot silently regress retrieval quality. Exits
+  # non-zero on any target miss (evaluation/src/runEval.ts).
+  # ---------------------------------------------------------------------
+  retrieval-regression:
+    name: Retrieval and grounding regression (pnpm eval)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: devforge
+          POSTGRES_PASSWORD: devforge
+          POSTGRES_DB: devforge
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U devforge -d devforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://devforge:devforge@localhost:5433/devforge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm --filter @devforge/api exec prisma migrate deploy
+
+      - name: Run retrieval/grounding evaluation gate
+        run: pnpm eval
+
+  # ---------------------------------------------------------------------
+  # Docker: clean build from a fresh context, full-stack health, and a
+  # production-like smoke test — the same checks performed manually
+  # against the real stack during Phase 17 development, now automated.
+  # ---------------------------------------------------------------------
+  docker:
+    name: Docker build, health, and smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build all images
+        run: docker compose build
+
+      - name: Start stack
+        run: docker compose up -d
+
+      - name: Wait for all services to report healthy
+        run: |
+          for i in $(seq 1 60); do
+            statuses=$(docker compose ps --format '{{.Health}}')
+            echo "$statuses"
+            if ! echo "$statuses" | grep -qv "healthy"; then
+              echo "All services healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Services did not become healthy in time." >&2
+          docker compose logs
+          exit 1
+
+      - name: Smoke test — liveness, readiness, metrics
+        run: |
+          set -e
+          curl -sf http://localhost:4000/health | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -sf http://localhost:4000/ready | tee /dev/stderr | grep -q '"status":"ready"'
+          curl -sf http://localhost:4000/metrics | grep -q devforge_http_requests_total
+          curl -sf http://localhost:8001/health | tee /dev/stderr | grep -q '"status"'
+          curl -sf http://localhost:4173 | grep -qi "<html"
+
+      - name: Smoke test — register, login, session-protected route
+        run: |
+          set -e
+          COOKIE_JAR=$(mktemp)
+          code=$(curl -s -c "$COOKIE_JAR" -X POST http://localhost:4000/auth/register \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"ci-smoke@example.com","password":"ci-smoke-password-123","name":"CI Smoke"}' \
+            -o /dev/null -w '%{http_code}')
+          [ "$code" = "201" ]
+          curl -sf -b "$COOKIE_JAR" http://localhost:4000/auth/me | grep -q "ci-smoke@example.com"
+          # Cross-user isolation smoke check: an unauthenticated request to a
+          # user-scoped route must be rejected, never silently served.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4000/projects)
+          [ "$code" = "401" ]
+
+      - name: Smoke test — non-root container users
+        run: |
+          set -e
+          [ "$(docker compose exec -T api whoami)" = "node" ]
+          [ "$(docker compose exec -T frontend whoami)" = "node" ]
+          [ "$(docker compose exec -T ai-service whoami)" = "aiservice" ]
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  # ---------------------------------------------------------------------
+  # Security regression: the subset of api tests specifically covering
+  # authentication, authorization, cross-user isolation, and input
+  # validation, run as a named, individually-reportable gate (in addition
+  # to being included in the full suite in the `node` job above).
+  # ---------------------------------------------------------------------
+  security-regression:
+    name: Security and isolation regression
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: devforge
+          POSTGRES_PASSWORD: devforge
+          POSTGRES_DB: devforge
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U devforge -d devforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://devforge:devforge@localhost:5433/devforge_test
+      SESSION_SECRET: ci-test-session-secret-not-for-production-000000000000
+      FRONTEND_ORIGIN: http://localhost:5173
+      AI_SERVICE_URL: http://localhost:8001
+      GITHUB_TOKEN_ENCRYPTION_KEY: 8Zz5+Q9vXk3mYtNc6bR1dWjLpFhGqSxT2uEoCaVn0yI=
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create devforge_test database and apply migrations
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: devforge
+          PGPASSWORD: devforge
+        run: bash scripts/setup-test-db.sh
+
+      - name: Run auth/authorization/isolation/validation test files
+        working-directory: api
+        run: |
+          files=$(grep -rlE "cross-user|isolation|another user|unauthorized|unauthenticated" src --include="*.test.ts" -i | sort -u)
+          echo "$files"
+          echo "$files" | xargs npx vitest run
