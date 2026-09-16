@@ -3,12 +3,13 @@
 `ArchitectureProvider` is the seam a test double sits behind (see
 ai-service/tests/), structured the same way as PrdProvider — a separate ABC,
 not a shared generic one, since the input/output shapes genuinely differ (a
-structured PrdContent in, a structured ArchitectureContent out). What *is*
-shared, concretely: reading ANTHROPIC_API_KEY and raising
-ProviderNotConfiguredError (app/lib/provider_config.py), and the same
-typed-exception-to-ProviderRequestError chain. Only one real implementation
-exists: AnthropicArchitectureProvider, using Claude (claude-opus-5) via
-structured outputs. No fallback fabricates a result.
+structured PrdContent in, a structured ArchitectureContent out). Two real
+implementations exist: GeminiArchitectureProvider and
+AnthropicArchitectureProvider — provider selection
+(app/lib/provider_config.resolve_llm_provider) and the actual
+structured-output call/error-mapping (app/lib/structured_llm) are shared
+across every agent; only the system prompt and the input-formatting are
+specific to this one. No fallback fabricates a result.
 """
 
 from __future__ import annotations
@@ -16,12 +17,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import anthropic
+from google import genai
 
-from app.errors import AIResponseInvalidError, ProviderRequestError
-from app.lib.provider_config import get_anthropic_api_key
+from app.lib.provider_config import resolve_llm_provider
+from app.lib.structured_llm import call_anthropic_structured, call_gemini_structured
 from app.schemas import ArchitectureContent, PrdContent
 
-MODEL = "claude-opus-5"
+ANTHROPIC_MODEL = "claude-opus-5"
+GEMINI_MODEL = "gemini-3.8-flash"
+MAX_OUTPUT_TOKENS = 8000
 
 SYSTEM_PROMPT = """You are the architecture-generation agent for DevForge, an AI software \
 engineering workspace. Given a project's structured PRD (already synthesized: overview, \
@@ -54,62 +58,58 @@ if the architecture synthesis genuinely surfaces them.
 PRD's stated requirements, constraints, and assumptions."""
 
 
+def _user_content(prd: PrdContent) -> str:
+    prd_json = prd.model_dump_json(indent=2)
+    return "Here is the project's structured PRD (JSON). Generate a technical architecture from it:\n\n" + prd_json
+
+
 class ArchitectureProvider(ABC):
     @abstractmethod
     def generate(self, prd: PrdContent) -> ArchitectureContent: ...
 
 
 class AnthropicArchitectureProvider(ArchitectureProvider):
-    def __init__(self, api_key: str, model: str = MODEL) -> None:
+    def __init__(self, api_key: str, model: str = ANTHROPIC_MODEL) -> None:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
     def generate(self, prd: PrdContent) -> ArchitectureContent:
-        prd_json = prd.model_dump_json(indent=2)
-        try:
-            response = self._client.messages.parse(
-                model=self._model,
-                max_tokens=8000,
-                system=SYSTEM_PROMPT,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": (
-                            "Here is the project's structured PRD (JSON). "
-                            "Generate a technical architecture from it:\n\n" + prd_json
-                        ),
-                    }
-                ],
-                output_format=ArchitectureContent,
-            )
-        except anthropic.BadRequestError as e:
-            raise ProviderRequestError(f"The AI provider rejected the request: {e.message}") from e
-        except anthropic.AuthenticationError as e:
-            raise ProviderRequestError(
-                f"Authentication with the AI provider failed: {e.message}"
-            ) from e
-        except anthropic.PermissionDeniedError as e:
-            raise ProviderRequestError(
-                f"The AI provider denied access to this model: {e.message}"
-            ) from e
-        except anthropic.NotFoundError as e:
-            raise ProviderRequestError(f"The AI provider model was not found: {e.message}") from e
-        except anthropic.RateLimitError as e:
-            raise ProviderRequestError(f"The AI provider rate-limited this request: {e.message}") from e
-        except anthropic.APIStatusError as e:
-            raise ProviderRequestError(f"The AI provider returned an error: {e.message}") from e
-        except anthropic.APIConnectionError as e:
-            raise ProviderRequestError(f"Could not reach the AI provider: {e}") from e
-
-        if response.parsed_output is None:
-            raise AIResponseInvalidError(
+        return call_anthropic_structured(
+            client=self._client,
+            model=self._model,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=_user_content(prd),
+            response_model=ArchitectureContent,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            invalid_response_detail=(
                 "the model's output could not be parsed as valid JSON matching the "
                 "expected architecture schema"
-            )
+            ),
+        )
 
-        return response.parsed_output
+
+class GeminiArchitectureProvider(ArchitectureProvider):
+    def __init__(self, api_key: str, model: str = GEMINI_MODEL) -> None:
+        self._client = genai.Client(api_key=api_key)
+        self._model = model
+
+    def generate(self, prd: PrdContent) -> ArchitectureContent:
+        return call_gemini_structured(
+            client=self._client,
+            model=self._model,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=_user_content(prd),
+            response_model=ArchitectureContent,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            invalid_response_detail=(
+                "the model's output could not be parsed as valid JSON matching the "
+                "expected architecture schema"
+            ),
+        )
 
 
 def get_provider() -> ArchitectureProvider:
-    api_key = get_anthropic_api_key("architecture generation")
+    provider_name, api_key = resolve_llm_provider("architecture generation")
+    if provider_name == "gemini":
+        return GeminiArchitectureProvider(api_key=api_key)
     return AnthropicArchitectureProvider(api_key=api_key)

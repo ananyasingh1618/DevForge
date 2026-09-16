@@ -3,12 +3,12 @@
 `TasksProvider` is the seam a test double sits behind (see ai-service/tests/),
 structured the same way as EpicsProvider — a separate ABC, not a shared
 generic one, since the input/output shapes genuinely differ (a structured
-EpicContent in, a structured TaskContent out). What *is* shared, concretely:
-reading ANTHROPIC_API_KEY and raising ProviderNotConfiguredError
-(app/lib/provider_config.py), and the same typed-exception-to-
-ProviderRequestError chain. Only one real implementation exists:
-AnthropicTasksProvider, using Claude (claude-opus-5) via structured outputs.
-No fallback fabricates a result.
+EpicContent in, a structured TaskContent out). Two real implementations
+exist: GeminiTasksProvider and AnthropicTasksProvider — provider selection
+(app/lib/provider_config.resolve_llm_provider) and the actual
+structured-output call/error-mapping (app/lib/structured_llm) are shared
+across every agent; only the system prompt and the input-formatting are
+specific to this one. No fallback fabricates a result.
 """
 
 from __future__ import annotations
@@ -16,12 +16,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import anthropic
+from google import genai
 
-from app.errors import AIResponseInvalidError, ProviderRequestError
-from app.lib.provider_config import get_anthropic_api_key
+from app.lib.provider_config import resolve_llm_provider
+from app.lib.structured_llm import call_anthropic_structured, call_gemini_structured
 from app.schemas import EpicContent, TaskContent
 
-MODEL = "claude-opus-5"
+ANTHROPIC_MODEL = "claude-opus-5"
+GEMINI_MODEL = "gemini-3.8-flash"
+MAX_OUTPUT_TOKENS = 8000
 
 SYSTEM_PROMPT = """You are the task-generation agent for DevForge, an AI software engineering \
 workspace. Given a project's structured epics (already broken down: id, title, description, \
@@ -50,62 +53,58 @@ sequence across the *entire* response (not per-epic), respecting the declared de
 describes."""
 
 
+def _user_content(epics: EpicContent) -> str:
+    epics_json = epics.model_dump_json(indent=2)
+    return "Here are the project's structured epics (JSON). Generate tasks from them:\n\n" + epics_json
+
+
 class TasksProvider(ABC):
     @abstractmethod
     def generate(self, epics: EpicContent) -> TaskContent: ...
 
 
 class AnthropicTasksProvider(TasksProvider):
-    def __init__(self, api_key: str, model: str = MODEL) -> None:
+    def __init__(self, api_key: str, model: str = ANTHROPIC_MODEL) -> None:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
     def generate(self, epics: EpicContent) -> TaskContent:
-        epics_json = epics.model_dump_json(indent=2)
-        try:
-            response = self._client.messages.parse(
-                model=self._model,
-                max_tokens=8000,
-                system=SYSTEM_PROMPT,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": (
-                            "Here are the project's structured epics (JSON). "
-                            "Generate tasks from them:\n\n" + epics_json
-                        ),
-                    }
-                ],
-                output_format=TaskContent,
-            )
-        except anthropic.BadRequestError as e:
-            raise ProviderRequestError(f"The AI provider rejected the request: {e.message}") from e
-        except anthropic.AuthenticationError as e:
-            raise ProviderRequestError(
-                f"Authentication with the AI provider failed: {e.message}"
-            ) from e
-        except anthropic.PermissionDeniedError as e:
-            raise ProviderRequestError(
-                f"The AI provider denied access to this model: {e.message}"
-            ) from e
-        except anthropic.NotFoundError as e:
-            raise ProviderRequestError(f"The AI provider model was not found: {e.message}") from e
-        except anthropic.RateLimitError as e:
-            raise ProviderRequestError(f"The AI provider rate-limited this request: {e.message}") from e
-        except anthropic.APIStatusError as e:
-            raise ProviderRequestError(f"The AI provider returned an error: {e.message}") from e
-        except anthropic.APIConnectionError as e:
-            raise ProviderRequestError(f"Could not reach the AI provider: {e}") from e
-
-        if response.parsed_output is None:
-            raise AIResponseInvalidError(
+        return call_anthropic_structured(
+            client=self._client,
+            model=self._model,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=_user_content(epics),
+            response_model=TaskContent,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            invalid_response_detail=(
                 "the model's output could not be parsed as valid JSON matching the "
                 "expected task schema"
-            )
+            ),
+        )
 
-        return response.parsed_output
+
+class GeminiTasksProvider(TasksProvider):
+    def __init__(self, api_key: str, model: str = GEMINI_MODEL) -> None:
+        self._client = genai.Client(api_key=api_key)
+        self._model = model
+
+    def generate(self, epics: EpicContent) -> TaskContent:
+        return call_gemini_structured(
+            client=self._client,
+            model=self._model,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=_user_content(epics),
+            response_model=TaskContent,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            invalid_response_detail=(
+                "the model's output could not be parsed as valid JSON matching the "
+                "expected task schema"
+            ),
+        )
 
 
 def get_provider() -> TasksProvider:
-    api_key = get_anthropic_api_key("task generation")
+    provider_name, api_key = resolve_llm_provider("task generation")
+    if provider_name == "gemini":
+        return GeminiTasksProvider(api_key=api_key)
     return AnthropicTasksProvider(api_key=api_key)

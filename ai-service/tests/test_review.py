@@ -418,6 +418,25 @@ class TestAnthropicReviewProviderCitationFiltering:
         assert "tool_choice" not in fake_client.messages.last_kwargs
 
 
+class TestGetProviderSelectsCorrectImplementation:
+    def test_selects_gemini_when_gemini_key_is_set(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key-not-real")
+        provider = provider_module.get_provider()
+        assert isinstance(provider, provider_module.GeminiReviewProvider)
+
+    def test_selects_anthropic_when_only_anthropic_key_is_set(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-anthropic-key-not-real")
+        provider = provider_module.get_provider()
+        assert isinstance(provider, provider_module.AnthropicReviewProvider)
+
+    def test_prefers_gemini_when_both_keys_are_set(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key-not-real")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-anthropic-key-not-real")
+        provider = provider_module.get_provider()
+        assert isinstance(provider, provider_module.GeminiReviewProvider)
+
+
 @pytest.fixture(autouse=True)
 def _no_leaked_env(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)

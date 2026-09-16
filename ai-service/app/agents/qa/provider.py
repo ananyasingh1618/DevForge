@@ -1,14 +1,16 @@
 """Provider abstraction for codebase Q&A.
 
 `QaProvider` is the seam a test double sits behind (see ai-service/tests/),
-mirroring every other agent's provider.py exactly. Only one real
-implementation exists: AnthropicQaProvider, using Claude (claude-opus-5) via
-structured outputs (Pydantic `output_format`) — the same mechanism every
-other agent already uses, applied here to a narrow answer shape that cannot
-carry a fabricated citation (see QaAnswerContent's own docstring-equivalent
-field descriptions in schemas.py). There is no fallback that fabricates an
-answer — every failure path (no key configured, provider error, invalid
-output) raises a typed error instead.
+mirroring every other agent's provider.py. Two real implementations exist:
+GeminiQaProvider and AnthropicQaProvider — both go through the same narrow
+QaAnswerContent schema, which cannot carry a fabricated citation (see
+QaAnswerContent's own docstring-equivalent field descriptions in
+app/agents/qa/schemas.py). Provider selection
+(app/lib/provider_config.resolve_llm_provider) and the actual
+structured-output call/error-mapping (app/lib/structured_llm) are shared
+across every agent. There is no fallback that fabricates an answer — every
+failure path (no key configured, provider error, invalid output) raises a
+typed error instead.
 """
 
 from __future__ import annotations
@@ -16,12 +18,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import anthropic
+from google import genai
 
-from app.errors import AIResponseInvalidError, ProviderRequestError
-from app.lib.provider_config import get_anthropic_api_key
+from app.lib.provider_config import resolve_llm_provider
+from app.lib.structured_llm import call_anthropic_structured, call_gemini_structured
 from app.agents.qa.schemas import QaAnswerContent, QaSourceInput
 
-MODEL = "claude-opus-5"
+ANTHROPIC_MODEL = "claude-opus-5"
+GEMINI_MODEL = "gemini-3.8-flash"
 MAX_ANSWER_TOKENS = 2000
 
 SYSTEM_PROMPT = """You are the codebase Q&A agent for DevForge, an AI software engineering \
@@ -71,7 +75,7 @@ class QaProvider(ABC):
 
 
 def format_context(repository: str, branch: str, commit: str, sources: list[QaSourceInput]) -> str:
-    """Builds the deterministic context block sent to Claude — a pure
+    """Builds the deterministic context block sent to the model — a pure
     function, directly unit-tested (see tests/test_qa.py), matching how
     Phase 7's tree-sitter symbol extraction and Phase 8's embedding
     provider both got their own direct, non-router-level tests."""
@@ -87,8 +91,20 @@ def format_context(repository: str, branch: str, commit: str, sources: list[QaSo
     return "\n".join(lines)
 
 
+def _drop_invalid_citations(content: QaAnswerContent, sources: list[QaSourceInput]) -> QaAnswerContent:
+    # Defense in depth: even though the model can only select a source
+    # number, never emit a path/line directly, a number outside the real
+    # 1..N range it was given is dropped here too — Node independently
+    # re-validates this against its own source list before building the
+    # final response, but there is no reason for this layer to pass through
+    # an already-detectable out-of-range value either.
+    valid_numbers = {source.source_number for source in sources}
+    content.cited_source_numbers = [n for n in content.cited_source_numbers if n in valid_numbers]
+    return content
+
+
 class AnthropicQaProvider(QaProvider):
-    def __init__(self, api_key: str, model: str = MODEL) -> None:
+    def __init__(self, api_key: str, model: str = ANTHROPIC_MODEL) -> None:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
@@ -101,55 +117,52 @@ class AnthropicQaProvider(QaProvider):
         sources: list[QaSourceInput],
     ) -> QaAnswerContent:
         context = format_context(repository, branch, commit, sources)
-        user_message = f"{context}\nQuestion: {question}"
-
-        try:
-            response = self._client.messages.parse(
-                model=self._model,
-                max_tokens=MAX_ANSWER_TOKENS,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_message}],
-                output_format=QaAnswerContent,
-            )
-        except anthropic.BadRequestError as e:
-            raise ProviderRequestError(f"The AI provider rejected the request: {e.message}") from e
-        except anthropic.AuthenticationError as e:
-            raise ProviderRequestError(
-                f"Authentication with the AI provider failed: {e.message}"
-            ) from e
-        except anthropic.PermissionDeniedError as e:
-            raise ProviderRequestError(
-                f"The AI provider denied access to this model: {e.message}"
-            ) from e
-        except anthropic.NotFoundError as e:
-            raise ProviderRequestError(f"The AI provider model was not found: {e.message}") from e
-        except anthropic.RateLimitError as e:
-            raise ProviderRequestError(f"The AI provider rate-limited this request: {e.message}") from e
-        except anthropic.APIStatusError as e:
-            raise ProviderRequestError(f"The AI provider returned an error: {e.message}") from e
-        except anthropic.APIConnectionError as e:
-            raise ProviderRequestError(f"Could not reach the AI provider: {e}") from e
-
-        if response.parsed_output is None:
-            raise AIResponseInvalidError(
+        content = call_anthropic_structured(
+            client=self._client,
+            model=self._model,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=f"{context}\nQuestion: {question}",
+            response_model=QaAnswerContent,
+            max_tokens=MAX_ANSWER_TOKENS,
+            invalid_response_detail=(
                 "the model's output could not be parsed as valid JSON matching the "
                 "expected Q&A answer schema"
-            )
+            ),
+        )
+        return _drop_invalid_citations(content, sources)
 
-        content = response.parsed_output
-        # Defense in depth: even though the model can only select a source
-        # number, never emit a path/line directly, a number outside the
-        # real 1..N range it was given is dropped here too — Node
-        # independently re-validates this against its own source list
-        # before building the final response, but there is no reason for
-        # this layer to pass through an already-detectable out-of-range
-        # value either.
-        valid_numbers = {source.source_number for source in sources}
-        content.cited_source_numbers = [n for n in content.cited_source_numbers if n in valid_numbers]
 
-        return content
+class GeminiQaProvider(QaProvider):
+    def __init__(self, api_key: str, model: str = GEMINI_MODEL) -> None:
+        self._client = genai.Client(api_key=api_key)
+        self._model = model
+
+    def answer(
+        self,
+        question: str,
+        repository: str,
+        branch: str,
+        commit: str,
+        sources: list[QaSourceInput],
+    ) -> QaAnswerContent:
+        context = format_context(repository, branch, commit, sources)
+        content = call_gemini_structured(
+            client=self._client,
+            model=self._model,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=f"{context}\nQuestion: {question}",
+            response_model=QaAnswerContent,
+            max_tokens=MAX_ANSWER_TOKENS,
+            invalid_response_detail=(
+                "the model's output could not be parsed as valid JSON matching the "
+                "expected Q&A answer schema"
+            ),
+        )
+        return _drop_invalid_citations(content, sources)
 
 
 def get_provider() -> QaProvider:
-    api_key = get_anthropic_api_key("codebase Q&A")
+    provider_name, api_key = resolve_llm_provider("codebase Q&A")
+    if provider_name == "gemini":
+        return GeminiQaProvider(api_key=api_key)
     return AnthropicQaProvider(api_key=api_key)

@@ -147,6 +147,25 @@ def test_generate_surfaces_provider_request_error_as_502(monkeypatch):
     assert res.json()["error"]["code"] == "AI_PROVIDER_ERROR"
 
 
+class TestGetProviderSelectsCorrectImplementation:
+    def test_selects_gemini_when_gemini_key_is_set(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key-not-real")
+        provider = architecture_provider_module.get_provider()
+        assert isinstance(provider, architecture_provider_module.GeminiArchitectureProvider)
+
+    def test_selects_anthropic_when_only_anthropic_key_is_set(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-anthropic-key-not-real")
+        provider = architecture_provider_module.get_provider()
+        assert isinstance(provider, architecture_provider_module.AnthropicArchitectureProvider)
+
+    def test_prefers_gemini_when_both_keys_are_set(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key-not-real")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-anthropic-key-not-real")
+        provider = architecture_provider_module.get_provider()
+        assert isinstance(provider, architecture_provider_module.GeminiArchitectureProvider)
+
+
 @pytest.fixture(autouse=True)
 def _no_leaked_env(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)

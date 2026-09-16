@@ -2,11 +2,16 @@
 
 `ReviewProvider` is the seam a test double sits behind (see ai-service/tests/),
 mirroring every other agent's provider.py exactly, including app/agents/qa/provider.py's
-own shape. Only one real implementation exists: AnthropicReviewProvider, using Claude
-(claude-opus-5) via structured outputs (Pydantic `output_format`) — the same mechanism
-every other agent already uses, applied here to a finding shape that cannot carry a
-fabricated citation (see ReviewFindingContent's field descriptions in schemas.py).
-There is no fallback that fabricates a review — every failure path (no key configured,
+own shape. Two real implementations exist: GeminiReviewProvider and
+AnthropicReviewProvider — both go through the same finding shape that cannot
+carry a fabricated citation (see ReviewFindingContent's field descriptions in
+schemas.py). Provider selection (app/lib/provider_config.resolve_llm_provider)
+and the actual structured-output call/error-mapping (app/lib/structured_llm)
+are shared across every agent — neither ever accepts or passes a `tools`
+parameter, so this call has no tool-use capability at all, structurally,
+independent of whatever the system prompt instructs (see SYSTEM_PROMPT rule
+11 and tests/test_review.py's own structural assertion of this). There is no
+fallback that fabricates a review — every failure path (no key configured,
 provider error, invalid output) raises a typed error instead.
 """
 
@@ -15,12 +20,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import anthropic
+from google import genai
 
-from app.errors import AIResponseInvalidError, ProviderRequestError
-from app.lib.provider_config import get_anthropic_api_key
+from app.lib.provider_config import resolve_llm_provider
+from app.lib.structured_llm import call_anthropic_structured, call_gemini_structured
 from app.agents.review.schemas import ReviewAnswerContent, ReviewSourceInput
 
-MODEL = "claude-opus-5"
+ANTHROPIC_MODEL = "claude-opus-5"
+GEMINI_MODEL = "gemini-3.8-flash"
 MAX_REVIEW_TOKENS = 4000
 
 SYSTEM_PROMPT = """You are the AI code-review agent for DevForge, an AI software engineering \
@@ -87,7 +94,7 @@ class ReviewProvider(ABC):
 
 
 def format_context(repository: str, branch: str, commit: str, sources: list[ReviewSourceInput]) -> str:
-    """Builds the deterministic context block sent to Claude — a pure function,
+    """Builds the deterministic context block sent to the model — a pure function,
     directly unit-tested (see tests/test_review.py), matching
     app/agents/qa/provider.py's own format_context precedent."""
     lines = [f"Repository: {repository}", f"Branch: {branch}", f"Commit: {commit}", ""]
@@ -113,8 +120,27 @@ def build_user_message(context: str, scope: str) -> str:
     return f"{context}\nReview scope: {scope}"
 
 
+def _filter_uncited_findings(content: ReviewAnswerContent, sources: list[ReviewSourceInput]) -> ReviewAnswerContent:
+    # Defense in depth, mirroring app/agents/qa/provider.py's own citation
+    # filtering exactly: even though the model can only select a source
+    # number, never emit a path/line directly, a number outside the real
+    # 1..N range it was given is dropped here too, and a finding left with
+    # zero valid citations is discarded entirely — an uncited finding is not
+    # evidence-based. Node independently re-validates this again before
+    # persisting; this layer never passes through an already-detectable
+    # violation either.
+    valid_numbers = {source.source_number for source in sources}
+    filtered_findings = []
+    for finding in content.findings:
+        finding.cited_source_numbers = [n for n in finding.cited_source_numbers if n in valid_numbers]
+        if finding.cited_source_numbers:
+            filtered_findings.append(finding)
+    content.findings = filtered_findings
+    return content
+
+
 class AnthropicReviewProvider(ReviewProvider):
-    def __init__(self, api_key: str, model: str = MODEL) -> None:
+    def __init__(self, api_key: str, model: str = ANTHROPIC_MODEL) -> None:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
@@ -127,66 +153,52 @@ class AnthropicReviewProvider(ReviewProvider):
         sources: list[ReviewSourceInput],
     ) -> ReviewAnswerContent:
         context = format_context(repository, branch, commit, sources)
-        user_message = build_user_message(context, scope)
-
-        try:
-            # No `tools` parameter is ever passed here — this call has no
-            # tool-use capability at all, structurally, independent of
-            # whatever the system prompt instructs (see SYSTEM_PROMPT rule
-            # 11 and tests/test_review.py's own structural assertion of
-            # this).
-            response = self._client.messages.parse(
-                model=self._model,
-                max_tokens=MAX_REVIEW_TOKENS,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_message}],
-                output_format=ReviewAnswerContent,
-            )
-        except anthropic.BadRequestError as e:
-            raise ProviderRequestError(f"The AI provider rejected the request: {e.message}") from e
-        except anthropic.AuthenticationError as e:
-            raise ProviderRequestError(
-                f"Authentication with the AI provider failed: {e.message}"
-            ) from e
-        except anthropic.PermissionDeniedError as e:
-            raise ProviderRequestError(
-                f"The AI provider denied access to this model: {e.message}"
-            ) from e
-        except anthropic.NotFoundError as e:
-            raise ProviderRequestError(f"The AI provider model was not found: {e.message}") from e
-        except anthropic.RateLimitError as e:
-            raise ProviderRequestError(f"The AI provider rate-limited this request: {e.message}") from e
-        except anthropic.APIStatusError as e:
-            raise ProviderRequestError(f"The AI provider returned an error: {e.message}") from e
-        except anthropic.APIConnectionError as e:
-            raise ProviderRequestError(f"Could not reach the AI provider: {e}") from e
-
-        if response.parsed_output is None:
-            raise AIResponseInvalidError(
+        content = call_anthropic_structured(
+            client=self._client,
+            model=self._model,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=build_user_message(context, scope),
+            response_model=ReviewAnswerContent,
+            max_tokens=MAX_REVIEW_TOKENS,
+            invalid_response_detail=(
                 "the model's output could not be parsed as valid JSON matching the "
                 "expected code review schema"
-            )
+            ),
+        )
+        return _filter_uncited_findings(content, sources)
 
-        content = response.parsed_output
-        # Defense in depth, mirroring app/agents/qa/provider.py's own citation
-        # filtering exactly: even though the model can only select a source
-        # number, never emit a path/line directly, a number outside the real
-        # 1..N range it was given is dropped here too, and a finding left
-        # with zero valid citations is discarded entirely — an uncited
-        # finding is not evidence-based. Node independently re-validates
-        # this again before persisting; this layer never passes through an
-        # already-detectable violation either.
-        valid_numbers = {source.source_number for source in sources}
-        filtered_findings = []
-        for finding in content.findings:
-            finding.cited_source_numbers = [n for n in finding.cited_source_numbers if n in valid_numbers]
-            if finding.cited_source_numbers:
-                filtered_findings.append(finding)
-        content.findings = filtered_findings
 
-        return content
+class GeminiReviewProvider(ReviewProvider):
+    def __init__(self, api_key: str, model: str = GEMINI_MODEL) -> None:
+        self._client = genai.Client(api_key=api_key)
+        self._model = model
+
+    def review(
+        self,
+        scope: str,
+        repository: str,
+        branch: str,
+        commit: str,
+        sources: list[ReviewSourceInput],
+    ) -> ReviewAnswerContent:
+        context = format_context(repository, branch, commit, sources)
+        content = call_gemini_structured(
+            client=self._client,
+            model=self._model,
+            system_prompt=SYSTEM_PROMPT,
+            user_content=build_user_message(context, scope),
+            response_model=ReviewAnswerContent,
+            max_tokens=MAX_REVIEW_TOKENS,
+            invalid_response_detail=(
+                "the model's output could not be parsed as valid JSON matching the "
+                "expected code review schema"
+            ),
+        )
+        return _filter_uncited_findings(content, sources)
 
 
 def get_provider() -> ReviewProvider:
-    api_key = get_anthropic_api_key("AI code review")
+    provider_name, api_key = resolve_llm_provider("AI code review")
+    if provider_name == "gemini":
+        return GeminiReviewProvider(api_key=api_key)
     return AnthropicReviewProvider(api_key=api_key)

@@ -31,9 +31,21 @@ class RequirementItem(BaseModel):
 
 class RequirementsContent(BaseModel):
     project_summary: str
-    users: list[str] = Field(default_factory=list)
+    users: list[str] = Field(default_factory=list, description="User roles this system serves.")
     functional_requirements: list[RequirementItem] = Field(default_factory=list)
     non_functional_requirements: list[RequirementItem] = Field(default_factory=list)
+    features: list[str] = Field(
+        default_factory=list,
+        description="Short, user-facing feature names distinct from the detailed "
+        "functional-requirement items above — e.g. \"Email notifications\", not a full "
+        "requirement description.",
+    )
+    risks: list[str] = Field(
+        default_factory=list,
+        description="Concrete project/technical/product risks worth flagging (e.g. "
+        "scaling concerns, third-party dependency risk, ambiguous scope) — distinct from "
+        "open_questions, which are things to ask the user, not risks to manage.",
+    )
     constraints: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
