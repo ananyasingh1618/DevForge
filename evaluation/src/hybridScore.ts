@@ -171,14 +171,16 @@ export type ScoreSignals = {
 /** Mirrors api/src/lib/hybridScore.ts's own HYBRID_WEIGHTS exactly — see
  * that file for the full rationale (`filePath` raised 0.1 → 0.35 in Part A
  * of the retrieval-target-closure package, Milestone A4; `semantic` lowered
- * 1.0 → 0.8 in that same package's real-local-embedding-model second pass,
- * both from real weight sweeps against the full 67-case benchmark). */
+ * 1.0 → 0.8 in that same package's real-local-embedding-model second pass;
+ * `lexical` raised 0.35 → 0.55 and `filePath` raised 0.35 → 0.4 in that
+ * package's third pass — all from real weight sweeps against the full
+ * 67-case benchmark, re-verified safe against QA_CASES at each step). */
 export const HYBRID_WEIGHTS = {
   semantic: 0.8,
-  lexical: 0.35,
+  lexical: 0.55,
   identifier: 0.25,
   exactIdentifier: 0.4,
-  filePath: 0.35,
+  filePath: 0.4,
 } as const;
 
 export function combinedScore(signals: ScoreSignals): number {

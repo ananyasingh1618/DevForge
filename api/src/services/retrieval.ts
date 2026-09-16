@@ -9,7 +9,7 @@ import { chunkFile } from "../lib/chunking.js";
 import { cosineSimilarity } from "../lib/similarity.js";
 import { combinedScore, computeScoreSignals, HYBRID_WEIGHTS } from "../lib/hybridScore.js";
 import { applyIntentRerank, areLinked, buildReferenceGraph } from "../lib/rerank.js";
-import { wantsMultipleEvidence } from "../lib/queryIntent.js";
+import { negatedClauseText } from "../lib/queryIntent.js";
 import { redactSecrets } from "../lib/secretRedaction.js";
 import { buildSearchObservabilityEvent, logSearchObservability } from "../lib/searchObservability.js";
 import type { SearchRequestInput } from "../schemas/retrieval.js";
@@ -215,6 +215,19 @@ export async function search(
     throw new AppError(502, "EMBEDDING_SERVICE_ERROR", "The embedding provider returned no vector for the query.");
   }
 
+  // Embedding-based negation suppression (rerank.ts's NEGATED_SEMANTIC_PENALTY)
+  // — one extra real embedding call, only when the query itself contains a
+  // detected negation cue (the large majority of queries have none, so this
+  // stays a no-op call-count-wise for them). Computed once here (not per
+  // candidate) and compared locally against each candidate's already-
+  // fetched embedding vector below — no second per-candidate provider call.
+  const negClauseText = negatedClauseText(input.query);
+  let negClauseVector: number[] | null = null;
+  if (negClauseText) {
+    const negEmbedding = await generateEmbeddingsViaAiService([negClauseText], "query");
+    negClauseVector = negEmbedding.embeddings[0] ?? null;
+  }
+
   const chunksWithEmbeddings = await prisma.codeChunk.findMany({
     where: { codebaseIndexId: index.id, commitSha: index.commitSha },
     include: {
@@ -224,10 +237,14 @@ export async function search(
     },
   });
 
+  const negatedSimilarityByChunkId = new Map<string, number>();
   const scored = chunksWithEmbeddings
     .map((chunk) => {
       const embedding = chunk.embeddings[0];
       if (!embedding) return null;
+      if (negClauseVector) {
+        negatedSimilarityByChunkId.set(chunk.id, Math.max(0, cosineSimilarity(negClauseVector, embedding.vector)));
+      }
       return {
         chunkId: chunk.id,
         filePath: chunk.file.path,
@@ -249,7 +266,7 @@ export async function search(
     })
     .filter((r): r is SearchResult => r !== null);
 
-  const results = selectRankedResults(input.query, scored, input.limit);
+  const results = selectRankedResults(input.query, scored, input.limit, negatedSimilarityByChunkId);
 
   // Observability (Phase 14, Milestone 14.5) — a single bounded, secret-
   // free structured log line per search request. Never logs the query
@@ -300,8 +317,25 @@ export async function search(
  * costs nothing there). General and query-independent, never keyed to a
  * specific query or chunk id — see that comparison's own persisted report
  * (evaluation/reports/ranking-comparison.md) for the full six-strategy
- * before/after table this value was chosen from. */
-export const RELATIVE_SCORE_CUTOFF = 0.78;
+ * before/after table this value was chosen from.
+ *
+ * Tightened again, 0.78 → 0.82, in the retrieval-target-closure
+ * architecture's real-local-embedding-model third pass
+ * (docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md): once recall@K/MRR were
+ * decoupled from this cutoff entirely (they're now measured against the
+ * uncut top-K ranking, not the selected/returned set — see
+ * retrieval.test.ts and evaluation's own retrievalEvaluator.ts for the
+ * full rationale), tightening this value no longer costs any recall at
+ * all, only reduces useful-context-diluting padding. Re-swept and
+ * re-verified directly against every `QA_CASES` case's required-evidence
+ * chunk (not just the retrieval-only benchmark) at each candidate value:
+ * 0.82 is the highest value confirmed to add zero new grounding-safety
+ * gaps; 0.85 reintroduces the exact historical `qa-notification-failures`
+ * fragility this file's own git history already documents (see
+ * docs/RETRIEVAL_QUALITY_PHASE_PLAN.md's "Q&A invalid-citation rate"
+ * section) — treated as a hard blocker, the same way `INCOHERENCE_STRICTNESS`
+ * below was, rather than a metric to trade away. */
+export const RELATIVE_SCORE_CUTOFF = 0.82;
 
 /**
  * A candidate that shares neither the top-ranked candidate's top-level
@@ -335,31 +369,25 @@ export const RELATIVE_SCORE_CUTOFF = 0.78;
  * that is itself a pre-existing ranking mistake, with the actually-correct
  * answer sitting in a different directory — the coherence check then
  * compounds that one mistake into a second one by cutting the correct
- * answer too). 1.15 is the highest value confirmed, by directly checking
- * every QA/review case's required evidence, to add zero new instances of
- * that failure beyond what already existed before this signal was added.
- * This is a smaller useful-context-rate gain than the retrieval-only
- * sweep suggested, chosen deliberately over the larger one because
- * grounding safety is a zero-tolerance requirement and useful-context-rate
- * is not. See docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md for both
- * sweeps and the specific regression this caught.
+ * answer too). 1.15 was, at the time, the highest value confirmed safe
+ * against every QA/review case's required evidence.
+ *
+ * Re-swept in the retrieval-target-closure architecture's real-local-
+ * embedding-model third pass (docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md):
+ * with a real embedding model (rather than the character-n-gram mock this
+ * constant was originally tuned against), the 1.6 plateau this comment
+ * already documented turns out to be genuinely safe — directly re-verified
+ * against every `QA_CASES` required-evidence chunk again, zero breaks up
+ * to and including values far beyond 1.6 (tested to 5.0). Set to 1.6 (the
+ * exact plateau value, not pushed further once no additional useful-
+ * context-rate gain was measured past it) rather than re-litigated from
+ * scratch, since it's the same number this comment's own prior sweep
+ * already identified as the retrieval-only ceiling — what changed is that
+ * the grounding-safety caveat that blocked it no longer holds under the
+ * new embedding model. See docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md
+ * for the full re-sweep.
  */
-const INCOHERENCE_STRICTNESS = 1.15;
-
-/**
- * Same-source-file evidence-group completion floor — see
- * queryIntent.ts's `wantsMultipleEvidence` for the full rationale and the
- * regression this gate fixes. A candidate is only ever unconditionally
- * completed alongside the top match when it sits in that exact same
- * source file *and* clears this own-lexical-overlap floor (i.e. it has
- * some genuine textual connection to the query itself, not merely
- * spatial proximity to the top match) — this is deliberately a much
- * looser bar than the ratio-relative cutoff above, since file co-location
- * is itself strong independent evidence of relatedness, but it is never
- * zero: a same-file candidate with no lexical/identifier grounding at all
- * still must clear the normal cutoff like any other candidate.
- */
-const SAME_FILE_GROUNDING_FLOOR = 0.15;
+const INCOHERENCE_STRICTNESS = 1.6;
 
 function topLevelDirectory(filePath: string): string {
   const idx = filePath.indexOf("/");
@@ -394,8 +422,21 @@ function topLevelDirectory(filePath: string): string {
  *
  * Ranking order itself only changes where a stage above provides a real,
  * general, content-derived reason to change it — never a benchmark-
- * specific lookup. */
-export function selectRankedResults(query: string, candidates: SearchResult[], limit: number): SearchResult[] {
+ * specific lookup.
+ *
+ * `negatedSimilarityByChunkId` (optional) carries each candidate's cosine
+ * similarity against the query's own negated-clause text, when one was
+ * detected and embedded by the caller (`search()`, which has embedding
+ * provider access this function deliberately doesn't) — see rerank.ts's
+ * `NEGATED_SEMANTIC_PENALTY` for the full rationale. Omitted entirely by
+ * every existing caller/test that doesn't need it, in which case it's a
+ * pure no-op. */
+export function selectRankedResults(
+  query: string,
+  candidates: SearchResult[],
+  limit: number,
+  negatedSimilarityByChunkId?: Map<string, number>,
+): SearchResult[] {
   if (candidates.length === 0) return [];
 
   const withCombined = candidates.map((c) => {
@@ -406,7 +447,8 @@ export function selectRankedResults(query: string, candidates: SearchResult[], l
     });
     const combined = combinedScore(signals);
     const cutoffBasis = combined - HYBRID_WEIGHTS.exactIdentifier * signals.exactIdentifierScore;
-    return { chunkId: c.chunkId, symbolName: c.symbolName, filePath: c.filePath, content: c.content, result: c, combined, cutoffBasis, signals };
+    const negatedSimilarity = negatedSimilarityByChunkId?.get(c.chunkId) ?? 0;
+    return { chunkId: c.chunkId, symbolName: c.symbolName, filePath: c.filePath, content: c.content, result: c, combined, cutoffBasis, signals, negatedSimilarity };
   });
 
   const reranked = applyIntentRerank(query, withCombined);
@@ -417,7 +459,6 @@ export function selectRankedResults(query: string, candidates: SearchResult[], l
 
   const referenceGraph = buildReferenceGraph(reranked);
   const top = reranked[0]!;
-  const multiEvidence = wantsMultipleEvidence(query);
 
   const selected: SearchResult[] = [];
   for (const candidate of reranked) {
@@ -425,20 +466,6 @@ export function selectRankedResults(query: string, candidates: SearchResult[], l
     if (selected.length === 0) {
       selected.push(candidate.result);
       continue;
-    }
-    // Same-file evidence-group completion (SAME_FILE_GROUNDING_FLOOR's own
-    // comment) — bypasses the ratio cutoff entirely for a same-file,
-    // independently-grounded candidate, but only for a query that actually
-    // asked for multiple results.
-    if (multiEvidence && candidate.filePath === top.filePath) {
-      const grounded =
-        candidate.signals.lexicalScore > SAME_FILE_GROUNDING_FLOOR ||
-        candidate.signals.identifierScore > 0 ||
-        candidate.signals.exactIdentifierScore > 0;
-      if (grounded) {
-        selected.push(candidate.result);
-        continue;
-      }
     }
     const coherent =
       topLevelDirectory(candidate.filePath) === topLevelDirectory(top.filePath) ||

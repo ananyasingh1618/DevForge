@@ -95,7 +95,18 @@ const INTENT_RULES: IntentRule[] = [
     patterns: [
       /\berror\b/i,
       /\bexception\b/i,
-      /\bfails?\b/i,
+      // Negative lookahead excludes "fails to <verb>" specifically — that's
+      // the "fails to"/"failing to" negation construction (negatedWordSet's
+      // own NEGATION_CUES), describing an *omission* the query names, not a
+      // question about error-handling code. A bare "X fails"/"a failure
+      // occurs" still matches. Found as a real bug during the retrieval-
+      // target-closure architecture work: "which function fails to check
+      // ownership" was classified as "error" intent, awarding ERROR_BONUS
+      // to whichever candidate's content happens to throw/catch — which is
+      // reliably the *secure*, correctly-checking sibling, the opposite of
+      // what a "fails to check" query is actually asking for. See
+      // docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md for the measured case.
+      /\bfails?\b(?!\s+to\b)/i,
       /\bfailure\b/i,
       /\bthrows?\b/i,
       /\bvulnerabilit(y|ies)\b/i,
@@ -165,6 +176,31 @@ export function negatedWordSet(query: string): Set<string> {
     }
   }
   return words;
+}
+
+/**
+ * Returns the first detected negated clause's own raw text (not just its
+ * individual words) — e.g. "checking that the requester owns it" from
+ * "...without checking that the requester owns it". Used for an embedding-
+ * based (not just lexical-token-based) suppression signal: `negatedWordSet`
+ * alone cannot catch a candidate that matches the negated concept via a
+ * short morphological variant below `hybridScore.ts`'s tokensMatch
+ * stemming minimum (e.g. "owns" vs. "owned," both under 6 characters) —
+ * embedding the clause's own text and comparing it against a candidate's
+ * real semantic content catches that regardless of surface word form. Only
+ * the first matching cue's clause is used (one embedding call's worth of
+ * signal is enough; a query with multiple negated clauses is rare and the
+ * first is nearly always the one naming the query's actual distinguishing
+ * concept). Returns null when no negation cue is present — the common
+ * case, where no extra embedding call is needed at all.
+ */
+export function negatedClauseText(query: string): string | null {
+  for (const pattern of NEGATION_CUES) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(query);
+    if (match?.[1]) return match[1];
+  }
+  return null;
 }
 
 /**

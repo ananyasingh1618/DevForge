@@ -245,13 +245,29 @@ export type ScoreSignals = {
  * literal identifier/lexical difference actually distinguishes the one the
  * query is asking about. Lowering `semantic` to 0.8 (keeping every other
  * weight unchanged) raised direct-hit-rate and recall@3/5 with no measured
- * regression on any other metric — see that report for the full sweep. */
+ * regression on any other metric — see that report for the full sweep.
+ *
+ * `lexical` raised 0.35 → 0.55 and `filePath` raised 0.35 → 0.4 in the
+ * retrieval-target-closure architecture's third pass
+ * (docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md), once recall@K/MRR were
+ * decoupled from the selection cutoff (making it safe to also re-sweep
+ * `RELATIVE_SCORE_CUTOFF`/`INCOHERENCE_STRICTNESS` in the same pass without
+ * the two changes' effects being entangled). A real weight sweep found
+ * raising `identifier` instead of `lexical` reliably improved direct-hit-
+ * rate too, but reintroduced a real grounding-safety gap on
+ * `QA_CASES` (re-verified directly, not assumed) at every tested value —
+ * `lexical`/`filePath` do not share that failure mode at any swept value up
+ * to 0.7/0.5 respectively, and 0.55/0.4 is the point past which further
+ * increases stopped yielding additional direct-hit-rate or useful-context-
+ * rate gain. Measured effect of this change alone: direct-hit-rate
+ * 84.4%→85.9%, useful-context-rate 88.2%→89.4%, zero regression on any
+ * other metric or QA/review case. */
 export const HYBRID_WEIGHTS = {
   semantic: 0.8,
-  lexical: 0.35,
+  lexical: 0.55,
   identifier: 0.25,
   exactIdentifier: 0.4,
-  filePath: 0.35,
+  filePath: 0.4,
 } as const;
 
 export function combinedScore(signals: ScoreSignals): number {

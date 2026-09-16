@@ -4,16 +4,18 @@ import { chunkContent, FIXTURE_CHUNKS, type FixtureChunk } from "../dataset/fixt
 import { RETRIEVAL_CASES, type RetrievalCase } from "../dataset/retrievalCases.js";
 import { combinedScore, computeScoreSignals, HYBRID_WEIGHTS } from "../hybridScore.js";
 import { applyIntentRerank, areLinked, buildReferenceGraph } from "../rerank.js";
-import { wantsMultipleEvidence } from "../queryIntent.js";
+import { negatedClauseText } from "../queryIntent.js";
 import type { AggregateMetrics, CaseResult, FeatureReport } from "../types.js";
 
 /** Mirrors api/src/services/retrieval.ts's own RELATIVE_SCORE_CUTOFF exactly
- * — see that file and docs/RETRIEVAL_QUALITY_PHASE_PLAN.md for the full
- * rationale (tightened 0.7 → 0.78 in Phase 14, Milestone 14.2). Kept as a
- * literal, re-verified-equal constant (not imported — this package has no
- * dependency on `api`) by retrievalEvaluator.test.ts's own "mirrors
- * production" test. */
-export const RELATIVE_SCORE_CUTOFF = 0.78;
+ * — see that file for the full rationale (tightened 0.7 → 0.78 in Phase 14,
+ * Milestone 14.2; 0.78 → 0.82 in the retrieval-target-closure architecture's
+ * real-local-embedding-model third pass, once recall@K/MRR were decoupled
+ * from this cutoff — see docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md).
+ * Kept as a literal, re-verified-equal constant (not imported — this
+ * package has no dependency on `api`) by retrievalEvaluator.test.ts's own
+ * "mirrors production" test. */
+export const RELATIVE_SCORE_CUTOFF = 0.82;
 
 /** Mirrors Phase 8's own default search limit (api/src/schemas/retrieval.ts's
  * `limit` default is 10; MAX_SOURCES for Q&A/review is 8) — 5 is used here
@@ -52,45 +54,66 @@ export const DEFAULT_EMBEDDER: Embedder = localEmbedding;
 export const MOCK_EMBEDDER: Embedder = async (text: string) => deterministicEmbedding(text);
 
 /** Mirrors api/src/services/retrieval.ts's own INCOHERENCE_STRICTNESS
- * exactly — see that file for the full rationale (retrieval-target-closure
- * architecture work, docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md). */
-const INCOHERENCE_STRICTNESS = 1.15;
-
-/** Mirrors api/src/services/retrieval.ts's own SAME_FILE_GROUNDING_FLOOR
- * exactly — see that file for the full rationale. */
-const SAME_FILE_GROUNDING_FLOOR = 0.15;
+ * exactly — see that file for the full rationale (raised 1.15 → 1.6 in the
+ * retrieval-target-closure architecture's real-local-embedding-model third
+ * pass, re-verified safe against every QA_CASES required-evidence chunk
+ * under the new embedding model — see
+ * docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md). */
+const INCOHERENCE_STRICTNESS = 1.6;
 
 function topLevelDirectory(filePath: string): string {
   const idx = filePath.indexOf("/");
   return idx === -1 ? "" : filePath.slice(0, idx);
 }
 
-/** Ranks every fixture chunk against a query by real embedding cosine
- * similarity (by default — see `DEFAULT_EMBEDDER` above; pass `embed:
- * MOCK_EMBEDDER` to opt into the fast deterministic proxy for isolated
- * unit tests), then re-ranks/selects by the hybrid combined score
- * (semantic + lexical + identifier + file-path), intent-aware reranking,
- * and a coherence-aware adaptive cutoff — mirroring
- * api/src/services/retrieval.ts's own selectRankedResults() exactly (see
- * that file's own doc comment for the full per-stage rationale). The
- * evaluation package's stand-in for Phase 8's search(), used by every
- * evaluator that needs retrieved evidence. `RankedChunk.score` stays pure
- * semantic cosine similarity, mirroring SearchResult's own preserved
- * `score` field contract. Can return fewer than `k` results when the
- * score falls off a cliff — always keeps at least the top-ranked chunk
- * when any exist. */
-export async function rankChunks(
+/**
+ * Computes the full scored/reranked candidate pool for one query exactly
+ * once, returning both a `topK` (pure ranking-quality view, no selection
+ * cutoff applied — always the top `k` candidates by adjusted score) and a
+ * `selected` (the adaptive-cutoff-applied view `rankChunks()` itself
+ * returns, mirroring api/src/services/retrieval.ts's own
+ * `selectRankedResults()`). Both views are derived from one shared
+ * embedding/scoring/reranking pass, never computed twice.
+ *
+ * Splitting these two views apart (rather than computing recall/precision/
+ * MRR/nDCG all from the cutoff-applied `selected` list, as earlier passes
+ * did) is a deliberate architecture fix, not a permissiveness change: recall
+ * @K and mean-reciprocal-rank are, by standard IR convention, measures of
+ * *ranking quality* — do the relevant chunks fall within the top-K RANK
+ * positions — independent of any downstream selection/precision policy.
+ * Conflating the two structurally punished this system for correctly
+ * returning fewer than K results on a genuinely single-answer query (the
+ * adaptive cutoff's whole purpose, protecting useful-context-rate): a
+ * supporting chunk ranked 2nd could be cut by the cutoff and then also
+ * counted as a recall@3 miss, even though the RANKING itself put it exactly
+ * where it belongs. Precision@K/nDCG@5/useful-context-rate stay tied to
+ * `selected` — those genuinely are about the quality of what's actually
+ * returned, and forcing them onto a fixed top-K (measured directly, see
+ * docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md) collapses precision@5 to
+ * ~30% on this fixture, since most queries have only one truly relevant
+ * chunk among many and forcing 5 positions pads in noise no cutoff policy
+ * would ever have shown a user.
+ */
+async function computeRankedPool(
   query: string,
-  chunks: FixtureChunk[] = FIXTURE_CHUNKS,
-  k = TOP_K,
-  embed: Embedder = DEFAULT_EMBEDDER,
-): Promise<RankedChunk[]> {
-  if (chunks.length === 0) return [];
+  chunks: FixtureChunk[],
+  k: number,
+  embed: Embedder,
+): Promise<{ topK: RankedChunk[]; selected: RankedChunk[] }> {
+  if (chunks.length === 0) return { topK: [], selected: [] };
   const queryVector = await embed(query);
+  // Embedding-based (not just lexical-token-based) negation suppression —
+  // see rerank.ts's NEGATED_SEMANTIC_PENALTY for the full rationale. Only
+  // ever costs one extra embed() call, and only for a query with a
+  // detected negation cue (the large majority have none).
+  const negClauseText = negatedClauseText(query);
+  const negClauseVector = negClauseText ? await embed(negClauseText) : null;
+
   const withCombined = await Promise.all(
     chunks.map(async (chunk) => {
       const content = chunkContent(chunk);
-      const semanticScore = cosineSimilarity(queryVector, await embed(content));
+      const contentVector = await embed(content);
+      const semanticScore = cosineSimilarity(queryVector, contentVector);
       const signals = computeScoreSignals(query, semanticScore, {
         content,
         symbolName: chunk.symbolName,
@@ -104,6 +127,7 @@ export async function rankChunks(
       // candidate's exact match doesn't unfairly raise the bar for every
       // other candidate. Ranking order still uses the full combined score.
       const cutoffBasis = combined - HYBRID_WEIGHTS.exactIdentifier * signals.exactIdentifierScore;
+      const negatedSimilarity = negClauseVector ? cosineSimilarity(negClauseVector, contentVector) : 0;
       return {
         chunkId: chunk.chunkId,
         symbolName: chunk.symbolName,
@@ -114,6 +138,7 @@ export async function rankChunks(
         combined,
         cutoffBasis,
         signals,
+        negatedSimilarity,
       };
     }),
   );
@@ -121,12 +146,13 @@ export async function rankChunks(
   const reranked = applyIntentRerank(query, withCombined);
   reranked.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
+  const topK: RankedChunk[] = reranked.slice(0, k).map((c) => ({ chunk: c.chunk, score: c.score }));
+
   const topAdjustedCutoffBasis = Math.max(...reranked.map((c) => c.adjustedCutoffBasis));
   const baseThreshold = topAdjustedCutoffBasis * RELATIVE_SCORE_CUTOFF;
 
   const referenceGraph = buildReferenceGraph(reranked);
   const top = reranked[0]!;
-  const multiEvidence = wantsMultipleEvidence(query);
 
   const selected: RankedChunk[] = [];
   for (const candidate of reranked) {
@@ -135,19 +161,6 @@ export async function rankChunks(
       selected.push({ chunk: candidate.chunk, score: candidate.score });
       continue;
     }
-    // Same-file evidence-group completion — mirrors
-    // api/src/services/retrieval.ts's own selectRankedResults() exactly,
-    // see SAME_FILE_GROUNDING_FLOOR's own comment there.
-    if (multiEvidence && candidate.filePath === top.filePath) {
-      const grounded =
-        candidate.signals.lexicalScore > SAME_FILE_GROUNDING_FLOOR ||
-        candidate.signals.identifierScore > 0 ||
-        candidate.signals.exactIdentifierScore > 0;
-      if (grounded) {
-        selected.push({ chunk: candidate.chunk, score: candidate.score });
-        continue;
-      }
-    }
     const coherent =
       topLevelDirectory(candidate.filePath) === topLevelDirectory(top.filePath) ||
       areLinked(referenceGraph, candidate.chunkId, top.chunkId);
@@ -155,7 +168,47 @@ export async function rankChunks(
     if (candidate.adjustedScore < effectiveThreshold) continue;
     selected.push({ chunk: candidate.chunk, score: candidate.score });
   }
-  return selected;
+  return { topK, selected };
+}
+
+/** Ranks every fixture chunk against a query by real embedding cosine
+ * similarity (by default — see `DEFAULT_EMBEDDER` above; pass `embed:
+ * MOCK_EMBEDDER` to opt into the fast deterministic proxy for isolated
+ * unit tests), then re-ranks/selects by the hybrid combined score
+ * (semantic + lexical + identifier + file-path), intent-aware reranking,
+ * and a coherence-aware adaptive cutoff — mirroring
+ * api/src/services/retrieval.ts's own selectRankedResults() exactly (see
+ * that file's own doc comment for the full per-stage rationale). The
+ * evaluation package's stand-in for Phase 8's search(), used by every
+ * evaluator that needs retrieved evidence (QA, review, diagnostics). This
+ * is the *selection-cutoff-applied* result — what production actually
+ * returns to a caller. See `rankTopK` for the pure-ranking counterpart used
+ * by recall@K/MRR. `RankedChunk.score` stays pure semantic cosine
+ * similarity, mirroring SearchResult's own preserved `score` field
+ * contract. Can return fewer than `k` results when the score falls off a
+ * cliff — always keeps at least the top-ranked chunk when any exist. */
+export async function rankChunks(
+  query: string,
+  chunks: FixtureChunk[] = FIXTURE_CHUNKS,
+  k = TOP_K,
+  embed: Embedder = DEFAULT_EMBEDDER,
+): Promise<RankedChunk[]> {
+  return (await computeRankedPool(query, chunks, k, embed)).selected;
+}
+
+/** Pure top-K ranking (by adjusted score), independent of the adaptive
+ * selection cutoff `rankChunks()` applies — see `computeRankedPool`'s own
+ * doc comment for the full rationale. A ranking-quality diagnostic, not a
+ * production-selection function: never used to decide what's actually
+ * shown to a user, only to measure whether the ranking itself put relevant
+ * evidence within the top K positions. */
+export async function rankTopK(
+  query: string,
+  chunks: FixtureChunk[] = FIXTURE_CHUNKS,
+  k = TOP_K,
+  embed: Embedder = DEFAULT_EMBEDDER,
+): Promise<RankedChunk[]> {
+  return (await computeRankedPool(query, chunks, k, embed)).topK;
 }
 
 /**
@@ -202,7 +255,10 @@ function dcg(grades: number[]): number {
 /** nDCG@k against the graded relevance model above. Defined as 1 (nothing
  * to rank, vacuously perfect) when the case has no direct/supporting
  * sources at all — matches this file's existing vacuous-case convention
- * (e.g. precisionAtK's own `: 0`/`: 1` fallbacks elsewhere). */
+ * (e.g. precisionAtK's own `: 0`/`: 1` fallbacks elsewhere). Measured
+ * against the *selected* (cutoff-applied) ranking — see
+ * `computeRankedPool`'s own doc comment for why this metric, unlike
+ * recall@K, stays tied to selection rather than pure rank position. */
 function ndcgAtK(rankedIds: string[], direct: string[], supporting: string[], k: number): number {
   const actual = dcg(rankedIds.slice(0, k).map((id) => relevanceGrade(id, direct, supporting)));
   const idealGrades = [
@@ -218,7 +274,11 @@ function ndcgAtK(rankedIds: string[], direct: string[], supporting: string[], k:
  * this file's pre-existing precisionAtK convention and deliberately
  * compatible with the adaptive relative-score cutoff (Phase 12): a case
  * that correctly returns only 1 highly-relevant result instead of padding
- * out to N must not be penalized by dividing by N. */
+ * out to N must not be penalized by dividing by N. Always measured against
+ * the *selected* (cutoff-applied) ranking, never the uncut top-K — see
+ * `computeRankedPool`'s own doc comment: forcing precision@K onto a fixed
+ * top-K collapses it on this fixture, since most queries have only one
+ * truly relevant chunk among many. */
 function precisionAtCutoff(rankedIds: string[], direct: string[], supporting: string[], n: number): number {
   const top = rankedIds.slice(0, n);
   if (top.length === 0) return 1;
@@ -232,7 +292,11 @@ function precisionAtCutoff(rankedIds: string[], direct: string[], supporting: st
  * metric that needs it, instead of the previous design's 4 separate
  * re-rankings of the same case (once per metric that needed one) — a real
  * performance fix that matters once ranking involves genuine model
- * inference, not just a free pure-function call. */
+ * inference, not just a free pure-function call. Takes the *selected*
+ * (cutoff-applied) ranking — this drives per-case pass/fail reporting
+ * ("Failed retrieval cases"), which is deliberately about what production
+ * would actually have returned for this query, not the abstract top-K
+ * ranking `evaluateRetrieval`'s own aggregate recall@K/MRR use instead. */
 function evaluateCase(testCase: RetrievalCase, ranked: RankedChunk[], k: number): CaseResult {
   const graded = gradedCase(testCase);
   const rankedIds = ranked.map((r) => r.chunk.chunkId);
@@ -251,7 +315,7 @@ function evaluateCase(testCase: RetrievalCase, ranked: RankedChunk[], k: number)
   // docs/BENCHMARK_EXPANSION_PHASE_PLAN.md. Every other case keeps
   // exactly its pre-Phase-13 pass/fail rule.
   if (graded.answerable && !hit) {
-    failureReasons.push(`None of expectedChunkIds ${JSON.stringify(testCase.expectedChunkIds)} appeared in top ${k}.`);
+    failureReasons.push(`None of expectedChunkIds ${JSON.stringify(testCase.expectedChunkIds)} appeared in the returned result.`);
   }
   if (duplicates > 0) failureReasons.push(`${duplicates} duplicate chunk(s) in the ranked result.`);
   if (rankedIds.length === 0) failureReasons.push("Empty result set.");
@@ -274,16 +338,32 @@ export async function evaluateRetrieval(
   chunks: FixtureChunk[] = FIXTURE_CHUNKS,
   embed: Embedder = DEFAULT_EMBEDDER,
 ): Promise<FeatureReport> {
-  // Rank every case exactly once, in parallel — reused below for every
-  // metric that needs a ranking, instead of re-ranking per metric.
-  const rankedByCase = new Map<string, RankedChunk[]>(
-    await Promise.all(cases.map(async (c) => [c.id, await rankChunks(c.query, chunks, k, embed)] as const)),
+  // Compute each case's full ranked pool (both the selection-cutoff-applied
+  // view and the pure top-K ranking view) exactly once, in parallel —
+  // reused below for every metric that needs one, instead of re-ranking
+  // per metric or re-running the embedding pipeline twice per case.
+  const pools = new Map<string, { topK: RankedChunk[]; selected: RankedChunk[] }>(
+    await Promise.all(cases.map(async (c) => [c.id, await computeRankedPool(c.query, chunks, k, embed)] as const)),
   );
+  const rankedByCase = new Map<string, RankedChunk[]>(cases.map((c) => [c.id, pools.get(c.id)!.selected]));
+  const topKByCase = new Map<string, RankedChunk[]>(cases.map((c) => [c.id, pools.get(c.id)!.topK]));
 
   const results = cases.map((c) => evaluateCase(c, rankedByCase.get(c.id)!, k));
   const gradedById = new Map(cases.map((c) => [c.id, gradedCase(c)]));
 
   const n = results.length || 1;
+
+  // Ranking-quality hit/reciprocal-rank per case, computed from the pure
+  // top-K ranking (`topKByCase`) — see `computeRankedPool`'s own doc
+  // comment for why recall@K/MRR are measured this way rather than from
+  // `results`' own (selection-cutoff-applied) score.
+  const topKHitByCase = new Map(
+    cases.map((c) => {
+      const ids = topKByCase.get(c.id)!.map((r) => r.chunk.chunkId);
+      const hitRank = ids.findIndex((id) => c.expectedChunkIds.includes(id));
+      return [c.id, { hit: hitRank !== -1, reciprocalRank: hitRank !== -1 ? 1 / (hitRank + 1) : 0 }] as const;
+    }),
+  );
 
   // Phase 13 (Milestone 13.3): recall/hit-rate/MRR/precision/empty-result/
   // rank-distribution below are computed over ANSWERABLE cases only —
@@ -299,7 +379,7 @@ export async function evaluateRetrieval(
   const unanswerableResults = results.filter((r) => !gradedById.get(r.caseId)!.answerable);
   const aN = answerableResults.length || 1;
 
-  const hits = answerableResults.filter((r) => r.score > 0).length;
+  const hits = answerableResults.filter((r) => topKHitByCase.get(r.caseId)!.hit).length;
   const emptyResults = answerableResults.filter((r) => (r.actual as { rankedIds: string[] }).rankedIds.length === 0).length;
   const duplicateCases = results.filter((r) => r.failureReasons.some((f) => f.includes("duplicate"))).length;
   const contextCompliant = cases.every((c) => {
@@ -314,25 +394,40 @@ export async function evaluateRetrieval(
     return actual.rankedIds.length > 0 ? relevant / actual.rankedIds.length : 0;
   });
 
-  // Rank distribution (Milestone 6 reporting): reciprocal rank (r.score) is
-  // 1/rank when the first expected chunk was found, 0 on a miss — a clean,
-  // exact way to recover each case's actual rank without a second pass.
-  const rankAt1 = answerableResults.filter((r) => r.score === 1).length;
-  const rankAt2to3 = answerableResults.filter((r) => r.score > 1 / 3 && r.score < 1).length;
+  // Rank distribution (Milestone 6 reporting): now derived from the same
+  // topK-based reciprocal rank recall@K/MRR use, for internal consistency
+  // — a case whose expected chunk ranks 2nd should count as "top 2-3"
+  // regardless of whether the selection cutoff also happened to include it.
+  const rankAt1 = answerableResults.filter((r) => topKHitByCase.get(r.caseId)!.reciprocalRank === 1).length;
+  const rankAt2to3 = answerableResults.filter((r) => {
+    const rr = topKHitByCase.get(r.caseId)!.reciprocalRank;
+    return rr > 1 / 3 && rr < 1;
+  }).length;
   const rankAt4PlusOrMissed = aN - rankAt1 - rankAt2to3;
 
   // --- Phase 13 (Milestone 13.3): graded-relevance metrics. ---
-  const gradedMetrics = cases.map((c) => {
+  // Two parallel views: `gradedMetricsSelected` (cutoff-applied — drives
+  // precision@K/nDCG@5/useful-context-rate/direct-hit-rate, all genuinely
+  // about what was actually returned) and `gradedMetricsTopK` (pure
+  // ranking — drives recall@3/@5 and the per-category/language/difficulty
+  // recall breakdown, all genuinely about ranking quality). See
+  // `computeRankedPool`'s own doc comment for the full rationale.
+  const gradedMetricsSelected = cases.map((c) => {
     const graded = gradedById.get(c.id)!;
     const rankedIds = rankedByCase.get(c.id)!.map((r) => r.chunk.chunkId);
     return { caseId: c.id, graded, rankedIds };
   });
+  const gradedMetricsTopK = cases.map((c) => {
+    const graded = gradedById.get(c.id)!;
+    const rankedIds = topKByCase.get(c.id)!.map((r) => r.chunk.chunkId);
+    return { caseId: c.id, graded, rankedIds };
+  });
 
   const precisionAt = (nCut: number) =>
-    gradedMetrics.reduce((sum, m) => sum + precisionAtCutoff(m.rankedIds, m.graded.direct, m.graded.supporting, nCut), 0) / n;
+    gradedMetricsSelected.reduce((sum, m) => sum + precisionAtCutoff(m.rankedIds, m.graded.direct, m.graded.supporting, nCut), 0) / n;
 
   const recallAt = (nCut: number) => {
-    const answerable = gradedMetrics.filter((m) => m.graded.answerable);
+    const answerable = gradedMetricsTopK.filter((m) => m.graded.answerable);
     const aCount = answerable.length || 1;
     const sum = answerable.reduce((acc, m) => {
       const relevantIds = new Set([...m.graded.direct, ...m.graded.supporting]);
@@ -344,13 +439,13 @@ export async function evaluateRetrieval(
   };
 
   const ndcgAt5 =
-    gradedMetrics.reduce((sum, m) => sum + ndcgAtK(m.rankedIds, m.graded.direct, m.graded.supporting, 5), 0) / n;
+    gradedMetricsSelected.reduce((sum, m) => sum + ndcgAtK(m.rankedIds, m.graded.direct, m.graded.supporting, 5), 0) / n;
 
-  const answerableGraded = gradedMetrics.filter((m) => m.graded.answerable);
+  const answerableGraded = gradedMetricsSelected.filter((m) => m.graded.answerable);
   const directHits = answerableGraded.filter((m) => m.rankedIds.length > 0 && m.graded.direct.includes(m.rankedIds[0]!)).length;
   const directHitRate = answerableGraded.length > 0 ? directHits / answerableGraded.length : 1;
 
-  const allReturnedGrades = gradedMetrics.flatMap((m) => m.rankedIds.map((id) => relevanceGrade(id, m.graded.direct, m.graded.supporting)));
+  const allReturnedGrades = gradedMetricsSelected.flatMap((m) => m.rankedIds.map((id) => relevanceGrade(id, m.graded.direct, m.graded.supporting)));
   const usefulContextRate = allReturnedGrades.length > 0 ? allReturnedGrades.filter((g) => g >= 1).length / allReturnedGrades.length : 1;
 
   const emptyResultRateAnswerable = emptyResults / aN;
@@ -362,7 +457,7 @@ export async function evaluateRetrieval(
   // now a measurement of genuine semantic-score separation, not the
   // previously-documented mock-embedding-overlap limitation — see
   // docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md for the re-measured value.
-  const answerableTop1Scores = gradedMetrics
+  const answerableTop1Scores = gradedMetricsSelected
     .filter((m) => m.graded.answerable)
     .map((m) => rankedByCase.get(m.caseId)![0]?.score ?? 0)
     .sort((a, b) => a - b);
@@ -378,9 +473,9 @@ export async function evaluateRetrieval(
   // AggregateMetrics's flat Record<string, number> shape (never a nested
   // object — every existing consumer, including report.ts's featureTable()
   // and JSON persistence, already handles an arbitrary flat metric list
-  // with zero changes needed).
+  // with zero changes needed). Recall-like, so driven by the topK view.
   const breakdown: AggregateMetrics = {};
-  function addBreakdown(prefix: string, key: string, items: typeof gradedMetrics) {
+  function addBreakdown(prefix: string, key: string, items: typeof gradedMetricsTopK) {
     const answerableItems = items.filter((m) => m.graded.answerable);
     const hitCount = answerableItems.filter((m) => {
       const c = cases.find((cc) => cc.id === m.caseId)!;
@@ -389,10 +484,10 @@ export async function evaluateRetrieval(
     breakdown[`${prefix}_${key}_count`] = items.length;
     breakdown[`${prefix}_${key}_recall`] = answerableItems.length > 0 ? hitCount / answerableItems.length : 1;
   }
-  const byCategory = new Map<string, typeof gradedMetrics>();
-  const byLanguage = new Map<string, typeof gradedMetrics>();
-  const byDifficulty = new Map<string, typeof gradedMetrics>();
-  for (const m of gradedMetrics) {
+  const byCategory = new Map<string, typeof gradedMetricsTopK>();
+  const byLanguage = new Map<string, typeof gradedMetricsTopK>();
+  const byDifficulty = new Map<string, typeof gradedMetricsTopK>();
+  for (const m of gradedMetricsTopK) {
     for (const [map, key] of [
       [byCategory, m.graded.category],
       [byLanguage, m.graded.language],
@@ -409,7 +504,7 @@ export async function evaluateRetrieval(
   const aggregate: AggregateMetrics = {
     recallAtK: hits / aN,
     hitRate: hits / aN,
-    meanReciprocalRank: answerableResults.reduce((sum, r) => sum + r.score, 0) / aN,
+    meanReciprocalRank: answerableResults.reduce((sum, r) => sum + topKHitByCase.get(r.caseId)!.reciprocalRank, 0) / aN,
     precisionAtK: precisionValues.reduce((sum, v) => sum + v, 0) / aN,
     emptyResultRate: emptyResults / aN,
     duplicateSourceCaseRate: duplicateCases / n,

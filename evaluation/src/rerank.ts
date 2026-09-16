@@ -22,14 +22,17 @@
  * this codebase already follows.
  */
 
-import { classifyQueryIntent, negatedWordSet, type QueryIntent } from "./queryIntent.js";
+import { classifyQueryIntent, negatedWordSet, wantsMultipleEvidence, type QueryIntent } from "./queryIntent.js";
 import { buildReferenceGraph, areLinked, type ReferenceCandidate } from "./referenceGraph.js";
-import { tokenize, lexicalOverlapScore } from "./hybridScore.js";
+import { tokenize, lexicalOverlapScore, type ScoreSignals } from "./hybridScore.js";
 
 export type RerankCandidate = ReferenceCandidate & {
   filePath: string;
   combined: number;
   cutoffBasis: number;
+  signals: ScoreSignals;
+  /** Mirrors api/src/lib/rerank.ts's own negatedSimilarity field exactly. */
+  negatedSimilarity?: number;
 };
 
 export type RerankedCandidate<T extends RerankCandidate = RerankCandidate> = T & {
@@ -53,6 +56,32 @@ const TEST_BONUS = 0.15;
 // that file for the full rationale (finishes wiring up queryIntent.ts's
 // negatedWordSet(), unused since the first retrieval-target-closure pass).
 const NEGATED_MATCH_PENALTY = 0.3;
+// Mirrors api/src/lib/rerank.ts's own NEGATED_SEMANTIC_PENALTY exactly —
+// see that file for the full rationale (catches negated-concept matches
+// the lexical penalty's stemming minimum misses, e.g. "owns" vs. "owned").
+const NEGATED_SEMANTIC_PENALTY = 0.1;
+// Mirrors api/src/lib/rerank.ts's own SAME_FILE_EVIDENCE_BONUS/
+// SAME_FILE_GROUNDING_FLOOR exactly — see that file for the full rationale.
+const SAME_FILE_EVIDENCE_BONUS = 0.2;
+const SAME_FILE_GROUNDING_FLOOR = 0.15;
+// Mirrors api/src/lib/rerank.ts's own STEP_SPECIFICITY_BONUS/
+// STEP_SPECIFICITY_MARGIN exactly — see that file for the full rationale
+// (a narrower, margin-gated, reference-link-only re-attempt of a rule
+// tried and reverted in the second pass).
+const STEP_SPECIFICITY_BONUS = 0.3;
+const STEP_SPECIFICITY_MARGIN = 0.1;
+// Mirrors api/src/lib/rerank.ts's own BASE_NAME_BONUS exactly — see that
+// file for the full rationale (a general Strict/Safe/Async/V2/Legacy
+// suffix-variant naming convention signal, not benchmark-specific).
+const BASE_NAME_BONUS = 0.3;
+
+/** Mirrors api/src/lib/rerank.ts's own isBaseNameOf exactly. */
+function isBaseNameOf(base: string, variant: string): boolean {
+  const toSnake = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  const b = toSnake(base);
+  const v = toSnake(variant);
+  return v !== b && v.startsWith(`${b}_`);
+}
 
 /** True if `filePath`'s basename (ignoring extension) is a conventional
  * "public surface" filename — `index` (TS/JS/JS barrel-file convention) or
@@ -89,6 +118,7 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
   const intent = classifyQueryIntent(query);
   const graph = buildReferenceGraph(candidates);
   const negatedWords = negatedWordSet(query);
+  const multiEvidence = wantsMultipleEvidence(query);
 
   // The single highest-raw-combined-scored candidate is used as the
   // reference point for "dependency"/"usage" intents (the caller/callee
@@ -156,6 +186,35 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
       const candidateTokens = [...tokenize(c.content), ...tokenize(c.symbolName ?? "")];
       const negatedOverlap = lexicalOverlapScore([...negatedWords], candidateTokens);
       bonus -= NEGATED_MATCH_PENALTY * negatedOverlap;
+    }
+    if (c.negatedSimilarity) {
+      bonus -= NEGATED_SEMANTIC_PENALTY * Math.max(0, c.negatedSimilarity);
+    }
+
+    // Same-source-file evidence-group ranking boost — see
+    // SAME_FILE_EVIDENCE_BONUS's own comment.
+    if (multiEvidence && c.chunkId !== topByBaseScore.chunkId && c.filePath === topByBaseScore.filePath) {
+      const grounded = c.signals.lexicalScore > SAME_FILE_GROUNDING_FLOOR || c.signals.identifierScore > 0 || c.signals.exactIdentifierScore > 0;
+      if (grounded) bonus += SAME_FILE_EVIDENCE_BONUS;
+    }
+
+    // Step-specificity — see STEP_SPECIFICITY_BONUS's own comment.
+    if (c.chunkId !== topByBaseScore.chunkId) {
+      const topOutgoing = graph.get(topByBaseScore.chunkId) ?? new Set();
+      if (topOutgoing.has(c.chunkId) && c.signals.identifierScore >= topByBaseScore.signals.identifierScore + STEP_SPECIFICITY_MARGIN) {
+        bonus += STEP_SPECIFICITY_BONUS;
+      }
+    }
+
+    // Base-name convention — see BASE_NAME_BONUS's own comment.
+    if (
+      c.chunkId !== topByBaseScore.chunkId &&
+      c.filePath === topByBaseScore.filePath &&
+      c.symbolName &&
+      topByBaseScore.symbolName &&
+      isBaseNameOf(c.symbolName, topByBaseScore.symbolName)
+    ) {
+      bonus += BASE_NAME_BONUS;
     }
 
     return {

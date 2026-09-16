@@ -8,6 +8,7 @@ function candidate(overrides: Partial<RerankCandidate> & Pick<RerankCandidate, "
     filePath: "src/file.ts",
     combined: 0.5,
     cutoffBasis: 0.5,
+    signals: { semanticScore: 0, lexicalScore: 0, identifierScore: 0, exactIdentifierScore: 0, filePathScore: 0 },
     ...overrides,
   };
 }

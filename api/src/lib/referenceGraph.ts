@@ -27,10 +27,28 @@ export type ReferenceCandidate = { chunkId: string; symbolName: string | null; c
  * matching TS/JS/Python call syntax uniformly. Requires a real word
  * boundary before the identifier so a longer identifier that merely
  * contains this one as a substring (e.g. `findOrdersByUserIdAndStatus`
- * vs `findOrdersByUserId`) is never mistaken for a call to it. */
+ * vs `findOrdersByUserId`) is never mistaken for a call to it.
+ *
+ * Excludes the identifier's own *declaration* line first
+ * (`function foo(`/`def foo(`/`class foo(`/`async function foo(`) — a
+ * declaration matches this same `identifier(` shape just like a call does,
+ * but is not a call. Without this, two different files each defining their
+ * own function under the same name (a real, common pattern: overridden
+ * methods, same-named utilities in different modules, a legacy duplicate
+ * of a current implementation) would incorrectly appear to "call" each
+ * other — purely because each one's own declaration line matches the
+ * other's call-detection pattern, not because either genuinely references
+ * the other. A real, general bug (not specific to any one codebase or
+ * benchmark case), found during the retrieval-target-closure architecture's
+ * useful-context-rate investigation: a false reference edge here
+ * incorrectly relaxes the coherence-aware selection cutoff
+ * (retrieval.ts/retrievalEvaluator.ts) for a same-named-but-unrelated
+ * candidate. See docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md. */
 function containsCallTo(content: string, symbolName: string): boolean {
   const escaped = symbolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\b${escaped}\\s*\\(`).test(content);
+  const declarationPattern = new RegExp(`\\b(function|def|class|async\\s+function)\\s+${escaped}\\s*\\(`);
+  const withoutDeclaration = content.replace(declarationPattern, "");
+  return new RegExp(`\\b${escaped}\\s*\\(`).test(withoutDeclaration);
 }
 
 /** True if any single line of `content` both looks like an import/require

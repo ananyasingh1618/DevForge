@@ -94,7 +94,7 @@ describe("selectRankedResults — coherence-aware cutoff (retrieval-target-closu
   const NEUTRAL_QUERY = "xyzzy plugh wibble";
 
   it("keeps a same-top-level-directory candidate whose score is between the coherent and incoherent thresholds", () => {
-    // threshold (coherent) = 0.9 * 0.78 = 0.702; a same-directory candidate
+    // threshold (coherent) = 0.9 * 0.82 = 0.738; a same-directory candidate
     // scoring 0.75 clears that, so it must be kept.
     const top = result({ chunkId: "top", score: 0.9, symbolName: "processOrder", content: "processOrder body", filePath: "services/orderProcessor.ts" });
     const sameDir = result({ chunkId: "sameDir", score: 0.75, symbolName: "calculateOrderTotal", content: "different body", filePath: "services/otherFile.ts" });

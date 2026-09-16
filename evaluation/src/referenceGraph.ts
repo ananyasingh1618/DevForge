@@ -27,10 +27,18 @@ export type ReferenceCandidate = { chunkId: string; symbolName: string | null; c
  * matching TS/JS/Python call syntax uniformly. Requires a real word
  * boundary before the identifier so a longer identifier that merely
  * contains this one as a substring (e.g. `findOrdersByUserIdAndStatus`
- * vs `findOrdersByUserId`) is never mistaken for a call to it. */
+ * vs `findOrdersByUserId`) is never mistaken for a call to it.
+ *
+ * Excludes the identifier's own *declaration* line first — mirrors
+ * api/src/lib/referenceGraph.ts's own fix exactly, see that file for the
+ * full rationale (a real, general bug: two different files each defining
+ * their own function under the same name would otherwise incorrectly
+ * appear to "call" each other). */
 function containsCallTo(content: string, symbolName: string): boolean {
   const escaped = symbolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\b${escaped}\\s*\\(`).test(content);
+  const declarationPattern = new RegExp(`\\b(function|def|class|async\\s+function)\\s+${escaped}\\s*\\(`);
+  const withoutDeclaration = content.replace(declarationPattern, "");
+  return new RegExp(`\\b${escaped}\\s*\\(`).test(withoutDeclaration);
 }
 
 /** True if any single line of `content` both looks like an import/require

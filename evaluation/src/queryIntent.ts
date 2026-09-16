@@ -95,7 +95,10 @@ const INTENT_RULES: IntentRule[] = [
     patterns: [
       /\berror\b/i,
       /\bexception\b/i,
-      /\bfails?\b/i,
+      // Mirrors api/src/lib/queryIntent.ts's own negative lookahead exactly
+      // — see that file for the full rationale (a real bug found during the
+      // retrieval-target-closure architecture work).
+      /\bfails?\b(?!\s+to\b)/i,
       /\bfailure\b/i,
       /\bthrows?\b/i,
       /\bvulnerabilit(y|ies)\b/i,
@@ -165,6 +168,22 @@ export function negatedWordSet(query: string): Set<string> {
     }
   }
   return words;
+}
+
+/**
+ * Returns the first detected negated clause's own raw text. Mirrors
+ * api/src/lib/queryIntent.ts's own negatedClauseText exactly — see that
+ * file for the full rationale (an embedding-based suppression signal that
+ * catches short morphological variants `negatedWordSet`'s lexical matching
+ * alone cannot, e.g. "owns" vs. "owned").
+ */
+export function negatedClauseText(query: string): string | null {
+  for (const pattern of NEGATION_CUES) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(query);
+    if (match?.[1]) return match[1];
+  }
+  return null;
 }
 
 /**

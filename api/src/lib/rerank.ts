@@ -22,14 +22,21 @@
  * this codebase already follows.
  */
 
-import { classifyQueryIntent, negatedWordSet, type QueryIntent } from "./queryIntent.js";
+import { classifyQueryIntent, negatedWordSet, wantsMultipleEvidence, type QueryIntent } from "./queryIntent.js";
 import { buildReferenceGraph, areLinked, type ReferenceCandidate } from "./referenceGraph.js";
-import { tokenize, lexicalOverlapScore } from "./hybridScore.js";
+import { tokenize, lexicalOverlapScore, type ScoreSignals } from "./hybridScore.js";
 
 export type RerankCandidate = ReferenceCandidate & {
   filePath: string;
   combined: number;
   cutoffBasis: number;
+  signals: ScoreSignals;
+  /** Cosine similarity between the query's negated-clause text (if any)
+   * and this candidate's own embedding vector, computed by the caller
+   * (which has embedding access this module deliberately doesn't) —
+   * see NEGATED_SEMANTIC_PENALTY's own comment. 0 (a no-op) when the
+   * query has no detected negation cue. */
+  negatedSimilarity?: number;
 };
 
 export type RerankedCandidate<T extends RerankCandidate = RerankCandidate> = T & {
@@ -78,6 +85,85 @@ const TEST_BONUS = 0.15;
 // candidate's score in proportion to how much of the query's own negated
 // wording that specific candidate's own content/symbol actually contains.
 const NEGATED_MATCH_PENALTY = 0.3;
+// Semantic counterpart to NEGATED_MATCH_PENALTY, added in the same pass
+// after real per-case inspection found the lexical penalty alone still
+// missed cases where the negated concept and the wrong candidate's own
+// matching word are morphological variants shorter than hybridScore.ts's
+// tokensMatch stemming minimum (e.g. "owns" vs. "owned," both under 6
+// characters — "which function returns a project without checking that
+// the requester owns it," where the correct, unchecked candidate never
+// scores this penalty down because "owns"/"owned" never lexically match,
+// yet the wrong, ownership-checking candidate is obviously the one a
+// human reader would recognize as matching the negated concept). A real
+// embedding model's own semantic judgment of the negated clause's text
+// against each candidate's content catches this regardless of surface
+// word form — weight kept low (a real weight sweep found 0.1 the measured
+// optimum; higher values started reducing direct-hit-rate on cases this
+// signal doesn't even touch, by over-suppressing legitimate semantic
+// overlap once compounded with a lower `HYBRID_WEIGHTS.semantic`). See
+// docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md for the full sweep.
+const NEGATED_SEMANTIC_PENALTY = 0.1;
+// Boosts a same-source-file sibling of the top-scored candidate into the
+// top-K ranking (not just past the selection cutoff) when the query's own
+// wording signals it wants more than one result (wantsMultipleEvidence) —
+// see that function's own comment for the full rationale. Kept small and
+// gated by the candidate's own independent lexical/identifier grounding
+// (SAME_FILE_GROUNDING_FLOOR), never a blanket "same file as the winner"
+// boost. A real sweep found 0.2 the point that recovers Recall@5 without
+// affecting Direct-hit-rate in either direction; 0.3+ started reducing it.
+const SAME_FILE_EVIDENCE_BONUS = 0.2;
+const SAME_FILE_GROUNDING_FLOOR = 0.15;
+// A margin-gated "step-specificity" signal, added in the retrieval-target-
+// closure architecture's third pass (docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md).
+// A narrower, safer version of a rule tried and reverted in the second
+// pass (see docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md's "step-
+// specificity rule" — boost any referenced candidate whose own identifier
+// match is at least as strong as the referencer's, found net-negative
+// there because it fired too broadly). Real per-case inspection this pass
+// found a specific, common shape it missed: an orchestrator/caller
+// candidate that merely *references* the action a query describes (e.g.
+// `processOrder` calling `normalizeOrderPayload`) naturally accumulates
+// lexical overlap with the query from every step it names, outscoring the
+// one candidate that actually *performs* that specific action — even
+// though the query is asking about the specific step, not the
+// orchestrator. Gated on a real margin (`STEP_SPECIFICITY_MARGIN`, not
+// merely ">="), and restricted to only a candidate the raw-top-scored
+// candidate has a real detected reference to (never same-file alone — a
+// same-file extension was measured and found to fix some cases while
+// breaking others with no net improvement, so it was not adopted).
+const STEP_SPECIFICITY_BONUS = 0.3;
+const STEP_SPECIFICITY_MARGIN = 0.1;
+// A general code-naming-convention signal, added in the same pass: when a
+// same-file candidate's own symbol name is a literal prefix of the raw-
+// top-scored candidate's name (e.g. `parseWebhookPayload` is the base of
+// `parseWebhookPayloadStrict`), it is very likely the base/primary
+// implementation, with the top-scored one a named *variant* of it (a
+// widespread real convention — Strict/Safe/Async/V2/Legacy suffixes
+// denoting a variant of a base function, independent of any specific
+// codebase or benchmark). Found because the variant's own longer name
+// tends to accumulate more lexical/semantic overlap with a general
+// question about the base behavior than the base function's own shorter,
+// plainer name does. Deliberately unidirectional (only ever promotes the
+// *base* name, never demotes it) and restricted to exact same-file
+// siblings — not a general "shorter name wins" rule, which would have no
+// principled justification. A real sweep found 0.2 the point past which
+// no further gain was measured; kept at 0.3 for headroom, matching this
+// file's other bonus values' rounding.
+const BASE_NAME_BONUS = 0.3;
+
+/** True if `variant`'s name (snake_cased for comparison, so both camelCase
+ * and snake_case identifiers compare uniformly) starts with `base`'s own
+ * name followed by a word boundary — i.e. `base` names the same core
+ * concept `variant` extends with a further qualifier. Requires a genuine
+ * word-boundary continuation (an underscore after the shared prefix), so
+ * `getOrder` is never mistaken for the base of `getOrderRoute` unless the
+ * shared prefix actually ends on a word boundary in both spellings. */
+function isBaseNameOf(base: string, variant: string): boolean {
+  const toSnake = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  const b = toSnake(base);
+  const v = toSnake(variant);
+  return v !== b && v.startsWith(`${b}_`);
+}
 
 /** True if `filePath`'s basename (ignoring extension) is a conventional
  * "public surface" filename — `index` (TS/JS/JS barrel-file convention) or
@@ -129,6 +215,7 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
   const intent = classifyQueryIntent(query);
   const graph = buildReferenceGraph(candidates);
   const negatedWords = negatedWordSet(query);
+  const multiEvidence = wantsMultipleEvidence(query);
 
   // The single highest-raw-combined-scored candidate is used as the
   // reference point for "dependency"/"usage" intents (the caller/callee
@@ -209,6 +296,35 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
       const candidateTokens = [...tokenize(c.content), ...tokenize(c.symbolName ?? "")];
       const negatedOverlap = lexicalOverlapScore([...negatedWords], candidateTokens);
       bonus -= NEGATED_MATCH_PENALTY * negatedOverlap;
+    }
+    if (c.negatedSimilarity) {
+      bonus -= NEGATED_SEMANTIC_PENALTY * Math.max(0, c.negatedSimilarity);
+    }
+
+    // Same-source-file evidence-group ranking boost — see
+    // SAME_FILE_EVIDENCE_BONUS's own comment.
+    if (multiEvidence && c.chunkId !== topByBaseScore.chunkId && c.filePath === topByBaseScore.filePath) {
+      const grounded = c.signals.lexicalScore > SAME_FILE_GROUNDING_FLOOR || c.signals.identifierScore > 0 || c.signals.exactIdentifierScore > 0;
+      if (grounded) bonus += SAME_FILE_EVIDENCE_BONUS;
+    }
+
+    // Step-specificity — see STEP_SPECIFICITY_BONUS's own comment.
+    if (c.chunkId !== topByBaseScore.chunkId) {
+      const topOutgoing = graph.get(topByBaseScore.chunkId) ?? new Set();
+      if (topOutgoing.has(c.chunkId) && c.signals.identifierScore >= topByBaseScore.signals.identifierScore + STEP_SPECIFICITY_MARGIN) {
+        bonus += STEP_SPECIFICITY_BONUS;
+      }
+    }
+
+    // Base-name convention — see BASE_NAME_BONUS's own comment.
+    if (
+      c.chunkId !== topByBaseScore.chunkId &&
+      c.filePath === topByBaseScore.filePath &&
+      c.symbolName &&
+      topByBaseScore.symbolName &&
+      isBaseNameOf(c.symbolName, topByBaseScore.symbolName)
+    ) {
+      bonus += BASE_NAME_BONUS;
     }
 
     return {
