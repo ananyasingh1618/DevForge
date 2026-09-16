@@ -358,4 +358,4 @@ freshly rebuilt Docker stack (`docker compose down -v && up -d --build`, all 12 
 Phase 15 job behavior and Phase 16 cross-user isolation both reconfirmed live over real HTTP against
 that same rebuilt stack. VoxMind confirmed untouched throughout. Phase 17 not started.
 
-Commit: `<pending>`
+Commit: `d64ef66`
