@@ -22,6 +22,7 @@ either of these is called, by provider_config.resolve_llm_provider().
 
 from __future__ import annotations
 
+import time
 from typing import TypeVar
 
 import anthropic
@@ -33,6 +34,18 @@ from pydantic import BaseModel
 from app.errors import AIResponseInvalidError, ProviderRequestError
 
 T = TypeVar("T", bound=BaseModel)
+
+# Gemini's free-tier flash models genuinely return a transient 503
+# "currently experiencing high demand" ServerError under real load —
+# observed live, not hypothetical (Google's own message: "Spikes in demand
+# are usually temporary. Please try again later."). A short, bounded retry
+# for exactly this one error shape turns a real but transient capacity blip
+# into a normal, successful response instead of surfacing it to the user on
+# the first try. Nothing else is retried here — a 4xx ClientError (bad
+# request, auth, rate limit) is never transient in the same way and is
+# still raised immediately.
+GEMINI_SERVER_ERROR_RETRIES = 2
+GEMINI_SERVER_ERROR_BACKOFF_SECONDS = (1, 2)
 
 
 def call_anthropic_structured(
@@ -84,29 +97,45 @@ def call_gemini_structured(
     max_tokens: int,
     invalid_response_detail: str,
 ) -> T:
-    try:
-        response = client.models.generate_content(
-            model=model,
-            contents=user_content,
-            config=genai_types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                response_mime_type="application/json",
-                response_schema=response_model,
-                max_output_tokens=max_tokens,
-            ),
+    response = None
+    last_server_error: genai_errors.ServerError | None = None
+    for attempt in range(GEMINI_SERVER_ERROR_RETRIES + 1):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=user_content,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    response_mime_type="application/json",
+                    response_schema=response_model,
+                    max_output_tokens=max_tokens,
+                ),
+            )
+            break
+        except genai_errors.ClientError as e:
+            if e.code in (401, 403):
+                raise ProviderRequestError(f"Authentication with the AI provider failed: {e.message}") from e
+            if e.code == 429:
+                raise ProviderRequestError(f"The AI provider rate-limited this request: {e.message}") from e
+            raise ProviderRequestError(f"The AI provider rejected the request: {e.message}") from e
+        except genai_errors.ServerError as e:
+            last_server_error = e
+            if attempt < GEMINI_SERVER_ERROR_RETRIES:
+                time.sleep(GEMINI_SERVER_ERROR_BACKOFF_SECONDS[attempt])
+                continue
+            raise ProviderRequestError(f"The AI provider returned an error: {e.message}") from e
+        except genai_errors.APIError as e:
+            raise ProviderRequestError(f"The AI provider returned an error: {e.message}") from e
+        except Exception as e:  # network/connection failures etc. — never leaked raw to the client
+            raise ProviderRequestError(f"Could not reach the AI provider: {e}") from e
+
+    if response is None:
+        # Unreachable in practice (the loop above always either returns via
+        # break or raises), but keeps the type checker honest and fails
+        # loudly instead of silently if that ever stops being true.
+        raise ProviderRequestError(
+            f"The AI provider returned an error: {last_server_error.message if last_server_error else 'unknown error'}"
         )
-    except genai_errors.ClientError as e:
-        if e.code in (401, 403):
-            raise ProviderRequestError(f"Authentication with the AI provider failed: {e.message}") from e
-        if e.code == 429:
-            raise ProviderRequestError(f"The AI provider rate-limited this request: {e.message}") from e
-        raise ProviderRequestError(f"The AI provider rejected the request: {e.message}") from e
-    except genai_errors.ServerError as e:
-        raise ProviderRequestError(f"The AI provider returned an error: {e.message}") from e
-    except genai_errors.APIError as e:
-        raise ProviderRequestError(f"The AI provider returned an error: {e.message}") from e
-    except Exception as e:  # network/connection failures etc. — never leaked raw to the client
-        raise ProviderRequestError(f"Could not reach the AI provider: {e}") from e
 
     parsed = response.parsed
     if parsed is None:

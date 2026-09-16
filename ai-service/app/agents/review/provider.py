@@ -27,7 +27,7 @@ from app.lib.structured_llm import call_anthropic_structured, call_gemini_struct
 from app.agents.review.schemas import ReviewAnswerContent, ReviewSourceInput
 
 ANTHROPIC_MODEL = "claude-opus-5"
-GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 MAX_REVIEW_TOKENS = 4000
 
 SYSTEM_PROMPT = """You are the AI code-review agent for DevForge, an AI software engineering \

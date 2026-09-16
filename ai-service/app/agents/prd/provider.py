@@ -23,7 +23,7 @@ from app.lib.structured_llm import call_anthropic_structured, call_gemini_struct
 from app.schemas import PrdContent, RequirementsContent
 
 ANTHROPIC_MODEL = "claude-opus-5"
-GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 MAX_OUTPUT_TOKENS = 8000
 
 SYSTEM_PROMPT = """You are the PRD-generation agent for DevForge, an AI software engineering \

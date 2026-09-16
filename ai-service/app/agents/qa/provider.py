@@ -25,7 +25,7 @@ from app.lib.structured_llm import call_anthropic_structured, call_gemini_struct
 from app.agents.qa.schemas import QaAnswerContent, QaSourceInput
 
 ANTHROPIC_MODEL = "claude-opus-5"
-GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 MAX_ANSWER_TOKENS = 2000
 
 SYSTEM_PROMPT = """You are the codebase Q&A agent for DevForge, an AI software engineering \
