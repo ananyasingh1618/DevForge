@@ -2,8 +2,9 @@
  * Optional real-provider evaluation (see docs/EVALUATION_PHASE_PLAN.md,
  * "Real-provider evaluation strategy"). Calls ai-service's actual
  * `/qa/answer` and `/review/analyze` endpoints directly over HTTP, using
- * this package's own deterministic retrieval ranking (src/evaluators/
- * retrievalEvaluator.ts's rankChunks()) to build each request's numbered
+ * this package's own retrieval ranking (src/evaluators/
+ * retrievalEvaluator.ts's rankChunks(), backed by a real local embedding
+ * model by default) to build each request's numbered
  * source list — exactly the shape Node's real services build, but without
  * needing a real GitHub-connected repository or a running Postgres/Node API
  * at all, since ai-service's Q&A/review endpoints accept source excerpts
@@ -19,7 +20,7 @@ import { REVIEW_CASES, type ReviewCase, type MockFinding } from "./dataset/revie
 import { groundAnswer } from "./qaAnswerGrounding.js";
 import type { QaAnswer } from "./evaluators/qaEvaluator.js";
 
-function buildSources(ranked: ReturnType<typeof rankChunks>) {
+function buildSources(ranked: Awaited<ReturnType<typeof rankChunks>>) {
   return ranked.map((r, i) => ({
     source_number: i + 1,
     path: r.chunk.filePath,
@@ -52,7 +53,7 @@ export async function realQaAnswers(aiServiceUrl: string, cases: QaCase[] = QA_C
   const answers = new Map<string, QaAnswer>();
   let fallbackCount = 0;
   for (const c of cases) {
-    const ranked = rankChunks(c.question, undefined, TOP_K);
+    const ranked = await rankChunks(c.question, undefined, TOP_K);
     const sources = buildSources(ranked);
     const { status, body } = await postJson(`${aiServiceUrl}/qa/answer`, {
       question: c.question,
@@ -82,7 +83,7 @@ export async function realReviewFindings(
 ): Promise<Map<string, MockFinding[]>> {
   const result = new Map<string, MockFinding[]>();
   for (const c of cases) {
-    const ranked = rankChunks(c.scope, undefined, TOP_K);
+    const ranked = await rankChunks(c.scope, undefined, TOP_K);
     const sources = buildSources(ranked);
     const { status, body } = await postJson(`${aiServiceUrl}/review/analyze`, {
       scope: c.scope,

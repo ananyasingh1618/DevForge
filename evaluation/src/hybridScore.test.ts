@@ -110,7 +110,10 @@ describe("combinedScore", () => {
       filePathScore: 1,
     });
     expect(highSemantic).toBeGreaterThan(lowSemanticHighOthers - 1); // sanity: weights are documented, not absolute
-    expect(highSemantic).toBeCloseTo(0.9, 5);
+    // HYBRID_WEIGHTS.semantic is 0.8 (lowered from 1.0 in the retrieval-
+    // target-closure architecture's real-local-embedding-model pass — see
+    // that constant's own comment), so a pure semantic score of 0.9 nets 0.72.
+    expect(highSemantic).toBeCloseTo(0.72, 5);
   });
 
   it("an exact identifier match produces the largest single boost", () => {

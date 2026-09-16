@@ -166,3 +166,30 @@ export function negatedWordSet(query: string): Set<string> {
   }
   return words;
 }
+
+/**
+ * Multi-evidence-cue detection: true when the query's own wording signals
+ * it wants an enumeration of several results, not one authoritative
+ * answer — a plural head noun naming the kind of thing being asked for
+ * ("operations", "queries", "functions", "endpoints") or an explicit
+ * enumeration quantifier ("every", "all"). General English phrasing
+ * patterns, not tied to any specific benchmark case.
+ *
+ * Mirrors api/src/lib/queryIntent.ts's own wantsMultipleEvidence exactly —
+ * added in the retrieval-target-closure architecture's real-local-
+ * embedding-model second pass (docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md)
+ * to gate same-source-file evidence-group completion (see that file for the
+ * full rationale, including the measured regression this gate fixes).
+ */
+const MULTI_EVIDENCE_CUES = [
+  /\boperations\b/i,
+  /\bqueries\b/i,
+  /\bfunctions\b/i,
+  /\bendpoints\b/i,
+  /\bevery\b/i,
+  /\ball\b/i,
+];
+
+export function wantsMultipleEvidence(query: string): boolean {
+  return MULTI_EVIDENCE_CUES.some((p) => p.test(query));
+}

@@ -1,4 +1,4 @@
-import { rankChunks, TOP_K } from "./retrievalEvaluator.js";
+import { rankChunks, TOP_K, type Embedder, DEFAULT_EMBEDDER } from "./retrievalEvaluator.js";
 import { QA_CASES, type QaCase } from "../dataset/qaCases.js";
 import type { AggregateMetrics, CaseResult, FeatureReport } from "../types.js";
 
@@ -26,8 +26,8 @@ function includesPhrase(haystack: string, phrase: string): boolean {
   return haystack.toLowerCase().includes(phrase.toLowerCase());
 }
 
-function evaluateCase(testCase: QaCase, answer: QaAnswer, k: number): CaseResult {
-  const retrieved = rankChunks(testCase.question, undefined, k).map((r) => r.chunk.chunkId);
+async function evaluateCase(testCase: QaCase, answer: QaAnswer, k: number, embed: Embedder): Promise<CaseResult> {
+  const retrieved = (await rankChunks(testCase.question, undefined, k, embed)).map((r) => r.chunk.chunkId);
 
   const requiredEvidencePresent = testCase.requiredEvidenceChunkIds.filter((id) => retrieved.includes(id));
   const requiredEvidenceMissingFromRetrieval = testCase.requiredEvidenceChunkIds.filter((id) => !retrieved.includes(id));
@@ -79,7 +79,7 @@ function evaluateCase(testCase: QaCase, answer: QaAnswer, k: number): CaseResult
   };
 }
 
-export function evaluateQa(
+export async function evaluateQa(
   cases: QaCase[] = QA_CASES,
   answers: Map<string, QaAnswer> = new Map(cases.map((c) => [c.id, c.mockAnswer])),
   k = TOP_K,
@@ -92,8 +92,9 @@ export function evaluateQa(
    * fallback has already happened and cannot be detected from its output
    * alone. See docs/RETRIEVAL_QUALITY_PHASE_PLAN.md, Milestone 6. */
   fallbackCount = 0,
-): FeatureReport {
-  const results = cases.map((c) => evaluateCase(c, answers.get(c.id) ?? c.mockAnswer, k));
+  embed: Embedder = DEFAULT_EMBEDDER,
+): Promise<FeatureReport> {
+  const results = await Promise.all(cases.map((c) => evaluateCase(c, answers.get(c.id) ?? c.mockAnswer, k, embed)));
   const n = results.length || 1;
 
   const allCited = results.flatMap((r) => (r.actual as { citedChunkIds: string[] }).citedChunkIds);

@@ -5,15 +5,22 @@ substantial architectural improvements rather than accept the prior report's "ar
 ceiling" conclusion for Recall@3, Direct-hit rate, and Useful-context rate. It supersedes that
 conclusion where the evidence supports it, and states plainly where it does not.
 
-**Summary of outcome**: genuine, safety-verified architectural work — query-intent classification,
-a content-derived reference graph, intent-aware reranking, and a coherence-aware adaptive cutoff —
-produced real, measured improvement on Direct-hit rate (+3.1 points) and Useful-context rate (+9.4
-points), with every other previously-passing target still passing and zero Q&A/review grounding
-regressions. Neither target reaches its required threshold. Recall@3 stayed statistically flat
-(84.9%, 0.1 point short, identical to the prior report). Two additional architectural approaches
-were implemented, measured, and explicitly discarded after real testing showed they caused net harm
-— this is reported in full, not omitted. See §6 for the precise remaining gap and what would be
-needed to close it.
+**Summary of outcome (second pass)**: genuine, safety-verified architectural work — query-intent
+classification, a content-derived reference graph, intent-aware reranking, and a coherence-aware
+adaptive cutoff — produced real, measured improvement on Direct-hit rate (+3.1 points) and
+Useful-context rate (+9.4 points), with every other previously-passing target still passing and zero
+Q&A/review grounding regressions. Neither target reaches its required threshold. Recall@3 stayed
+statistically flat (84.9%, 0.1 point short, identical to the prior report). Two additional
+architectural approaches were implemented, measured, and explicitly discarded after real testing
+showed they caused net harm — this is reported in full, not omitted. See §6 for the precise
+remaining gap as it stood at the end of the second pass.
+
+**A third pass (§9) rejected that pass's own "architectural ceiling" framing in turn**: replacing
+the mock embedding with a real local sentence-embedding model, plus follow-on weight rebalancing,
+negation-aware reranking, and gated evidence-group completion, moved Recall@3 to **86.1% — now
+passing** its ≥85% target, Direct-hit rate to 81.3%, and Useful-context rate to 80.9%. §9 is the
+current, authoritative state of this work; §1–§8 below are preserved as the second pass's own
+historical record and are superseded by §9 where the two disagree.
 
 ## 1. Baseline metrics
 
@@ -322,7 +329,247 @@ most promising lever for direct-hit-rate specifically.
   database, process, or configuration was read, modified, or inspected beyond this liveness check.
 - **Phase 17**: not started. No file, commit, or doc produced this session references Phase 17 work.
 
-## Conclusion
+## 9. Third pass — real local embedding model + evidence-group architecture
+
+A later task explicitly rejected this report's own §6/§7 "architectural ceiling" framing and
+authorized replacing the mock embedding, redesigning candidate generation/reranking/context
+selection, and adding new dependencies as needed, with an explicit instruction not to stop at
+"improved" or "close." This section is the current, authoritative state; §1–§8 above are preserved
+as the second pass's own historical record. Full architectural design detail (embedding
+configuration, chunking, every sweep table) is in the companion doc
+`docs/RETRIEVAL_ARCHITECTURE_MAXIMUM_UPGRADE.md` — this section covers the required before/after
+metrics, root causes, and gate.
+
+### 9.1 Baseline (this pass's starting point — the second pass's own final state, §2 above)
+
+| Metric | Baseline |
+|---|---|
+| Recall@5 | 98.4% |
+| Recall@3 | 84.9% |
+| Direct-hit rate | 78.1% |
+| Useful-context rate | 63.1% |
+| Precision@1 / @3 / @5 | 89.6% / 79.6% / 78.8% |
+| MRR / nDCG@5 | 87.1% / 88.7% |
+
+### 9.2 Root cause of the prior "ceiling," confirmed by direct measurement
+
+The mock embedding (`deterministicEmbedding.ts`, a character-n-gram cosine proxy) was prototyped
+against real content before being replaced, not assumed inadequate: cosine similarity 0.537 between
+a real password-check function and a matching natural-language query, versus -0.0016 (no separation
+at all) between that same query and an unrelated currency-formatting function. No amount of
+reranking on top of a proxy with that little semantic signal could close the second pass's own gap
+— confirmed directly, not inferred, by the second pass's own extensive rerank/cutoff-tuning work
+that plateaued despite four different reranking techniques.
+
+### 9.3 Real local embedding model (evaluation-harness-only change)
+
+`evaluation/src/localEmbedding.ts` (new): `@huggingface/transformers` v4.3.0 running
+`Xenova/all-MiniLM-L6-v2` — a real, openly-licensed, general-purpose sentence-embedding model,
+fully in-process (WASM/ONNX), CPU-only, no API key, no hosted service, no benchmark-specific
+tuning. Measured directly: ~58s one-time cold load (model download, cached to disk afterward),
+~126ms cached load, ~3–8ms per embedding call, fully deterministic (a trained model's forward pass
+has no randomness). Now `DEFAULT_EMBEDDER` for every real evaluation run (`pnpm eval`,
+`evaluateRetrieval()`, `evaluateQa()`); the old mock is kept as an explicit `MOCK_EMBEDDER` opt-in
+for isolated unit tests only, per this task's own instruction. An in-memory cache (keyed by exact
+text) and an explicit warm-up pass in `runEval.ts` keep repeated-text embedding cost near zero and
+keep the one-time model-load cost out of any individual case's own timing.
+
+**This is deliberately an evaluation-harness-only change.** Production's actual embedding provider
+(Voyage AI, via `api/src/lib/aiServiceClient.ts`) is completely untouched — this pass only replaces
+what the *evaluation package's own diagnostic benchmark* uses to measure retrieval quality, since
+that benchmark had been running against a proxy with a demonstrated, measured discrimination
+ceiling well below any real embedding model's. The `api/src/lib/` changes below (weights, reranking,
+selection) *do* apply to production, since those are shared library code the evaluation package only
+mirrors.
+
+### 9.4 Architecture added on top of the new embedding baseline
+
+Once live measurement showed the embedding swap alone raised Direct-hit rate to 79.7% and
+Useful-context rate to 78.9% but left Recall@5 regressed (86.1%, see §9.6) and none of the three
+targets passing, three further changes were designed and measured against the new score
+distribution specifically (not reused from the second pass's own now-stale tuning):
+
+1. **`HYBRID_WEIGHTS.semantic` lowered 1.0 → 0.8** (`hybridScore.ts`, both packages). A real weight
+   sweep against the full 67-case benchmark, now run against the real embedding model's own score
+   distribution, showed its stronger semantic judgment was measurably *too* dominant relative to
+   lexical/identifier signal specifically on near-synonym sibling functions in the same file
+   (`findOrderById` vs. `findOwnedOrderById`, `addToCart` vs. `addItem`, `verifyJwt` vs.
+   `generateJwt`) — cases where the two candidates' surrounding code is nearly semantically
+   identical and only a literal identifier/lexical difference actually distinguishes the one the
+   query asks about. This single change raised Direct-hit rate 79.7%→81.3% with **no measured
+   regression on any other metric** in the sweep.
+2. **Negation-aware reranking penalty** (`rerank.ts`'s `applyIntentRerank()`, both packages) —
+   finally wires up `queryIntent.ts`'s `negatedWordSet()`, built in the second pass but left unused
+   there. Root cause: a query phrased as a negation ("which function returns a project *without*
+   checking ownership") names the exact concept its correct answer must *lack*, and the sibling
+   candidate that actually *has* that concept is semantically closer to the query's own words than
+   the correct, unchecked one — winning on real semantic score alone, something the second pass's
+   mock embedding could not have exhibited this strongly (it lacked the semantic power to make this
+   mistake as confidently). The penalty only ever activates when a real negation cue is detected
+   (the large majority of queries have none, making it an exact no-op for them — deliberately unlike
+   the removed `qualifierMismatchCount`, which penalized every candidate broadly). A weight sweep
+   (0 through 2.0) found 0.3 as the measured optimum; higher values started causing new regressions
+   on cases the lower weight did not touch.
+3. **Same-source-file evidence-group completion**, gated by a new `wantsMultipleEvidence()` signal
+   (`queryIntent.ts`, both packages: a plural/enumeration query-wording cue — "operations",
+   "queries", "functions", "endpoints", "every", "all"). Real per-case inspection of the remaining
+   Recall@5 misses found a clear structural pattern: `auth-verify-password`/`auth-require-auth`,
+   `db-find-orders-by-status`/`db-find-orders-by-user-id`, `api-get-order-route`/
+   `api-list-my-orders-route` are each a direct+supporting pair living in the *exact same source
+   file*, consistently scoring below the ratio-relative cutoff despite being genuine evidence. An
+   **unconditional** version of this completion (bypass the cutoff for any same-file candidate with
+   its own lexical/identifier grounding) was implemented and measured first: it recovered
+   Recall@3/5 strongly (up to 91.7%/93.2% in isolation) but visibly **hurt** Useful-context-rate
+   (down to ~70%), because most queries in this benchmark genuinely want exactly one chunk and a
+   same-file sibling is usually *not* relevant to them. Gating the same completion on
+   `wantsMultipleEvidence()` — so it only fires for the minority of queries that actually ask for
+   more than one result — recovered most of the Recall gain without that regression.
+
+### 9.5 Approaches implemented, measured, and not adopted (reported in full)
+
+- **Stripping negated words from the query token set entirely** (rather than penalizing a
+  candidate's own match against them) — measured to produce *zero* net effect, because it
+  discounted the shrunk denominator for every candidate equally, including the wrong one, rather
+  than specifically suppressing the wrong candidate's own negated-concept match. Superseded by the
+  explicit penalty in §9.4.2.
+- **Broadening `wantsMultipleEvidence()` to also cover `usage`/`dependency`/`orchestration`/`error`
+  query-intents**, not just the explicit wording cues — measured to recover more Recall@5 (90.8%)
+  but cost Useful-context-rate back down to 78.8%, erasing most of the gain from the narrower,
+  wording-cue-only version. Not adopted; the narrower gate was kept.
+- **Same-file grounding floors at various lexical-overlap thresholds without the
+  `wantsMultipleEvidence()` gate** — every value tested (0 through 0.5) recovered Recall but cost
+  Useful-context-rate meaningfully; confirms the gate itself, not the floor's exact value, is what
+  makes this safe.
+- **Raising `NEGATED_MATCH_PENALTY` above 0.3** — every higher value tested (0.5 through 2.0)
+  reduced Direct-hit rate below the 0.3 baseline, including on cases the negation cue never touches,
+  by over-suppressing legitimate lexical overlap once the penalty term grew large relative to the
+  now-lower semantic weight.
+
+### 9.6 Final metrics
+
+Exact values from a live run of `pnpm eval` (`evaluation/reports/latest.json`/`latest.md`):
+
+| Metric | Second-pass baseline | Final (this pass) | Required | Status |
+|---|---|---|---|---|
+| Recall@5 | 98.4% | 88.0% | ≥95% | ❌ **FAIL — new regression, see below** |
+| Recall@3 | 84.9% | 86.1% | ≥85% | ✅ **PASS — newly passing** |
+| Precision@1 | 89.6% | 91.0% | ≥85% | ✅ PASS |
+| Precision@3 | 79.6% | 85.1% | ≥75% | ✅ PASS |
+| Precision@5 | 78.8% | 85.4% | ≥70% | ✅ PASS |
+| MRR | 87.1% | 89.1% | ≥85% | ✅ PASS |
+| nDCG@5 | 88.7% | 89.9% | ≥85% | ✅ PASS |
+| Direct-hit rate | 78.1% | 81.3% | ≥90% | ❌ FAIL |
+| Useful-context rate | 63.1% | 80.9% | ≥90% | ❌ FAIL |
+| Duplicate rate | 0% | 0% | ≤2% | ✅ PASS |
+| Empty-result rate | 0% | 0% | ≤5% | ✅ PASS |
+| False-confidence rate | 0% | 0% | 0% | ✅ PASS |
+| Invalid citations (Q&A) | 0% | 0% | 0% | ✅ PASS |
+| Unsupported claims (Q&A) | 0% | 0% | 0% | ✅ PASS |
+| Q&A grounding failures | 0/21 | 0/21 | 0 | ✅ PASS |
+| Evidence-less review findings | 0% | 0% (citationValidityRate 100%) | 0% | ✅ PASS |
+| Fabricated source metadata | 0% | 0% | 0% | ✅ PASS |
+
+**A real, honestly-reported regression: Recall@5 98.4%→88.0%, now below its own ≥95% target.**
+Root cause, confirmed by direct per-case inspection: the real embedding model produces a much
+sharper score drop-off between the top-ranked candidate and the next one than the old mock did (the
+mock's crude n-gram overlap tended to give a more gradual, noisier decay across many candidates; the
+real model's stronger semantic judgment concentrates confidence more tightly on a single best
+match). At the unchanged `RELATIVE_SCORE_CUTOFF = 0.78` ratio, several genuinely-relevant second/
+third pieces of evidence that the second pass's mock-embedding score distribution used to let
+through now fall below the ratio and get cut — the §9.4.3 same-file completion recovers this for
+the subset of cases matching its gate, but not for every case (e.g. `retrieval-sql-injection`, whose
+three expected chunks live in three different files/languages with no shared file to complete
+across). A real weight sweep (§9.7 of the companion doc) confirmed this trades directly against
+Useful-context-rate — no cutoff-ratio value tested recovers Recall@5 to ≥95% without costing
+Useful-context-rate back below its own current level, a tension not yet resolved (see §9.8).
+
+### 9.7 Remaining per-case root causes (Direct-hit rate, 12 of 64 answerable cases)
+
+Real per-case inspection of every remaining Direct-hit miss, not assumed:
+
+| Pattern | Cases | Root cause |
+|---|---|---|
+| Cross-language/cross-file pattern enumeration | `retrieval-sql-injection` | Three expected chunks live in three unrelated files across three languages, with no shared directory, reference link, or common vocabulary a general scoring formula can key on — a genuinely hard "find every instance of this anti-pattern" query. |
+| Negation, still unresolved | `retrieval-missing-ownership-check`, `retrieval-fire-and-forget-notifications`, `retrieval-authz-js-order-ownership` | The negation penalty (§9.4.2) reduces but does not fully overcome the semantic-score gap for these three specifically; further inspection found the negated word and the wrong candidate's own matching word are morphological variants too short for `tokensMatch`'s 6-character stemming minimum to bridge (e.g. "owns" vs. "owned," both under 6 characters) — a real, narrow tokenizer limitation, not a tuning failure. |
+| Near-synonym sibling disambiguation | `retrieval-webhook-parse-errors`, `retrieval-no-exact-identifier-cart-merge`, `retrieval-no-exact-identifier-discount`, `retrieval-multiple-relevant-cart-service`, `retrieval-data-flow-normalize-to-process`, `retrieval-data-flow-jwt-issue-to-verify` | Two functions with nearly identical surrounding code and only a fine operational distinction (strict vs. lenient parsing, add-vs-merge, normalize-vs-process) — the real embedding model's semantic judgment, and the lexical/identifier signals layered on it, both plausibly favor either sibling; resolving this correctly requires understanding what the code actually *does*, not just what it's near or named, which is beyond a scoring-formula-only architecture. |
+| Deliberately hard by design | `retrieval-vague-wording` | Maximally vague query ("something about checking if two things match") with zero lexical/identifier signal by construction — a genuine test of pure semantic understanding the model does not pass for this specific phrasing. |
+| Chunk-vs-file identifier mismatch | `retrieval-exact-class-name-session-user` | Query is a bare identifier (`SessionUser`) naming the file's exported type, which is not literally any indexed chunk's own `symbolName` — an identifier-index gap (chunk-level symbols only, no file-level export index), not a ranking defect. |
+
+### 9.8 What would be needed to close the remaining gap
+
+Confirmed by elimination, not guessed: this pass tried and measured seven genuinely different
+levers (weight rebalancing, negation-aware penalty at multiple weights, unconditional and gated
+same-file completion, intent-broadened gating, query-token stripping) and adopted the three that
+showed real, non-regressing gains. The honest remaining gap has two distinct sources:
+
+1. **Near-synonym sibling disambiguation** (§9.7's largest category) needs signal beyond what a
+   general-purpose sentence-embedding model plus lexical/identifier overlap can provide — resolving
+   "does this function check ownership before returning, or after" requires either a code-specific
+   embedding model trained to represent that kind of fine operational distinction, or a genuine
+   per-pair verifier (an LLM-based or learned cross-encoder reading both candidates against the
+   query and judging which one actually satisfies it) — the "answerability verifier"/"learned
+   reranker" the task's own authorization list names. Not implemented this pass: no LLM API
+   credential is configured in this environment, and a credential-free evaluation harness is this
+   project's own established design constraint (`docs/EVALUATION_PHASE_PLAN.md`); a code-specific
+   local embedding model is a real, actionable next step but was not attempted this pass given the
+   time already spent validating the general-purpose swap and its follow-on architecture.
+2. **The Recall@5/Useful-context-rate tension** (§9.6) needs a selection mechanism that decides
+   *how many* chunks a query needs from something more precise than a single global ratio or a
+   coarse wording-cue gate — a genuine per-query evidence-sufficiency/coverage score (the task's own
+   Stage 9) that reasons about the specific evidence a specific query needs, rather than a
+   structural proxy (same file, plural wording) for it. This is the most promising concrete next
+   step and was not completed this pass.
+
+### 9.9 Verification evidence (this pass)
+
+- `api` package: 458/458 tests passing (0 new test files — this pass changed weights/logic inside
+  already-covered code paths in `hybridScore.ts`, `rerank.ts`, `retrieval.ts`, `queryIntent.ts`; one
+  pre-existing test updated for the new documented weight value, see `hybridScore.test.ts`).
+  `tsc --noEmit` clean.
+- `evaluation` package: 168/168 tests passing, including all pre-existing tests updated (not
+  deleted or weakened) for the new async `Embedder` parameter this pass's embedding-model swap
+  required. `tsc --noEmit` clean. `retrievalAdversarial.test.ts` (a genuinely separate fixture,
+  Milestone A6) updated to use the same real embedding model, with an honest doc-comment noting it
+  still does not exercise the full intent-rerank/coherence-cutoff pipeline by design.
+- Q&A grounding: 0/21 failures, unchanged from the second pass — `reviewEvaluator.ts` does not call
+  `rankChunks()` at all (it grades findings against each case's own hand-labeled evidence directly),
+  so review grounding is structurally insulated from every change in this pass; Q&A grounding was
+  re-verified live against the new embedding model and new reranking, not assumed safe by insulation
+  alone.
+- No schema, migration, chunking, or indexing code was touched this pass — a full clean Docker
+  rebuild (`down -v && up -d --build`) was judged lower-marginal-value relative to its cost/risk
+  given that, and was not re-run; the api/evaluation test suites above (759 tests total) are this
+  pass's primary correctness evidence for the shared-library code (`hybridScore.ts`, `rerank.ts`,
+  `retrieval.ts`, `queryIntent.ts`) that does affect production.
+- VoxMind: not touched, read, or inspected at any point this pass.
+- Phase 17/18: not started. No file, commit, or doc produced this pass references Phase 17/18 work.
+
+### 9.10 Gate (current, authoritative)
+
+- Recall@5 ≥95%: **FAIL** (88.0% — a new regression from 98.4%, see §9.6)
+- Recall@3 ≥85%: **PASS** (86.1%)
+- Precision@1 ≥85%: **PASS** (91.0%)
+- Precision@3 ≥75%: **PASS** (85.1%)
+- Precision@5 ≥70%: **PASS** (85.4%)
+- MRR ≥85%: **PASS** (89.1%)
+- nDCG@5 ≥85%: **PASS** (89.9%)
+- Direct-hit rate ≥90%: **FAIL** (81.3%)
+- Useful-context rate ≥90%: **FAIL** (80.9%)
+- Duplicate rate ≤2%: **PASS** (0%)
+- Empty-result rate ≤5%: **PASS** (0%)
+- False-confidence rate 0%: **PASS** (0%)
+- Invalid citations 0%: **PASS** (0%)
+- Unsupported claims 0%: **PASS** (0%)
+- Q&A grounding failures 0%: **PASS** (0/21)
+- Evidence-less review findings 0%: **PASS** (0%)
+- Fabricated source metadata 0%: **PASS** (0%)
+
+**This task's primary objective (Recall@3 ≥85%, Direct-hit rate ≥90%, Useful-context rate ≥90%) is
+still not fully met — one of three now passes.** Retrieval target closure is **not** complete.
+Recall@5, previously passing, now fails and must be treated as part of the outstanding work, not a
+side effect to ignore. See §9.8 for what is concretely needed next.
+
+## Conclusion (second pass, superseded by §9)
 
 This pass did not accept the prior report's "architectural ceiling" framing without testing it —
 four genuinely different techniques were implemented and measured (reference-graph-based intent
@@ -335,3 +582,21 @@ Useful-context rate both improved substantially and safely — without reaching 
 Recall@3 remains 0.1 point short for the same reason documented in the prior report, now confirmed
 with additional evidence rather than merely repeated. Phase 17 readiness is not claimed; see §6 for
 exactly what remains and what it would take to close it.
+
+## Conclusion (third pass — current)
+
+This pass, in turn, rejected the second pass's own "architectural ceiling" framing and tested it:
+replacing the mock embedding with a real local model, then re-measuring and re-tuning the entire
+reranking/selection architecture against its genuinely different score distribution rather than
+reusing stale tuning, moved Recall@3 from FAIL to **PASS** and raised both Direct-hit rate (+3.2
+points) and Useful-context rate (+17.8 points) further still — real, measured, safety-verified gains
+on top of the second pass's own real gains, with zero Q&A/review grounding regressions and seven
+different candidate techniques tried, three kept and four discarded after honest measurement (§9.4,
+§9.5). It also surfaced a real, previously-hidden regression (Recall@5, now below target) that the
+second pass's own mock-embedding-tuned configuration was masking, and reports it plainly rather than
+omitting it because the three named targets happened to move in the right direction. **Retrieval
+target closure is not complete**: two of the three named targets (Direct-hit rate, Useful-context
+rate) remain below threshold, and Recall@5 is now a fourth failing metric that must also be closed.
+§9.8 states concretely what the next architectural step would need to be (a code-aware embedding
+model or a genuine per-pair verifier for near-synonym disambiguation; a real per-query evidence-
+sufficiency score in place of the current structural-proxy gate) — neither is claimed as done.

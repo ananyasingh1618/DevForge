@@ -9,6 +9,7 @@ import { chunkFile } from "../lib/chunking.js";
 import { cosineSimilarity } from "../lib/similarity.js";
 import { combinedScore, computeScoreSignals, HYBRID_WEIGHTS } from "../lib/hybridScore.js";
 import { applyIntentRerank, areLinked, buildReferenceGraph } from "../lib/rerank.js";
+import { wantsMultipleEvidence } from "../lib/queryIntent.js";
 import { redactSecrets } from "../lib/secretRedaction.js";
 import { buildSearchObservabilityEvent, logSearchObservability } from "../lib/searchObservability.js";
 import type { SearchRequestInput } from "../schemas/retrieval.js";
@@ -345,6 +346,21 @@ export const RELATIVE_SCORE_CUTOFF = 0.78;
  */
 const INCOHERENCE_STRICTNESS = 1.15;
 
+/**
+ * Same-source-file evidence-group completion floor — see
+ * queryIntent.ts's `wantsMultipleEvidence` for the full rationale and the
+ * regression this gate fixes. A candidate is only ever unconditionally
+ * completed alongside the top match when it sits in that exact same
+ * source file *and* clears this own-lexical-overlap floor (i.e. it has
+ * some genuine textual connection to the query itself, not merely
+ * spatial proximity to the top match) — this is deliberately a much
+ * looser bar than the ratio-relative cutoff above, since file co-location
+ * is itself strong independent evidence of relatedness, but it is never
+ * zero: a same-file candidate with no lexical/identifier grounding at all
+ * still must clear the normal cutoff like any other candidate.
+ */
+const SAME_FILE_GROUNDING_FLOOR = 0.15;
+
 function topLevelDirectory(filePath: string): string {
   const idx = filePath.indexOf("/");
   return idx === -1 ? "" : filePath.slice(0, idx);
@@ -390,7 +406,7 @@ export function selectRankedResults(query: string, candidates: SearchResult[], l
     });
     const combined = combinedScore(signals);
     const cutoffBasis = combined - HYBRID_WEIGHTS.exactIdentifier * signals.exactIdentifierScore;
-    return { chunkId: c.chunkId, symbolName: c.symbolName, filePath: c.filePath, content: c.content, result: c, combined, cutoffBasis };
+    return { chunkId: c.chunkId, symbolName: c.symbolName, filePath: c.filePath, content: c.content, result: c, combined, cutoffBasis, signals };
   });
 
   const reranked = applyIntentRerank(query, withCombined);
@@ -401,6 +417,7 @@ export function selectRankedResults(query: string, candidates: SearchResult[], l
 
   const referenceGraph = buildReferenceGraph(reranked);
   const top = reranked[0]!;
+  const multiEvidence = wantsMultipleEvidence(query);
 
   const selected: SearchResult[] = [];
   for (const candidate of reranked) {
@@ -408,6 +425,20 @@ export function selectRankedResults(query: string, candidates: SearchResult[], l
     if (selected.length === 0) {
       selected.push(candidate.result);
       continue;
+    }
+    // Same-file evidence-group completion (SAME_FILE_GROUNDING_FLOOR's own
+    // comment) — bypasses the ratio cutoff entirely for a same-file,
+    // independently-grounded candidate, but only for a query that actually
+    // asked for multiple results.
+    if (multiEvidence && candidate.filePath === top.filePath) {
+      const grounded =
+        candidate.signals.lexicalScore > SAME_FILE_GROUNDING_FLOOR ||
+        candidate.signals.identifierScore > 0 ||
+        candidate.signals.exactIdentifierScore > 0;
+      if (grounded) {
+        selected.push(candidate.result);
+        continue;
+      }
     }
     const coherent =
       topLevelDirectory(candidate.filePath) === topLevelDirectory(top.filePath) ||

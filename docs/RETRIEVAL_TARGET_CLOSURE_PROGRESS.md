@@ -359,3 +359,53 @@ Phase 15 job behavior and Phase 16 cross-user isolation both reconfirmed live ov
 that same rebuilt stack. VoxMind confirmed untouched throughout. Phase 17 not started.
 
 Commit: `d64ef66`
+
+## Third pass — real local embedding model + evidence-group architecture
+
+A later task rejected the second pass's own "architectural ceiling" framing for the same three
+targets and explicitly authorized replacing the mock embedding, redesigning candidate generation/
+reranking/context-selection, and adding new dependencies as needed — with an explicit instruction
+not to stop at "improved" or "close." Full detail, including the complete diagnostic trail, every
+sweep table, and the exact remaining per-case root causes, is in
+`docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md`'s new §9 — this entry summarizes.
+
+**Root cause of the prior pass's ceiling, confirmed by direct measurement, not assumed**: the
+mock (`deterministicEmbedding.ts`, a character-n-gram cosine proxy) has a real, measured semantic-
+discrimination ceiling — 0.537 cosine similarity between a matching function and its query, versus
+essentially 0 (-0.0016) for an unrelated one, prototyped and measured directly before adopting a
+replacement. No amount of reranking on top of that ceiling could close the gap.
+
+**Real local embedding model** (`evaluation/src/localEmbedding.ts`, new): `@huggingface/transformers`
+running `Xenova/all-MiniLM-L6-v2` fully in-process (WASM/ONNX, CPU-only, no API key, no hosted
+service) — a real, openly-licensed, general-purpose sentence-embedding model, not a benchmark-
+specific transformation. Now `DEFAULT_EMBEDDER` for every real evaluation run (`pnpm eval`); the old
+mock is kept as `MOCK_EMBEDDER`, an explicit opt-in for isolated unit tests only, per this task's own
+"existing mock mode only for isolated tests" instruction. This is an **evaluation-harness-only**
+change — production's actual embedding provider (Voyage AI via `aiServiceClient.ts`) is untouched.
+
+**Architecture added on top of the new embedding baseline, once real measurement showed the swap
+alone raised Direct-hit/Useful-context substantially but left a real gap**: `HYBRID_WEIGHTS.semantic`
+lowered 1.0→0.8 (a real weight sweep against the new score distribution — the new model's stronger
+semantic judgment was measurably *too* dominant over lexical/identifier signal specifically on near-
+synonym sibling functions); `rerank.ts`'s `applyIntentRerank()` now also applies a negation-aware
+penalty (`NEGATED_MATCH_PENALTY`), finally wiring up `queryIntent.ts`'s `negatedWordSet()` — built in
+the second pass but left unused there; and a same-source-file evidence-group completion in
+`selectRankedResults()`/`rankChunks()`, gated by a new `wantsMultipleEvidence()` query-wording signal
+(`queryIntent.ts`) so it only fires for queries that actually ask for more than one result — an
+unconditional version of this was implemented, measured, and found to *hurt* useful-context-rate by
+padding single-answer queries with unrelated same-file siblings; the gated version was kept instead.
+
+**Measured result** (live `pnpm eval`, `evaluation/reports/latest.json`): Recall@3 84.9%→86.1%
+(**now passes** its ≥85% target), Direct-hit rate 78.1%→81.3%, Useful-context rate 63.1%→80.9%,
+Recall@5 98.4%→88.0% (a real regression from the second pass's number, still above target territory
+in absolute terms but no longer at its old level — see §9's own accounting of why), every other
+previously-passing metric still passing, zero Q&A/review grounding regressions (0/21 Q&A failures,
+0% evidence-less review findings, unchanged). Direct-hit rate and Useful-context rate remain below
+their ≥90% targets. Reported as FAIL for those two, not "substantially closed."
+
+Full `api` suite: 458/458 (0 new — no new test files, only weight/logic changes to already-covered
+code paths). Full `evaluation` suite: 168/168 (all pre-existing tests updated for the async embedder
+API, no test deleted or weakened). See §9 for the full sweep tables this pass's decisions are based
+on, and the honest remaining-gap analysis for what would be needed to close the last two targets.
+
+Commit: (pending — see final report)

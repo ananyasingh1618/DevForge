@@ -18,6 +18,10 @@ import { mockQaAnswers, mockReviewFindings } from "./mockProviders.js";
 import { realQaAnswers, realReviewFindings } from "./realProviders.js";
 import { buildReport, renderMarkdown, writeReports } from "./report.js";
 import { persistRun } from "./persist.js";
+import { warmUpLocalEmbedding } from "./localEmbedding.js";
+import { FIXTURE_CHUNKS, chunkContent } from "./dataset/fixtureRepo.js";
+import { RETRIEVAL_CASES } from "./dataset/retrievalCases.js";
+import { QA_CASES } from "./dataset/qaCases.js";
 
 const REPORTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "reports");
 
@@ -25,14 +29,28 @@ async function main() {
   const useReal = process.argv.includes("--real");
   const aiServiceUrl = process.env.AI_SERVICE_URL ?? "http://localhost:8001";
 
-  const retrieval = evaluateRetrieval();
+  // Pays the real local embedding model's one-time load cost (and pre-
+  // computes every fixture chunk's + benchmark query's vector) up front,
+  // so it's reported explicitly here rather than silently inflating
+  // whichever retrieval/Q&A case happens to run first.
+  const warmUpStart = Date.now();
+  await warmUpLocalEmbedding([
+    ...FIXTURE_CHUNKS.map((c) => chunkContent(c)),
+    ...RETRIEVAL_CASES.map((c) => c.query),
+    ...QA_CASES.map((c) => c.question),
+  ]);
+  console.log(`Local embedding model ready in ${Date.now() - warmUpStart}ms.`);
+
+  const retrievalStart = Date.now();
+  const retrieval = await evaluateRetrieval();
+  console.log(`Retrieval evaluation: ${Date.now() - retrievalStart}ms for ${RETRIEVAL_CASES.length} cases.`);
 
   const { answers: qaAnswers, fallbackCount } = useReal
     ? await realQaAnswers(aiServiceUrl)
     : { answers: mockQaAnswers(), fallbackCount: 0 };
   const reviewFindings = useReal ? await realReviewFindings(aiServiceUrl) : mockReviewFindings();
 
-  const qa = evaluateQa(undefined, qaAnswers, undefined, fallbackCount);
+  const qa = await evaluateQa(undefined, qaAnswers, undefined, fallbackCount);
   const review = evaluateReview(undefined, reviewFindings);
 
   const report = buildReport(useReal ? "real" : "mock", retrieval, qa, review);

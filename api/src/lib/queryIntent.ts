@@ -166,3 +166,36 @@ export function negatedWordSet(query: string): Set<string> {
   }
   return words;
 }
+
+/**
+ * Multi-evidence-cue detection: true when the query's own wording signals
+ * it wants an enumeration of several results, not one authoritative
+ * answer — a plural head noun naming the kind of thing being asked for
+ * ("operations", "queries", "functions", "endpoints") or an explicit
+ * enumeration quantifier ("every", "all"). General English phrasing
+ * patterns, not tied to any specific benchmark case.
+ *
+ * Added in the retrieval-target-closure architecture's real-local-
+ * embedding-model second pass (docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md)
+ * to gate same-source-file evidence-group completion (see
+ * retrieval.ts/retrievalEvaluator.ts's own selection logic): real
+ * measurement showed unconditionally including a same-file sibling
+ * candidate once it cleared a grounding floor recovered recall@3/5 but
+ * visibly hurt useful-context-rate, because most queries in the benchmark
+ * genuinely want exactly one chunk and a same-file sibling is usually
+ * *not* relevant to them. Gating the same completion on this cue — so it
+ * only fires for the minority of queries that actually ask for more than
+ * one thing — recovered recall without that useful-context regression.
+ */
+const MULTI_EVIDENCE_CUES = [
+  /\boperations\b/i,
+  /\bqueries\b/i,
+  /\bfunctions\b/i,
+  /\bendpoints\b/i,
+  /\bevery\b/i,
+  /\ball\b/i,
+];
+
+export function wantsMultipleEvidence(query: string): boolean {
+  return MULTI_EVIDENCE_CUES.some((p) => p.test(query));
+}

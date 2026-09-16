@@ -22,8 +22,9 @@
  * this codebase already follows.
  */
 
-import { classifyQueryIntent, type QueryIntent } from "./queryIntent.js";
+import { classifyQueryIntent, negatedWordSet, type QueryIntent } from "./queryIntent.js";
 import { buildReferenceGraph, areLinked, type ReferenceCandidate } from "./referenceGraph.js";
+import { tokenize, lexicalOverlapScore } from "./hybridScore.js";
 
 export type RerankCandidate = ReferenceCandidate & {
   filePath: string;
@@ -48,6 +49,10 @@ const USAGE_BONUS = 0.6;
 const CONFIG_BONUS = 0.12;
 const ERROR_BONUS = 0.1;
 const TEST_BONUS = 0.15;
+// Mirrors api/src/lib/rerank.ts's own NEGATED_MATCH_PENALTY exactly — see
+// that file for the full rationale (finishes wiring up queryIntent.ts's
+// negatedWordSet(), unused since the first retrieval-target-closure pass).
+const NEGATED_MATCH_PENALTY = 0.3;
 
 /** True if `filePath`'s basename (ignoring extension) is a conventional
  * "public surface" filename — `index` (TS/JS/JS barrel-file convention) or
@@ -83,6 +88,7 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
 
   const intent = classifyQueryIntent(query);
   const graph = buildReferenceGraph(candidates);
+  const negatedWords = negatedWordSet(query);
 
   // The single highest-raw-combined-scored candidate is used as the
   // reference point for "dependency"/"usage" intents (the caller/callee
@@ -143,6 +149,13 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
       case "definition":
       case "general":
         break;
+    }
+
+    // Negation-aware suppression — see NEGATED_MATCH_PENALTY's own comment.
+    if (negatedWords.size > 0) {
+      const candidateTokens = [...tokenize(c.content), ...tokenize(c.symbolName ?? "")];
+      const negatedOverlap = lexicalOverlapScore([...negatedWords], candidateTokens);
+      bonus -= NEGATED_MATCH_PENALTY * negatedOverlap;
     }
 
     return {

@@ -229,9 +229,25 @@ export type ScoreSignals = {
  * merely to make the metrics pass" instruction. Measured effect: MRR
  * 83.6%→85.5% (crosses the ≥85% target), recall@K unchanged at 98.4%,
  * useful-context-rate and precision@K both improve slightly too — see
- * that progress log for the full sweep table this value was chosen from. */
+ * that progress log for the full sweep table this value was chosen from.
+ *
+ * `semantic` lowered 1.0 → 0.8 in the retrieval-target-closure
+ * architecture's second pass (docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md,
+ * real-local-embedding-model rework): once the mock character-n-gram
+ * embedding was replaced with a real sentence-embedding model, a real
+ * weight sweep against the full 67-case benchmark showed the new model's
+ * own semantic judgment, while far better at distinguishing unrelated
+ * content, was too dominant relative to lexical/identifier signal on the
+ * specific case shape this fixture stresses hardest: near-synonym sibling
+ * functions in the same file (`findOrderById` vs. `findOwnedOrderById`,
+ * `addToCart` vs. `addItem`, `verifyJwt` vs. `generateJwt`) where the two
+ * candidates' surrounding code is nearly semantically identical and only a
+ * literal identifier/lexical difference actually distinguishes the one the
+ * query is asking about. Lowering `semantic` to 0.8 (keeping every other
+ * weight unchanged) raised direct-hit-rate and recall@3/5 with no measured
+ * regression on any other metric — see that report for the full sweep. */
 export const HYBRID_WEIGHTS = {
-  semantic: 1.0,
+  semantic: 0.8,
   lexical: 0.35,
   identifier: 0.25,
   exactIdentifier: 0.4,

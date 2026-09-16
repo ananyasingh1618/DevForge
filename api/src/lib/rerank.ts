@@ -22,8 +22,9 @@
  * this codebase already follows.
  */
 
-import { classifyQueryIntent, type QueryIntent } from "./queryIntent.js";
+import { classifyQueryIntent, negatedWordSet, type QueryIntent } from "./queryIntent.js";
 import { buildReferenceGraph, areLinked, type ReferenceCandidate } from "./referenceGraph.js";
+import { tokenize, lexicalOverlapScore } from "./hybridScore.js";
 
 export type RerankCandidate = ReferenceCandidate & {
   filePath: string;
@@ -58,6 +59,25 @@ const USAGE_BONUS = 0.6;
 const CONFIG_BONUS = 0.12;
 const ERROR_BONUS = 0.1;
 const TEST_BONUS = 0.15;
+// Added in the retrieval-target-closure architecture's real-local-
+// embedding-model second pass (docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md)
+// — finishes wiring up queryIntent.ts's own negatedWordSet(), built in the
+// first pass but left unused. Real diagnostic cases showed a consistent
+// failure shape a real embedding model's raw semantic judgment cannot
+// avoid on its own: a query phrased as a negation ("which function
+// returns a project *without* checking ownership", "fails to check that
+// the requester owns it") names the exact concept its own correct answer
+// must *lack* — and the sibling candidate that actually *has* that
+// concept (the ownership-checked variant) is semantically closer to the
+// query's own words than the correct, unchecked one is, so it wins on
+// semantic score alone. This penalty only ever activates when a real
+// negation cue was detected in the query (the large majority of queries
+// have none, making this term an exact no-op for them, never a broad
+// penalty like the removed qualifierMismatchCount — see hybridScore.ts's
+// own comment on why that one was reverted), and only reduces a
+// candidate's score in proportion to how much of the query's own negated
+// wording that specific candidate's own content/symbol actually contains.
+const NEGATED_MATCH_PENALTY = 0.3;
 
 /** True if `filePath`'s basename (ignoring extension) is a conventional
  * "public surface" filename — `index` (TS/JS/JS barrel-file convention) or
@@ -108,6 +128,7 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
 
   const intent = classifyQueryIntent(query);
   const graph = buildReferenceGraph(candidates);
+  const negatedWords = negatedWordSet(query);
 
   // The single highest-raw-combined-scored candidate is used as the
   // reference point for "dependency"/"usage" intents (the caller/callee
@@ -177,6 +198,17 @@ export function applyIntentRerank<T extends RerankCandidate>(query: string, cand
       case "definition":
       case "general":
         break;
+    }
+
+    // Negation-aware suppression — see NEGATED_MATCH_PENALTY's own comment.
+    // Never touches adjustedCutoffBasis, for the same reason a positive
+    // bonus never does (see this function's own doc comment): the
+    // threshold's reference point must stay independent of any per-
+    // candidate adjustment, positive or negative.
+    if (negatedWords.size > 0) {
+      const candidateTokens = [...tokenize(c.content), ...tokenize(c.symbolName ?? "")];
+      const negatedOverlap = lexicalOverlapScore([...negatedWords], candidateTokens);
+      bonus -= NEGATED_MATCH_PENALTY * negatedOverlap;
     }
 
     return {

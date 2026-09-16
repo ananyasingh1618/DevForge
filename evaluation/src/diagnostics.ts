@@ -10,7 +10,8 @@
  */
 
 import { chunkContent, FIXTURE_CHUNKS, type FixtureChunk } from "./dataset/fixtureRepo.js";
-import { deterministicEmbedding, cosineSimilarity } from "./deterministicEmbedding.js";
+import { cosineSimilarity } from "./deterministicEmbedding.js";
+import { localEmbedding } from "./localEmbedding.js";
 import { combinedScore, computeScoreSignals, type ScoreSignals } from "./hybridScore.js";
 import type { RetrievalCase } from "./dataset/retrievalCases.js";
 
@@ -54,18 +55,25 @@ function assignDuplicateGroups(chunks: FixtureChunk[]): Map<string, number> {
 
 /** Full, rank-ordered breakdown of every fixture chunk against one query —
  * not just the ones ultimately returned, so a case's diagnostics can show
- * exactly how far down the ranking a missed expected chunk actually fell. */
-export function rankWithDiagnostics(query: string, chunks: FixtureChunk[] = FIXTURE_CHUNKS): ChunkDiagnostic[] {
-  const queryVector = deterministicEmbedding(query);
-  const scored = chunks.map((chunk) => {
-    const semanticScore = cosineSimilarity(queryVector, deterministicEmbedding(chunkContent(chunk)));
-    const signals = computeScoreSignals(query, semanticScore, {
-      content: chunkContent(chunk),
-      symbolName: chunk.symbolName,
-      filePath: chunk.filePath,
-    });
-    return { chunk, signals, combined: combinedScore(signals) };
-  });
+ * exactly how far down the ranking a missed expected chunk actually fell.
+ * Uses the same real local embedding model `rankChunks()` uses by default
+ * (see evaluators/retrievalEvaluator.ts's `DEFAULT_EMBEDDER`) — this tool
+ * exists to explain the *actual* benchmark's real behavior, so it must
+ * score with the same semantic signal the real benchmark does, not a
+ * different (and by now weaker) one. */
+export async function rankWithDiagnostics(query: string, chunks: FixtureChunk[] = FIXTURE_CHUNKS): Promise<ChunkDiagnostic[]> {
+  const queryVector = await localEmbedding(query);
+  const scored = await Promise.all(
+    chunks.map(async (chunk) => {
+      const semanticScore = cosineSimilarity(queryVector, await localEmbedding(chunkContent(chunk)));
+      const signals = computeScoreSignals(query, semanticScore, {
+        content: chunkContent(chunk),
+        symbolName: chunk.symbolName,
+        filePath: chunk.filePath,
+      });
+      return { chunk, signals, combined: combinedScore(signals) };
+    }),
+  );
   scored.sort((a, b) => b.combined - a.combined);
   const groupOf = assignDuplicateGroups(chunks);
   return scored.map((s, i) => ({
@@ -79,8 +87,8 @@ export function rankWithDiagnostics(query: string, chunks: FixtureChunk[] = FIXT
   }));
 }
 
-export function buildCaseDiagnostics(testCase: RetrievalCase, returnedChunkIds: string[]): CaseDiagnostics {
-  const breakdown = rankWithDiagnostics(testCase.query);
+export async function buildCaseDiagnostics(testCase: RetrievalCase, returnedChunkIds: string[]): Promise<CaseDiagnostics> {
+  const breakdown = await rankWithDiagnostics(testCase.query);
   const firstRelevant = breakdown.find((d) => testCase.expectedChunkIds.includes(d.chunkId));
   const missingFromReturned = testCase.expectedChunkIds.filter((id) => !returnedChunkIds.includes(id));
   return {
