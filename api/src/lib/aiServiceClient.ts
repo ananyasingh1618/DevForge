@@ -22,6 +22,8 @@ type AiRequirementsContent = {
   users: string[];
   functional_requirements: AiRequirementItem[];
   non_functional_requirements: AiRequirementItem[];
+  features?: string[];
+  risks?: string[];
   constraints: string[];
   assumptions: string[];
   open_questions: string[];
@@ -112,6 +114,8 @@ function mapAiRequirementsContentToCamelCase(raw: AiRequirementsContent) {
     users: raw.users,
     functionalRequirements: raw.functional_requirements.map(mapItem),
     nonFunctionalRequirements: raw.non_functional_requirements.map(mapItem),
+    features: raw.features ?? [],
+    risks: raw.risks ?? [],
     constraints: raw.constraints,
     assumptions: raw.assumptions,
     openQuestions: raw.open_questions,
@@ -141,6 +145,8 @@ function mapRequirementsContentToSnakeCase(content: RequirementsContent): AiRequ
       source: item.source,
       acceptance_criteria: item.acceptanceCriteria,
     })),
+    features: content.features,
+    risks: content.risks,
     constraints: content.constraints,
     assumptions: content.assumptions,
     open_questions: content.openQuestions,

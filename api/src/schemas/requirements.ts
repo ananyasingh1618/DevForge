@@ -14,6 +14,14 @@ export const requirementsContentSchema = z.object({
   users: z.array(z.string()),
   functionalRequirements: z.array(requirementItemSchema),
   nonFunctionalRequirements: z.array(requirementItemSchema),
+  // Defaulted to [] (unlike the other array fields above): a requirements
+  // version created before these two fields existed has neither in its
+  // stored JSON, and both this schema (PATCH's full-content-replace) and
+  // the frontend read path need to tolerate that without failing — see
+  // aiServiceClient.ts's mapAiRequirementsContentToCamelCase for the same
+  // default applied to a version freshly analyzed by ai-service.
+  features: z.array(z.string()).default([]),
+  risks: z.array(z.string()).default([]),
   constraints: z.array(z.string()),
   assumptions: z.array(z.string()),
   openQuestions: z.array(z.string()),

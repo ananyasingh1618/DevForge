@@ -111,6 +111,8 @@ export type RequirementsDiff = {
   functionalRequirements: RequirementItemDiff;
   nonFunctionalRequirements: RequirementItemDiff;
   users: ArrayFieldDiff;
+  features: ArrayFieldDiff;
+  risks: ArrayFieldDiff;
   constraints: ArrayFieldDiff;
   assumptions: ArrayFieldDiff;
   openQuestions: ArrayFieldDiff;
@@ -158,6 +160,8 @@ export function diffRequirementsContent(
       b.nonFunctionalRequirements,
     ),
     users: diffStringArray(a.users, b.users),
+    features: diffStringArray(a.features, b.features),
+    risks: diffStringArray(a.risks, b.risks),
     constraints: diffStringArray(a.constraints, b.constraints),
     assumptions: diffStringArray(a.assumptions, b.assumptions),
     openQuestions: diffStringArray(a.openQuestions, b.openQuestions),

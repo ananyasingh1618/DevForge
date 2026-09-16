@@ -55,6 +55,8 @@ const AI_SUCCESS_BODY = {
       },
     ],
     non_functional_requirements: [],
+    features: ["Coffee logging"],
+    risks: ["No usage data yet to validate demand"],
     constraints: [],
     assumptions: ["Single-user, no team accounts needed yet"],
     open_questions: ["Should decaf count separately?"],
@@ -137,6 +139,8 @@ describe("POST /projects/:projectId/requirements/analyze", () => {
     expect(res.body.data.version.content.functionalRequirements[0].acceptanceCriteria).toEqual([
       "Logging persists a timestamp",
     ]);
+    expect(res.body.data.version.content.features).toEqual(["Coffee logging"]);
+    expect(res.body.data.version.content.risks).toEqual(["No usage data yet to validate demand"]);
   });
 
   it("maps a real ai-service PROVIDER_NOT_CONFIGURED response to 503 AI_PROVIDER_UNAVAILABLE", async () => {
@@ -268,6 +272,8 @@ describe("PATCH /projects/:projectId/requirements/:versionId", () => {
         },
       ],
       nonFunctionalRequirements: [],
+      features: ["Coffee logging", "Weekly digest email"],
+      risks: ["No usage data yet to validate demand"],
       constraints: [],
       assumptions: ["Single-user, no team accounts needed yet"],
       openQuestions: ["Should decaf count separately?"],
@@ -280,12 +286,39 @@ describe("PATCH /projects/:projectId/requirements/:versionId", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.version.content.projectSummary).toBe("Edited summary.");
+    expect(res.body.data.version.content.features).toEqual(["Coffee logging", "Weekly digest email"]);
+    expect(res.body.data.version.content.risks).toEqual(["No usage data yet to validate demand"]);
     expect(res.body.data.version.version).toBe(1);
 
     const list = await request(app)
       .get(`/projects/${projectId}/requirements`)
       .set("Cookie", cookie);
     expect(list.body.data.versions).toHaveLength(1);
+  });
+
+  it("defaults features and risks to [] when a PATCH body omits them (backward compatibility with content shaped before these fields existed)", async () => {
+    const cookie = await registerAndGetCookie("req-update-no-features@example.com");
+    const projectId = await createProject(cookie);
+    const versionId = await seedVersion(cookie, projectId);
+
+    const contentWithoutNewFields = {
+      projectSummary: "Edited summary.",
+      users: ["Developers who review code"],
+      functionalRequirements: [],
+      nonFunctionalRequirements: [],
+      constraints: [],
+      assumptions: [],
+      openQuestions: [],
+    };
+
+    const res = await request(app)
+      .patch(`/projects/${projectId}/requirements/${versionId}`)
+      .set("Cookie", cookie)
+      .send(contentWithoutNewFields);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.version.content.features).toEqual([]);
+    expect(res.body.data.version.content.risks).toEqual([]);
   });
 
   it("returns 400 when the content shape is invalid", async () => {
@@ -359,6 +392,7 @@ describe("GET /projects/:projectId/requirements/compare", () => {
             acceptance_criteria: ["A chart shows cups per day"],
           },
         ],
+        features: [...AI_SUCCESS_BODY.content.features, "Weekly stats view"],
       },
     };
     mockAiServiceFetch({ status: 200, body: v2Body });
@@ -378,6 +412,8 @@ describe("GET /projects/:projectId/requirements/compare", () => {
       { id: "FR-2", title: "View weekly stats" },
     ]);
     expect(res.body.data.diff.functionalRequirements.removed).toEqual([]);
+    expect(res.body.data.diff.features.added).toEqual(["Weekly stats view"]);
+    expect(res.body.data.diff.features.removed).toEqual([]);
   });
 
   it("returns 400 when a and b are the same id", async () => {
