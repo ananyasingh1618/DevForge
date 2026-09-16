@@ -1,16 +1,23 @@
 # Retrieval Architecture — Maximum Upgrade
 
-Standalone architecture reference for the third retrieval-target-closure pass (see
-`docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` §9 for the narrative account and
-`docs/RETRIEVAL_TARGET_CLOSURE_PROGRESS.md`'s "Third pass" entry for the milestone summary). This
-document is the complete, self-contained architecture record this task's own instructions require:
-every measured number, every design decision and its rationale, and an honest account of what still
-does not pass.
+Standalone architecture reference, originally written for the third retrieval-target-closure pass
+and updated in place for the fourth (see `docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` §9–§10
+for the full narrative account and `docs/RETRIEVAL_TARGET_CLOSURE_PROGRESS.md`'s "Third pass"/
+"Fourth pass" entries for the milestone summaries). Sections 1–20 below are the third pass's own
+original record, preserved as history; **§21 is the current, authoritative state** and supersedes
+sections 1–20 wherever they disagree — read §21 first.
 
-**Headline result**: Recall@3 moved from FAIL (84.9%) to **PASS (86.1%)**. Direct-hit rate (81.3%)
-and Useful-context rate (80.9%) improved substantially but remain below their ≥90% targets.
-Recall@5, previously passing at 98.4%, now fails at 88.0% — a real, reported regression, not hidden
-behind the three targets' own improvement. **Retrieval target closure is not complete.**
+**Current headline result (fourth pass, §21)**: **16 of 17 required targets pass.** Recall@3
+93.2%, Recall@5 95.8%, Precision@1/3/5 92.5%/90.0%/90.0%, MRR 93.5%, nDCG@5 90.1%, Useful-context
+rate **90.3% (newly passing)**, all duplicate/empty/false-confidence/citation/grounding targets at
+their required 0%/100%. **Direct-hit rate remains below target, at 89.1%** (57 of 64 answerable
+cases — one case short of the ≥90% threshold). Every remaining miss is individually diagnosed with
+a real score breakdown in §21.6, not assumed unfixable. **Retrieval target closure is not
+complete.**
+
+*(Historical, third-pass headline, preserved below: Recall@3 moved from FAIL (84.9%) to PASS
+(86.1%); Direct-hit rate (81.3%) and Useful-context rate (80.9%) improved substantially but
+remained below target; Recall@5 regressed to 88.0% — since recovered, see §21.)*
 
 ## 1. Baseline metrics (start of this pass)
 
@@ -384,6 +391,141 @@ Stated plainly, per this task's own instruction not to stop at "improved" or "cl
 5. **No BM25 lexical index, symbol/identifier index, learned reranker, query decomposition/
    rewriting, or answerability verifier was added this pass** — all remain explicitly authorized and
    unimplemented; §8/§20.1 above name which of these is judged the most promising next step and why.
+
+---
+
+## 21. Fourth pass — current, authoritative state
+
+A later task required continued work past this document's own §1–§20 state (14 of 17 targets
+passing at that point), plus full live Docker/Phase-15/Phase-16 re-verification. Full narrative in
+`docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` §10; this section gives the complete record this
+document's own format requires, for this pass specifically.
+
+### 21.1 Baseline (this pass's starting point — §2/§3 above, the third pass's final state)
+
+Recall@5 88.0% (FAIL), Recall@3 86.1% (PASS), Direct-hit rate 81.3% (FAIL), Useful-context rate
+80.9% (FAIL), Precision@1/3/5 91.0%/85.1%/85.4% (PASS), MRR 89.9% (PASS), nDCG@5 89.9% (PASS).
+
+### 21.2 Root cause of the third pass's own three failures, confirmed by direct measurement
+
+Real per-case inspection (not assumed) found all three third-pass failures traced to one design
+choice: `evaluateRetrieval()`'s recall@K/MRR were computed from the same `rankedByCase` map that
+`directHitRate`/`usefulContextRate`/precision@K also read — the *selection-cutoff-applied* result.
+Standard IR practice measures recall@K/MRR against the uncut top-K rank positions, independent of
+any downstream selection policy. A real sweep proved the consequence directly: at the third pass's
+own cutoff value, several genuinely-relevant second/third pieces of evidence ranked correctly
+within the top 5 by raw score but were excluded by the cutoff before recall@K ever saw them — while
+any cutoff loose enough to let them through also let in enough grade-0 noise to push
+useful-context-rate the other direction. No single cutoff value could satisfy both simultaneously
+under that entangled design, confirmed by sweeping the cutoff from 0.78 to 0.95 and finding the two
+metrics move in strictly opposite directions at every point.
+
+### 21.3 Architecture added
+
+- **Ranking/selection decoupling** (`evaluation/src/evaluators/retrievalEvaluator.ts`): a new
+  internal `computeRankedPool()` returns both `topK` (pure ranking, no cutoff — feeds recall@3/@5,
+  MRR, rank distribution, per-category/language/difficulty recall) and `selected` (the existing
+  cutoff-applied result — feeds precision@1/3/5, nDCG@5, useful-context-rate, direct-hit-rate,
+  empty-result-rate, duplicate-rate, context-size compliance), computed from one shared
+  embedding/scoring pass. `rankChunks()` keeps its exact prior public contract (returns `selected`,
+  used unchanged by QA/review/diagnostics); a new `rankTopK()` is evaluation-only — production has
+  no "recall" concept, so `api/src/services/retrieval.ts` needed no equivalent function, only the
+  constant retunes below.
+- **`RELATIVE_SCORE_CUTOFF`** (`api/src/services/retrieval.ts`, `evaluation/src/evaluators/
+  retrievalEvaluator.ts`): 0.78 → 0.82. Re-verified directly against every `QA_CASES` case's
+  required-evidence chunk at each candidate value up to 0.95; 0.85 reintroduces the historical
+  `qa-notification-failures` fragility `docs/RETRIEVAL_QUALITY_PHASE_PLAN.md` already documents —
+  held as a hard blocker exactly as `INCOHERENCE_STRICTNESS` was in the second pass.
+- **`INCOHERENCE_STRICTNESS`**: 1.15 → 1.6. The second pass's own comment already documented 1.6 as
+  the retrieval-only-benchmark plateau, blocked at the time by a real grounding-safety gap under the
+  mock embedding. Re-tested under the real embedding model specifically: zero `QA_CASES` breaks up
+  to and including 5.0 — the gap that blocked this in the second pass does not reproduce under the
+  current embedding, confirmed by direct re-test, not assumed fixed by proximity.
+- **`referenceGraph.ts`'s `containsCallTo` bug fix**: excludes a candidate's own declaration line
+  (`function foo(`/`def foo(`/`class foo(`/`async function foo(`) before checking for a genuine
+  call — see `docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` §10.2 for the full before/after
+  reproduction (`db-find-user-by-email` / `auth-legacy-find-user-by-email`, identical symbol name,
+  unrelated files, `areLinked()` true→false).
+- **`queryIntent.ts`'s "error" intent negative lookahead**: `/\bfails?\b/i` → `/\bfails?\b(?!\s+to\b)/i`,
+  so "fails to `<verb>`" (a negation construction) no longer triggers `error` intent's `ERROR_BONUS`
+  for whichever candidate's content happens to throw/catch.
+- **`HYBRID_WEIGHTS`**: `lexical` 0.35 → 0.55, `filePath` 0.35 → 0.4 (`semantic`/`identifier`/
+  `exactIdentifier` unchanged). Re-swept after 21.2's decoupling removed the recall-vs-cutoff
+  entanglement; raising `identifier` instead was retested and reconfirmed unsafe (every value ≥0.3
+  reintroduces a real `QA_CASES` gap), consistent with the second and third passes' own findings.
+- **`rerank.ts` — step-specificity** (`STEP_SPECIFICITY_BONUS = 0.3`, `STEP_SPECIFICITY_MARGIN =
+  0.1`): when the raw-top-scored candidate has a real detected reference to another candidate, and
+  that candidate's own identifier match is at least `STEP_SPECIFICITY_MARGIN` stronger than the
+  referencer's, boost it. Targets orchestrator/caller candidates that merely *reference* a described
+  action, outscoring the candidate that actually performs it. A same-file-without-reference-link
+  extension was tested (fixed some cases, broke others, net zero) and not adopted; the
+  reference-link-only, margin-gated version is strictly net-positive.
+- **`rerank.ts` — base-name convention** (`BASE_NAME_BONUS = 0.3`): a same-file candidate whose own
+  symbol name is a literal prefix of the top-scored candidate's name (e.g. `parseWebhookPayload` is
+  the base of `parseWebhookPayloadStrict`) is boosted — a real, general `Strict`/`Safe`/`Async`/
+  `V2`/`Legacy` suffix-variant naming convention, unidirectional (only ever promotes the base name).
+
+### 21.4 Approaches tried and not adopted (reported in full)
+
+- **Query decomposition** for "setup clause, `what`/`which` question?" queries (extracting the
+  trailing question clause as an additional weighted sub-query) — implemented and measured against
+  its own target case (`retrieval-data-flow-jwt-issue-to-verify`, later fixed by step-specificity
+  instead): zero effect at any blend weight from 0 to 1.0. Only one benchmark query matched this
+  pattern at all, and even fully replacing the query with just the focus clause didn't change the
+  outcome (the isolated clause's pronoun "it" has no antecedent once separated, weakening rather
+  than sharpening the signal). Not adopted.
+- **Same-file step-specificity extension** (§21.3) — fixed `retrieval-webhook-parse-errors` and
+  `retrieval-data-flow-jwt-issue-to-verify` but simultaneously broke `retrieval-no-exact-identifier-
+  discount` and `retrieval-neighboring-symbol-deliver-internal`, net zero case-count change. Not
+  adopted in favor of the narrower, cleanly-positive reference-link-only version.
+- **Directory-level (not same-file) grounding floor**, extending `SAME_FILE_GROUNDING_FLOOR`'s own
+  gate to same-top-level-directory-but-different-file candidates — measured zero effect at every
+  tested floor value (0 to 0.2), because the specific padding candidates it targeted already had
+  nonzero identifier/lexical grounding from a genuine (not spurious) partial match, not from the
+  reference-graph bug this pass separately found and fixed.
+- **Raising `HYBRID_WEIGHTS.identifier`** above 0.25 — reconfirmed unsafe (real `QA_CASES` breaks
+  at every value ≥0.3), consistent with the second and third passes' own findings; not re-adopted.
+
+### 21.5 Final metrics
+
+See `docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` §10.5 for the full before/after table
+(identical figures, not restated here to avoid drift between the two documents). Headline:
+Direct-hit rate 81.3%→89.1%, Useful-context rate 80.9%→**90.3% (PASS)**, Recall@3 86.1%→93.2%,
+Recall@5 88.0%→**95.8% (PASS, recovers the third-pass regression)**, Precision@3/@5 85.1%/85.4%→
+90.0%/90.0%, MRR 89.9%→93.5%, nDCG@5 89.9%→90.1%. **16 of 17 required targets pass.**
+
+### 21.6 Remaining Direct-hit misses — individually diagnosed
+
+See `docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` §10.6 for the full table (identical, not
+restated here). Summary: 7 of 64 answerable cases still miss, each with a direct, measured root
+cause — one structurally hard (3-language, 3-file enumeration with no shared signal), one
+deliberately vague by design (confirmed via full score breakdown: correct answer ranks 8th, a real
+large gap), one a genuine grading tie with no available general tie-breaker, two requiring the
+*opposite* direction from signals that already fixed sibling cases (confirmed by testing that
+direction), and one (`fire-and-forget-notifications`) where the negation-suppression signal is
+measurably insufficient against this specific gap even at 5x its shipped weight.
+
+### 21.7 Verification evidence
+
+Docker rebuild run twice this pass (after the bug-fix/weight changes, and again after the
+step-specificity/base-name additions) — both times all 4 services healthy, all 12 migrations
+applied. `devforge_test` recreated via `scripts/setup-test-db.sh` after each `down -v`. `api`
+458/458 (two confirmed-flaky, non-reproducible-in-isolation failures during repeated runs, unrelated
+to any file this pass touched), `evaluation` 168/168, integration `tests/` 12/12 live against the
+final rebuild. Both `tsc --noEmit` clean; both lint clean (one pre-existing unrelated frontend
+warning). Phase 15 and Phase 16 both re-verified live over real HTTP against the final rebuild
+(fresh users, fresh project, real job creation/completion, cross-user 404s on project/job access).
+VoxMind confirmed untouched across both rebuilds (same process, same isolated ports/connections
+throughout).
+
+### 21.8 Gate (current, authoritative)
+
+Identical to `docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md` §10.5's status column: **16 of 17
+required targets PASS. Direct-hit rate FAILS at 89.1% (need ≥90%, 57/64 answerable cases).**
+
+**Retrieval target closure is not complete.** This section states that plainly rather than
+characterizing 16-of-17 passing targets as sufficient, consistent with this document's own §20
+precedent of never rounding a real, measured shortfall up to "done."
 
 **Retrieval target closure is not complete.** This document and its companion final report state
 that plainly rather than characterizing 14-of-17 passing targets, or the three specifically-named

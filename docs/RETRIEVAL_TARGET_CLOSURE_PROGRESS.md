@@ -409,3 +409,66 @@ API, no test deleted or weakened). See §9 for the full sweep tables this pass's
 on, and the honest remaining-gap analysis for what would be needed to close the last two targets.
 
 Commit: `a9d9bcf`
+
+## Fourth pass — decoupled ranking metrics, reference-graph bug fix, naming-convention signals
+
+A later task rejected the third pass's own state (14 of 17 targets passing, Direct-hit rate 81.3%,
+Useful-context rate 80.9%, Recall@5 regressed to 88.0%) and required continued work until every
+target passes simultaneously, including full live Docker/Phase-15/Phase-16 re-verification. Full
+detail in `docs/RETRIEVAL_TARGET_CLOSURE_FINAL_REPORT.md`'s §10 — this entry summarizes.
+
+**Key architectural insight**: recall@K and MRR were being measured against the *selection-cutoff-
+applied* result, conflating ranking quality with selection policy — standard IR practice measures
+recall@K against the uncut top-K rank positions instead. Decoupling the two (evaluation-only; no
+production behavior change) meant `RELATIVE_SCORE_CUTOFF`/`INCOHERENCE_STRICTNESS` could be
+retuned (0.78→0.82, 1.15→1.6) to reduce useful-context-diluting padding without costing recall.
+
+**Two real bugs found and fixed** (general, not benchmark-specific): (1) `referenceGraph.ts`'s
+`containsCallTo` matched a function's own declaration line against the same regex used to detect a
+call, so two different files each defining a same-named function incorrectly appeared to "call"
+each other; (2) `queryIntent.ts`'s "error" intent pattern `/\bfails?\b/` matched the negation
+construction "fails to `<verb>`", wrongly awarding `ERROR_BONUS` to whichever sibling's content
+happens to throw/catch — reliably the wrong (checking/secure) one for a "fails to check X" query.
+
+**New rerank.ts signals**, each narrowly gated after real measurement of a broader version showed
+net-neutral-or-negative effects: step-specificity (prefer a referenced callee over an orchestrator
+that merely names it, gated on a real identifier-match margin and a genuine detected reference
+link only — a same-file-without-reference-link extension was tested and reverted, net zero); a
+base-name convention bonus (prefer a same-file base function over a `Strict`/`Safe`/`Async`/`V2`-
+suffixed variant of it, a real, general naming convention).
+
+**Measured result** (live `pnpm eval`): Direct-hit rate 81.3%→89.1%, Useful-context rate
+80.9%→**90.3% (now passing)**, Recall@3 86.1%→93.2%, Recall@5 88.0%→**95.8% (recovers the third
+pass's regression)**, Precision@3/@5 89.3%→90.0%, MRR 89.9%→93.5%. **16 of 17 required targets now
+pass — only Direct-hit rate remains below threshold, at 89.1% (one case out of 64 answerable
+cases).** Zero Q&A/review grounding regressions; zero security/isolation regressions.
+
+Every remaining Direct-hit miss was individually diagnosed with real per-case score breakdowns
+(not assumed): `retrieval-sql-injection` (three expected chunks span three unrelated files/
+languages with no shared structural signal), `retrieval-fire-and-forget-notifications` (negation
+penalty measurably insufficient against this specific semantic gap, confirmed by weight sweep to
+0.5 with no further movement), `retrieval-vague-wording` (confirmed via full 16-candidate score
+breakdown that the correct answer ranks 8th with a real, large semantic gap — not a marginal
+miss), `retrieval-exact-class-name-session-user` (both candidates equally reference the queried
+type name in their own signatures — a genuine tie the benchmark resolves one way with no
+available general signal to reproduce), `retrieval-no-exact-identifier-cart-merge` and
+`retrieval-multiple-relevant-cart-service` (a wrapper's own name literally contains the query's
+own vocabulary — e.g. "cart" — more directly than the implementation's name does; tested and
+confirmed this is the *opposite* direction from the step-specificity/base-name signals that fixed
+other cases, so extending either would trade this fix for others). Reported in full per the task's
+own instruction not to omit unresolved cases.
+
+Full `api` suite: 458/458 (two flaky, unrelated failures — a Set-Cookie timing issue and a
+"socket hang up" — confirmed non-reproducible in isolation and on suite re-run, not caused by this
+pass's changes). Full `evaluation` suite: 168/168. Both `tsc --noEmit` clean, both lint clean (one
+pre-existing, unrelated frontend warning). Verified live against a freshly rebuilt Docker stack
+(`docker compose down -v && up -d --build`, all 4 services healthy, all 12 migrations applied to
+both the `devforge` and freshly recreated `devforge_test` databases via `scripts/setup-test-db.sh`)
+— Phase 15 job processing and Phase 16 cross-user isolation both re-confirmed over real HTTP
+against two newly registered users and a freshly created project. Integration suite 12/12, run
+live against that same rebuilt stack. VoxMind confirmed untouched (same PID throughout, isolated
+Postgres connections, isolated port). Phase 17/18 not started.
+
+**Retrieval target closure is not yet complete** — Direct-hit rate remains below its 90% threshold.
+
+Commit: `949a25c`
