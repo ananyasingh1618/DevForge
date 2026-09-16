@@ -24,6 +24,23 @@ RUN pnpm --filter @devforge/api build
 WORKDIR /repo/api
 EXPOSE 4000
 
+# Non-root runtime (Phase 17, Milestone 17.2): `node:20-slim` ships a
+# built-in, unprivileged `node` user (uid 1000) for exactly this purpose —
+# no need to create one. Everything under /repo is chown'd to it so the
+# runtime process (reading its own built files, and `prisma migrate
+# deploy` writing its own migration-history bookkeeping) has the access it
+# actually needs without running as root.
+RUN chown -R node:node /repo
+USER node
+
+# Container-native health signal, reusing the exact same real endpoint and
+# check style docker-compose.yml's own healthcheck already uses (Node's
+# built-in fetch, no curl/wget needed — neither is installed in this
+# slim image). Present here too so this image is self-describing and
+# healthy/unhealthy under `docker run` directly, not only under Compose.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=5 \
+    CMD ["node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+
 # Applies any pending migrations before starting — this is the container's
 # equivalent of the local-dev `prisma migrate dev` step, using the
 # non-interactive `deploy` command appropriate for a running environment.

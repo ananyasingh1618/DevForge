@@ -3,6 +3,7 @@ import { Prisma, type Job, type JobStatus, type JobType } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { requireOwnedProject } from "../lib/ownership.js";
+import { recordJobOutcome } from "../lib/metrics.js";
 
 /**
  * A durable, Postgres-native job queue (Phase 15 —
@@ -244,15 +245,19 @@ export async function isCancellationRequested(jobId: string): Promise<boolean> {
 }
 
 export async function completeJob(jobId: string, output: unknown): Promise<Job> {
-  return transitionJob(jobId, ["running"], "completed", {
+  const job = await transitionJob(jobId, ["running"], "completed", {
     output: output as Prisma.InputJsonValue,
     completedAt: new Date(),
   });
+  recordJobOutcome(job.type, "completed");
+  return job;
 }
 
 /** A cooperative-cancellation checkpoint hit mid-job. */
 export async function markCancelled(jobId: string): Promise<Job> {
-  return transitionJob(jobId, ["running"], "cancelled", { cancelledAt: new Date() });
+  const job = await transitionJob(jobId, ["running"], "cancelled", { cancelledAt: new Date() });
+  recordJobOutcome(job.type, "cancelled");
+  return job;
 }
 
 export type JobErrorClass = "transient" | "permanent";
@@ -273,23 +278,29 @@ export async function failJob(
   const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
   const canRetry = errorClass === "transient" && job.retryCount + 1 < job.maxRetries;
   if (canRetry) {
-    return transitionJob(jobId, ["running"], "queued", {
+    const retried = await transitionJob(jobId, ["running"], "queued", {
       retryCount: { increment: 1 },
       errorCode,
       errorMessage,
       workerId: null,
       leaseExpiresAt: null,
     });
+    recordJobOutcome(retried.type, "retried");
+    return retried;
   }
-  return transitionJob(jobId, ["running"], "failed", { errorCode, errorMessage, completedAt: new Date() });
+  const failed = await transitionJob(jobId, ["running"], "failed", { errorCode, errorMessage, completedAt: new Date() });
+  recordJobOutcome(failed.type, "failed");
+  return failed;
 }
 
 export async function timeoutJob(jobId: string): Promise<Job> {
-  return transitionJob(jobId, ["running"], "timed_out", {
+  const job = await transitionJob(jobId, ["running"], "timed_out", {
     errorCode: "JOB_TIMEOUT",
     errorMessage: "The job exceeded its maximum allowed running time.",
     completedAt: new Date(),
   });
+  recordJobOutcome(job.type, "timed_out");
+  return job;
 }
 
 /**
@@ -317,6 +328,7 @@ export async function recoverStaleJobs(): Promise<{ requeued: number; failed: nu
           workerId: null,
           leaseExpiresAt: null,
         });
+        recordJobOutcome(job.type, "retried");
         requeued++;
       } else {
         await transitionJob(job.id, ["running"], "failed", {
@@ -324,6 +336,7 @@ export async function recoverStaleJobs(): Promise<{ requeued: number; failed: nu
           errorMessage: "The worker holding this job's lease stopped renewing it, and retries are exhausted.",
           completedAt: new Date(),
         });
+        recordJobOutcome(job.type, "failed");
         failedCount++;
       }
     } catch {
@@ -339,4 +352,22 @@ export async function updateProgress(jobId: string, progress: unknown): Promise<
     where: { id: jobId, status: "running" },
     data: { progress: progress as Prisma.InputJsonValue },
   });
+}
+
+/**
+ * Queue-depth gauge for `/metrics` (Phase 17, Milestone 17.5). Deliberately
+ * a live count against Postgres, not an in-process counter — job state is
+ * shared, durable, and process-independent (any API replica's worker can
+ * claim any job), so an in-memory counter here would be wrong the moment
+ * there is more than one process. `running` is reported separately from
+ * `queued` since a large `running` count with a stuck/expired lease is a
+ * distinct operational signal (see `recoverStaleJobs()`) from a genuinely
+ * large backlog of `queued` work.
+ */
+export async function getQueueDepth(): Promise<{ queued: number; running: number }> {
+  const [queued, running] = await Promise.all([
+    prisma.job.count({ where: { status: "queued" } }),
+    prisma.job.count({ where: { status: "running" } }),
+  ]);
+  return { queued, running };
 }
