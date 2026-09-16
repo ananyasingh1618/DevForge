@@ -76,14 +76,22 @@ services:
     restart: unless-stopped
     environment:
       # Optional: passed through from the host shell's own environment if
-      # set (e.g. `ANTHROPIC_API_KEY=sk-... docker compose up`). If unset,
-      # this resolves to an empty string and ai-service correctly serves
-      # /health while returning 503 PROVIDER_NOT_CONFIGURED for analyze
-      # requests — the same honest "not configured" behavior as local dev,
-      # never a fabricated result.
+      # set (e.g. `GEMINI_API_KEY=... docker compose up`). GEMINI_API_KEY is
+      # preferred over ANTHROPIC_API_KEY whenever both are set — see
+      # ai-service/app/lib/provider_config.py's resolve_llm_provider(). If
+      # neither is set, this resolves to an empty string and ai-service
+      # correctly serves /health while returning 503 PROVIDER_NOT_CONFIGURED
+      # for every generate/analyze/answer/review request — the same honest
+      # "not configured" behavior as local dev, never a fabricated result.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Same optional pass-through pattern as GEMINI_API_KEY above — kept as
+      # a fully supported alternative provider, not a fallback that's
+      # silently deprecated. Set this instead of (or in addition to, though
+      # Gemini still wins) GEMINI_API_KEY to use Anthropic.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # Same optional pass-through pattern as ANTHROPIC_API_KEY above, for
-      # Voyage AI (embedding generation, Phase 8). Unset -> a real 503
+      # Same optional pass-through pattern as the two above, for Voyage AI
+      # (embedding generation, Phase 8) — unrelated to which LLM text
+      # provider is selected above. Unset -> a real 503
       # PROVIDER_NOT_CONFIGURED for /embeddings/generate, never a fabricated
       # vector.
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}

@@ -13,7 +13,7 @@ node scripts/demo.mjs
 Optional environment variables unlock the "real" path for the steps that need them — set any subset:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... VOYAGE_API_KEY=pa-... docker compose up -d --build   # pass real keys to ai-service
+GEMINI_API_KEY=... VOYAGE_API_KEY=pa-... docker compose up -d --build   # pass real keys to ai-service (GEMINI_API_KEY preferred; ANTHROPIC_API_KEY also supported)
 GITHUB_TOKEN=ghp_... GITHUB_OWNER=your-username GITHUB_REPO=your-repo node scripts/demo.mjs
 ```
 
@@ -27,7 +27,7 @@ The script exercises all 12 steps of the required demonstration workflow:
 2. **Registers a fresh demo user and starts a session** (`POST /auth/register`) — a new, timestamped email every run, so the script is safely re-runnable without manual cleanup between runs.
 3. **Creates a project** (`POST /projects`).
 4. **Attempts a repository connection** (`POST /projects/:id/repository/connect`) — with real `GITHUB_TOKEN`/`GITHUB_OWNER`/`GITHUB_REPO` if supplied, or demonstrates and prints the real, honest `GITHUB_INTEGRATION_NOT_CONFIGURED` response otherwise.
-5. **Attempts requirements analysis** (`POST /projects/:id/requirements/analyze`) — real generation if `ANTHROPIC_API_KEY` is configured, otherwise the real `AI_PROVIDER_UNAVAILABLE` response.
+5. **Attempts requirements analysis** (`POST /projects/:id/requirements/analyze`) — real generation if `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` is configured (Gemini preferred), otherwise the real `AI_PROVIDER_UNAVAILABLE` response.
 6. **Attempts PRD generation** (`POST /projects/:id/prd/generate`) — demonstrates the dependency-chain error (`NO_ACTIVE_REQUIREMENTS`) when step 5 didn't produce an active requirements version, exactly as a real user seeing a disabled/error state would.
 7. **Attempts codebase search, Q&A, and AI code review** — each demonstrates the real `NO_COMPLETED_INDEX` dependency error when no repository is indexed.
 8. **Creates a background indexing job and polls it to a terminal state** (`POST`/`GET /projects/:id/jobs`) — this step works fully without any external credential: the job is really queued, really claimed by the real worker, and really reaches a clean terminal `failed` state with a real, visible error when no repository is connected — proving job creation, tracking, and failure visibility all work end to end even in a fully credential-free environment.

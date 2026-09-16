@@ -114,13 +114,15 @@ regression instead of relying on manual spot-checking.
 - Create, list, and view projects, scoped to the authenticated owner — a project that
   doesn't exist and a project owned by someone else are both a 404, never a 403 or leaked
   data.
-- **Requirements analysis**: describe a project idea and DevForge analyzes it (via Anthropic's
-  Claude, `claude-opus-5`) into structured, versioned requirements — a project summary,
-  users, functional and non-functional requirements (each with priority, acceptance
-  criteria, and an explicit **stated vs. inferred** source tag), constraints, assumptions,
-  and open questions. Versions can be listed, viewed, edited, and made active; two versions
-  can be compared. If no `ANTHROPIC_API_KEY` is configured, analysis fails with a clear,
-  honest error — never a fabricated result.
+- **Requirements analysis**: describe a project idea and DevForge analyzes it (via Gemini by
+  default, `gemini-3.8-flash` — or Anthropic's Claude, `claude-opus-5`, if only
+  `ANTHROPIC_API_KEY` is set; see "AI providers" below) into structured, versioned requirements —
+  a project summary, user roles, functional and non-functional requirements (each with priority,
+  acceptance criteria, and an explicit **stated vs. inferred** source tag), short user-facing
+  **features**, concrete project/technical **risks**, constraints, assumptions, and open
+  questions. Versions can be listed, viewed, edited, and made active; two versions can be
+  compared. If neither `GEMINI_API_KEY` nor `ANTHROPIC_API_KEY` is configured, analysis fails
+  with a clear, honest error — never a fabricated result.
 - **PRD generation**: generate a structured Product Requirements Document (overview, problem
   statement, goals, personas, functional and non-functional requirements, user workflows,
   edge cases, success criteria, constraints, assumptions, and open questions) from a project's
@@ -288,6 +290,30 @@ regression instead of relying on manual spot-checking.
 - The full stack (Postgres, API, frontend, and the AI service) runs via a single
   `docker compose up` from a clean checkout, migrations included.
 
+## AI providers
+
+Every LLM-backed feature (requirements analysis, PRD/architecture/epic/task generation, codebase
+Q&A, AI code review) supports two independent, fully interchangeable providers — **there is no
+paid-account requirement to try DevForge's AI features**:
+
+- **Gemini** (`google-genai` SDK, `gemini-3.8-flash`) — the preferred default whenever
+  `GEMINI_API_KEY` is set, even if `ANTHROPIC_API_KEY` is also set. Gemini has a genuinely free
+  tier; get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) with no
+  billing setup required.
+- **Anthropic Claude** (`claude-opus-5`, structured outputs) — used when only `ANTHROPIC_API_KEY`
+  is set. Fully supported, not a deprecated fallback — set only `ANTHROPIC_API_KEY` to use it.
+
+Both providers are called through the same shared structured-output helpers
+(`ai-service/app/lib/structured_llm.py`) against the exact same Pydantic response schemas per
+feature, so a caller — the Node API, or DevForge's frontend — never sees a difference in response
+shape depending on which provider actually answered. Provider selection is centralized in one
+function, `resolve_llm_provider()` (`ai-service/app/lib/provider_config.py`), which every agent's
+`get_provider()` calls — the policy ("Gemini if available, else Anthropic, else a clear 503") is
+defined once, not per-agent. If neither key is set, every route that needs a model returns a
+real, honest `503 PROVIDER_NOT_CONFIGURED` — never a fabricated result, matching this project's
+honesty guarantee everywhere else. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the
+full environment-variable reference.
+
 ## Architecture
 
 ```
@@ -295,7 +321,7 @@ React + TypeScript (Vite)                 Python/FastAPI AI service
         |                                    requirements analysis + PRD generation +
         | fetch, credentials: include         architecture generation + epic/task generation +
         v                                     codebase Q&A + AI code review
-Node/Express API  ------------------------->   (Anthropic Claude, claude-opus-5);
+Node/Express API  ------------------------->   (Gemini by default, or Anthropic Claude);
         |            fetch (AI_SERVICE_URL)    + tree-sitter source parsing (no LLM call);
         |                                       + Voyage AI embedding generation (no LLM call)
         |----------------------------------> GitHub REST API (api.github.com)
@@ -405,7 +431,7 @@ every current major browser).
 | Auth | Opaque server-side session tokens (httpOnly, Secure-in-prod, SameSite=Lax cookie); only a SHA-256 token hash is stored | Real logout/revocation without JWT's blocklist problem |
 | Password hashing | bcrypt, cost factor 12 | Industry standard |
 | Validation | Zod (Node), Pydantic (ai-service) | Request bodies, route params, and environment variables validated the same way in each language |
-| AI provider | Anthropic Claude (`claude-opus-5`), via `client.messages.parse()` structured outputs | No provider was configured before Phase 2; documented choice in `docs/REQUIREMENTS_PHASE_PLAN.md` — first-party SDK, strict structured-output support |
+| AI provider | Gemini (`gemini-3.8-flash`, `google-genai` SDK) as the preferred default — genuinely free tier, no billing setup required — or Anthropic Claude (`claude-opus-5`, structured outputs), fully supported as an explicit alternative | Both go through the same shared structured-output helpers (`ai-service/app/lib/structured_llm.py`) and the same Pydantic response schemas, so every agent's output shape is identical regardless of provider; `resolve_llm_provider()` (`ai-service/app/lib/provider_config.py`) selects Gemini whenever `GEMINI_API_KEY` is set, Anthropic when only `ANTHROPIC_API_KEY` is set. Originally Anthropic-only (documented in `docs/REQUIREMENTS_PHASE_PLAN.md`); Gemini added to remove the paid-account requirement for trying DevForge |
 | Testing | Vitest, Supertest, pytest, React Testing Library, Playwright (ad hoc manual verification) | One test runner style per language |
 | AI service | Python/FastAPI | Its own process/container; requirements analysis, PRD generation, architecture generation, epic/task generation, codebase Q&A, AI code review, tree-sitter source parsing, and Voyage AI embedding generation are implemented |
 | GitHub integration | Personal access token (user-supplied), native `fetch` against the GitHub REST API, AES-256-GCM token encryption via Node's built-in `crypto` | Smallest secure option — no OAuth App/GitHub App registration or callback infrastructure needed; no new dependency for a thin HTTP boundary. Documented choice in `docs/GITHUB_INTEGRATION_PHASE_PLAN.md` |
@@ -472,10 +498,14 @@ devforge/
   `package.json` — `corepack enable` picks it up automatically)
 - Docker (for Postgres locally, or the full stack)
 - Python 3.12 (only if running `ai-service` outside Docker)
-- An Anthropic API key, **optional** — only needed to make requirements analysis, PRD
+- A **Gemini API key** (recommended — genuinely free tier, no billing setup required), or an
+  **Anthropic API key**, **optional either way** — only needed to make requirements analysis, PRD
   generation, architecture generation, epic/task generation, codebase Q&A, and AI code review
-  actually return content instead of a clear "not configured" error. Get one at
-  [console.anthropic.com](https://console.anthropic.com).
+  actually return content instead of a clear "not configured" error. Both are fully supported,
+  independent providers: DevForge uses Gemini whenever `GEMINI_API_KEY` is set (even if
+  `ANTHROPIC_API_KEY` is also set), and falls back to Anthropic when only `ANTHROPIC_API_KEY` is
+  set. Get a Gemini key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey), or
+  an Anthropic key at [console.anthropic.com](https://console.anthropic.com).
 - A GitHub personal access token, **optional** — only needed if you want to actually connect a
   repository; generate one at [github.com/settings/tokens](https://github.com/settings/tokens)
   with read access to the repository you want to connect. You paste it into DevForge's UI when
@@ -498,7 +528,8 @@ where) and fill in real values. Never commit a real `.env` file.
 | `FRONTEND_ORIGIN` | `api/.env` | Allowed CORS origin for credentialed requests |
 | `AI_SERVICE_URL` | `api/.env` | Base URL of the ai-service (default `http://localhost:8001`) |
 | `VITE_API_URL` | `frontend/.env` | API base URL the browser calls (baked in at build time) |
-| `ANTHROPIC_API_KEY` | `ai-service` environment (shell env, or Docker Compose's own env — not a committed file) | Enables real requirements analysis, PRD generation, architecture generation, epic/task generation, codebase Q&A, and AI code review. Unset → every analyze/generate/ask/review request returns a clear 503, never fake content |
+| `GEMINI_API_KEY` | `ai-service` environment (shell env, or Docker Compose's own env — not a committed file) | Enables real requirements analysis, PRD generation, architecture generation, epic/task generation, codebase Q&A, and AI code review, via Gemini (`google-genai` SDK). **Preferred provider** — used whenever set, even if `ANTHROPIC_API_KEY` is also set. Free tier, no billing setup required. Unset (and `ANTHROPIC_API_KEY` also unset) → every analyze/generate/ask/review request returns a clear 503, never fake content |
+| `ANTHROPIC_API_KEY` | `ai-service` environment (shell env, or Docker Compose's own env — not a committed file) | Enables the same set of features as `GEMINI_API_KEY` above, via Claude instead — a fully supported, independent alternative, used only when `GEMINI_API_KEY` is unset |
 | `GITHUB_TOKEN_ENCRYPTION_KEY` | `api/.env` (or shell env — not a committed file) | A base64-encoded 32-byte key used to encrypt (AES-256-GCM) a connected repository's personal access token at rest. **Optional** — the API still starts and every other feature still works with this unset; only connecting a repository is gated. Generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Unset → connecting returns a clear 503 `GITHUB_INTEGRATION_NOT_CONFIGURED`, never a fake connection |
 | `VOYAGE_API_KEY` | `ai-service` environment (shell env, or Docker Compose's own env — not a committed file) | Enables real embedding generation for code search. **Optional** — the ai-service still starts and every other feature still works with this unset; only `POST /embeddings/generate` (and, transitively, code search) is gated. Unset → a clear 503 `PROVIDER_NOT_CONFIGURED`, never a fabricated vector |
 
@@ -524,15 +555,17 @@ pnpm dev                  # http://localhost:5173
 # in another terminal — ai-service
 cd ai-service
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-export ANTHROPIC_API_KEY=sk-ant-...   # optional; omit to see the honest "not configured" path
+export GEMINI_API_KEY=...             # optional (free tier); omit to see the honest "not configured" path
+# export ANTHROPIC_API_KEY=sk-ant-... # optional alternative — used only if GEMINI_API_KEY is unset
 .venv/bin/uvicorn main:app --port 8001
 ```
 
 ### Full stack via Docker Compose (clean-environment verification)
 
 ```bash
-# optional: pass real keys through to the ai-service container
-ANTHROPIC_API_KEY=sk-ant-... VOYAGE_API_KEY=pa-... docker compose up -d --build
+# optional: pass real keys through to the ai-service container (GEMINI_API_KEY is
+# preferred if both are set — see "AI providers" above)
+GEMINI_API_KEY=... VOYAGE_API_KEY=pa-... docker compose up -d --build
 ```
 
 This builds and runs all four services — Postgres, ai-service, the API (which runs `prisma
@@ -587,12 +620,13 @@ pnpm lint
 ```
 
 No test in this repository claims a real LLM call succeeded unless a real, configured
-`ANTHROPIC_API_KEY` was actually used for that run, no test claims a repository was actually
-connected or indexed unless real, valid, user-supplied GitHub credentials were used, no test
-claims a real semantic search succeeded unless a real, configured `VOYAGE_API_KEY` was
-actually used, no test claims a real codebase Q&A answer or AI code review finding was
-generated by a real Claude call unless a real, configured `ANTHROPIC_API_KEY` was actually used
-for that run, and `pnpm eval`'s default (and only CI-required) mode uses a deterministic
+`GEMINI_API_KEY` or `ANTHROPIC_API_KEY` was actually used for that run, no test claims a
+repository was actually connected or indexed unless real, valid, user-supplied GitHub
+credentials were used, no test claims a real semantic search succeeded unless a real, configured
+`VOYAGE_API_KEY` was actually used, no test claims a real codebase Q&A answer or AI code review
+finding was generated by a real model call unless a real, configured `GEMINI_API_KEY` or
+`ANTHROPIC_API_KEY` was actually used for that run, and `pnpm eval`'s default (and only
+CI-required) mode uses a deterministic
 lexical-similarity proxy and each case's own hand-authored mock answer/findings instead of any
 real provider at all — `pnpm eval:real` is the one explicit, optional exception, and even it
 never touches GitHub (none of these claims was made anywhere in this repository's test suite,

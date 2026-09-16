@@ -20,7 +20,7 @@ Each of these was verified live against the real running `docker-compose` stack 
 
 ### ai-service (AI provider) unavailable
 
-`ai-service`'s `/health` never depends on `ANTHROPIC_API_KEY`/`VOYAGE_API_KEY` being set — it reports healthy regardless. Routes that actually need a model return a real `503 PROVIDER_NOT_CONFIGURED` (unset key) or `503 AI_SERVICE_UNAVAILABLE` (the api's `aiServiceClient.ts` cannot reach `ai-service` at all — e.g. the container is stopped) instead of hanging or returning a fabricated result. `/ready` deliberately does **not** check `ai-service` — it's a soft dependency whose failure only affects a subset of features (requirements/PRD/architecture/epics/QA/code-review generation, embeddings), not the whole API. See `api/src/lib/aiServiceClient.ts` and `api/src/routes/health.ts`'s own comment on this design choice.
+`ai-service`'s `/health` never depends on `GEMINI_API_KEY`/`ANTHROPIC_API_KEY`/`VOYAGE_API_KEY` being set — it reports healthy regardless. Routes that actually need a model return a real `503 PROVIDER_NOT_CONFIGURED` (unset key) or `503 AI_SERVICE_UNAVAILABLE` (the api's `aiServiceClient.ts` cannot reach `ai-service` at all — e.g. the container is stopped) instead of hanging or returning a fabricated result. `/ready` deliberately does **not** check `ai-service` — it's a soft dependency whose failure only affects a subset of features (requirements/PRD/architecture/epics/QA/code-review generation, embeddings), not the whole API. See `api/src/lib/aiServiceClient.ts` and `api/src/routes/health.ts`'s own comment on this design choice.
 
 ### GitHub integration failure
 

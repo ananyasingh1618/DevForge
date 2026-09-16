@@ -39,8 +39,9 @@ These are deliberately narrow, exact-match checks rather than broad heuristics (
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `ANTHROPIC_API_KEY` | No | unset | Enables real Claude-backed requirements/PRD/architecture/epic/QA/code-review generation. Unset: ai-service still starts and `/health` still reports healthy, but every route that needs a model returns a real, honest `503 PROVIDER_NOT_CONFIGURED` — never a fabricated result. |
-| `VOYAGE_API_KEY` | No | unset | Enables real Voyage AI embedding generation. Same honest-503 behavior as above when unset. |
+| `GEMINI_API_KEY` | No | unset | Enables real Gemini-backed requirements/PRD/architecture/epic/task generation, codebase Q&A, and AI code review, via the official `google-genai` SDK. **Preferred provider**: used whenever it's set, even if `ANTHROPIC_API_KEY` is also set — see `app/lib/provider_config.py`'s `resolve_llm_provider()`. Get a free-tier key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — no billing setup required to start. Unset (and `ANTHROPIC_API_KEY` also unset): ai-service still starts and `/health` still reports healthy, but every route that needs a model returns a real, honest `503 PROVIDER_NOT_CONFIGURED` — never a fabricated result. |
+| `ANTHROPIC_API_KEY` | No | unset | Enables the same set of features as `GEMINI_API_KEY` above, via Claude instead — fully supported as an explicit, independent alternative, not a fallback being phased out. Used only when `GEMINI_API_KEY` is unset. |
+| `VOYAGE_API_KEY` | No | unset | Enables real Voyage AI embedding generation. Unrelated to which LLM text provider (`GEMINI_API_KEY`/`ANTHROPIC_API_KEY`) is selected above. Same honest-503 behavior as above when unset. |
 
 ## Secret handling
 

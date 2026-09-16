@@ -9,14 +9,15 @@
  * background job, and demonstrate that job's clean failure and recovery
  * (retry) behavior.
  *
- * No GitHub personal access token, Anthropic API key, or Voyage AI key is
- * required to run this script to completion — every step that needs one of
- * those (repository connection, requirements/PRD/architecture/epics/QA/
- * review generation, embedding-backed search) is expected to return a real,
- * honest "not configured" error when that credential is absent, and this
- * script reports that as the correct, documented behavior, never as a
- * failure of the script itself. If real credentials ARE present in the
- * environment (ANTHROPIC_API_KEY, VOYAGE_API_KEY, and
+ * No GitHub personal access token, Gemini/Anthropic API key, or Voyage AI
+ * key is required to run this script to completion — every step that needs
+ * one of those (repository connection, requirements/PRD/architecture/
+ * epics/QA/review generation, embedding-backed search) is expected to
+ * return a real, honest "not configured" error when that credential is
+ * absent, and this script reports that as the correct, documented
+ * behavior, never as a failure of the script itself. If real credentials
+ * ARE present in the environment (GEMINI_API_KEY — preferred, free tier —
+ * or ANTHROPIC_API_KEY, VOYAGE_API_KEY, and
  * GITHUB_TOKEN/GITHUB_OWNER/GITHUB_REPO), the corresponding steps use them
  * for a fully real run instead — set them before running this script to see
  * the "real" path.
@@ -121,16 +122,17 @@ async function main() {
     );
   }
 
-  heading("Attempt requirements analysis (needs ANTHROPIC_API_KEY)");
+  heading("Attempt requirements analysis (needs GEMINI_API_KEY or ANTHROPIC_API_KEY)");
   const requirements = await call("POST", `/projects/${projectId}/requirements/analyze`, {
     idea: "A tool that helps developers track and resolve technical debt across a large codebase.",
   });
   if (requirements.status === 201) {
-    log("ok", `Real requirements analysis succeeded (ANTHROPIC_API_KEY is configured in this environment).`);
+    const provider = process.env.GEMINI_API_KEY ? "Gemini" : "Anthropic";
+    log("ok", `Real requirements analysis succeeded via ${provider} (functional/non-functional requirements, user roles, features, risks, constraints, assumptions, open questions all returned).`);
   } else {
     log(
       "info",
-      `No ANTHROPIC_API_KEY configured in this environment — real response: ${requirements.status} ${requirements.body?.error?.code ?? ""} — ${requirements.body?.error?.message ?? ""}. This is the documented, honest "not configured" path, not a failure.`,
+      `No GEMINI_API_KEY or ANTHROPIC_API_KEY configured in this environment — real response: ${requirements.status} ${requirements.body?.error?.code ?? ""} — ${requirements.body?.error?.message ?? ""}. This is the documented, honest "not configured" path, not a failure.`,
     );
   }
 
