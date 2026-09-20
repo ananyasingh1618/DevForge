@@ -1,0 +1,22 @@
+# Public entrypoint image: builds the Vite SPA, then serves it with Caddy,
+# which also reverse-proxies /api/* to the private api container.
+# Build from the repository root: see docker/docker-compose.prod.yml.
+
+FROM node:20-slim AS build
+RUN corepack enable
+WORKDIR /repo
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY api/package.json ./api/package.json
+COPY frontend/package.json ./frontend/package.json
+COPY tests/package.json ./tests/package.json
+RUN pnpm install --frozen-lockfile
+COPY frontend ./frontend
+# Same-origin API: the browser calls /api/... on whatever host served the
+# page (localhost, or the Cloudflare tunnel URL), so no absolute URL — and
+# no CORS — is involved. Vite inlines this at build time.
+ENV VITE_API_URL=/api
+RUN pnpm --filter @devforge/frontend build
+
+FROM caddy:2-alpine
+COPY docker/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /repo/frontend/dist /srv

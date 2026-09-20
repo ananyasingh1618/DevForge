@@ -6,21 +6,37 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # build output
 dist/
 build/
+.next/
 frontend/dist/
 api/dist/
 
-# prisma
+# prisma / databases — dev.db named explicitly (the one this project
+# actually generates); the broader patterns are a safety net against any
+# local sqlite/db file ever being created and accidentally staged
 api/prisma/dev.db
+*.sqlite
+*.sqlite3
+*.db
 
 # python
 ai-service/.venv/
 ai-service/__pycache__/
 ai-service/**/__pycache__/
 ai-service/*.egg-info/
+*.pyc
+__pycache__/
+
+# uploaded files (no upload feature exists yet — reserved so one is never
+# accidentally committed if added later)
+uploads/
+
+# runtime state of scripts/start-tunnel.sh (pid, url, log)
+.run/
 
 # logs
 *.log
@@ -30,10 +46,11 @@ pnpm-debug.log*
 # OS
 .DS_Store
 
-# editors
+# editors / local tool state
 .vscode/*
 !.vscode/extensions.json
 .idea/
+.claude/
 
 # test/coverage
 coverage/
@@ -44,3 +61,18 @@ evaluation/reports/*.md
 
 # local db backups (scripts/backup-db.sh output — never committed)
 backups/
+
+# secrets, certificates, and private keys — a safety net beyond .env*
+# above, in case a credential file is ever dropped into the repo by
+# mistake (e.g. a downloaded service-account JSON or TLS key pair)
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*.env.vault
+*credentials*.json
+*serviceAccount*.json

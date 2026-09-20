@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "../components/AppShell.js";
+import { Badge } from "../components/Badge.js";
 import { Card } from "../components/Card.js";
 import { Button } from "../components/Button.js";
 import { EmptyState, ErrorState, LoadingState } from "../components/StateViews.js";
+import { IconListChecks } from "../components/icons.js";
 import { ApiError } from "../services/apiClient.js";
 import { getEvaluationRunRequest, listEvaluationRunsRequest } from "../services/evaluationsApi.js";
 import type { CaseResult, EvaluationRunDetail, EvaluationRunSummary } from "../types/evaluation.js";
@@ -12,15 +14,7 @@ function fmtPct(n: number): string {
 }
 
 function StatusBadge({ passed }: { passed: boolean }) {
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-        passed ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
-      }`}
-    >
-      {passed ? "Passed" : "Failed"}
-    </span>
-  );
+  return <Badge tone={passed ? "success" : "danger"}>{passed ? "Passed" : "Failed"}</Badge>;
 }
 
 function MetricsTable({ title, metrics }: { title: string; metrics: Record<string, number> }) {
@@ -222,42 +216,45 @@ export function Evaluations() {
 
   return (
     <AppShell>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-text">Evaluations</h1>
-          <p className="mt-1 text-sm text-text-muted">
-            Retrieval, Codebase Q&amp;A, and AI Code Review quality measurements against a fixed,
-            version-controlled fixture dataset — not tied to any one project's repository. Run{" "}
-            <code className="rounded bg-surface-2 px-1 py-0.5">pnpm eval</code> to generate a new
-            report.
-          </p>
+      <div className="animate-fade-in flex flex-col gap-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-text">Evaluations</h1>
+            <p className="mt-1.5 max-w-2xl text-sm text-text-muted">
+              Retrieval, Codebase Q&amp;A, and AI Code Review quality measurements against a fixed,
+              version-controlled fixture dataset — not tied to any one project's repository. Run{" "}
+              <code className="rounded bg-surface-2 px-1 py-0.5">pnpm eval</code> to generate a new
+              report.
+            </p>
+          </div>
+          <Button type="button" variant="secondary" onClick={retry}>
+            Refresh
+          </Button>
         </div>
-        <Button type="button" variant="secondary" onClick={retry}>
-          Refresh
-        </Button>
-      </div>
 
-      <div className="mt-6 flex flex-col gap-3">
-        {state.status === "loading" && <LoadingState label="Loading evaluation runs…" />}
-        {state.status === "error" && <ErrorState message={state.message} onRetry={retry} />}
-        {state.status === "ready" && state.runs.length === 0 && (
-          <EmptyState
-            title="No evaluation runs yet"
-            description="Run `pnpm eval` from the repository root to generate the first report."
-          />
-        )}
-        {state.status === "ready" &&
-          state.runs.map((run, i) => (
-            <RunRow
-              key={run.id}
-              run={run}
-              previousRun={state.runs[i + 1] ?? null}
-              expanded={expandedId === run.id}
-              detail={details[run.id] ?? null}
-              detailError={detailErrors[run.id] ?? null}
-              onToggle={() => toggle(run.id)}
+        <div className="flex flex-col gap-3">
+          {state.status === "loading" && <LoadingState label="Loading evaluation runs…" />}
+          {state.status === "error" && <ErrorState message={state.message} onRetry={retry} />}
+          {state.status === "ready" && state.runs.length === 0 && (
+            <EmptyState
+              icon={<IconListChecks className="h-5 w-5" />}
+              title="No evaluation runs yet"
+              description="Run `pnpm eval` from the repository root to generate the first report."
             />
-          ))}
+          )}
+          {state.status === "ready" &&
+            state.runs.map((run, i) => (
+              <RunRow
+                key={run.id}
+                run={run}
+                previousRun={state.runs[i + 1] ?? null}
+                expanded={expandedId === run.id}
+                detail={details[run.id] ?? null}
+                detailError={detailErrors[run.id] ?? null}
+                onToggle={() => toggle(run.id)}
+              />
+            ))}
+        </div>
       </div>
     </AppShell>
   );

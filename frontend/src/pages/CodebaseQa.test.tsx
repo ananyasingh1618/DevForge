@@ -133,18 +133,25 @@ describe("CodebaseQa — blocked states", () => {
     renderPage();
 
     expect(await screen.findByText("No repository connected")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Connect a repository" })).toHaveAttribute(
+      "href",
+      "/projects/p1/repository",
+    );
     expect(mockedCodebaseIndexApi.getCodebaseIndexRequest).not.toHaveBeenCalled();
     expect(mockedQaApi.listQuestionsRequest).not.toHaveBeenCalled();
   });
 
-  it("shows a gate when no codebase is indexed, linking to Settings", async () => {
+  it("shows a gate when no codebase is indexed, linking to the Indexing page", async () => {
     mockedProjectsApi.getProjectRequest.mockResolvedValue({ project: PROJECT });
     mockedRepositoryApi.getRepositoryConnectionRequest.mockResolvedValue({ connection: makeConnection() });
     mockedCodebaseIndexApi.getCodebaseIndexRequest.mockResolvedValue({ index: null });
     renderPage();
 
     expect(await screen.findByText("Codebase not indexed yet")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to Settings" })).toHaveAttribute("href", "/projects/p1/settings");
+    expect(screen.getByRole("link", { name: "Go to indexing" })).toHaveAttribute(
+      "href",
+      "/projects/p1/indexing",
+    );
     expect(mockedQaApi.listQuestionsRequest).not.toHaveBeenCalled();
   });
 

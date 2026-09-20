@@ -108,6 +108,66 @@ all three (retrieval, Q&A, review) against a small, version-controlled fixture d
 deterministically, with no paid credential required — so a future change can be checked for a
 regression instead of relying on manual spot-checking.
 
+## Quick reference
+
+A condensed, one-stop version of everything below — each item links to the section with full
+detail.
+
+**Project structure** — `frontend/` (React/Vite), `api/` (Node/Express + Prisma, includes the
+background job worker — it runs in-process, there is no separate worker service/folder),
+`ai-service/` (Python/FastAPI), plus `tests/`, `evaluation/`, `docs/`, `scripts/`. No Redis or
+other queue infrastructure is used anywhere in this project. Full breakdown: [Repository
+structure](#repository-structure).
+
+**Local setup**: `pnpm install`, then copy `.env.example` into `api/.env` and `frontend/.env`
+(and export `GEMINI_API_KEY`/`ANTHROPIC_API_KEY`/`VOYAGE_API_KEY` in your shell if you want real
+AI features instead of the honest "not configured" responses). Full steps, including
+`ai-service`'s own virtualenv: [Setup](#setup).
+
+**Required environment variables** (names only — see [Setup → Environment
+variables](#environment-variables) for what each does and its default):
+`DATABASE_URL`, `SESSION_SECRET`, `PORT`, `FRONTEND_ORIGIN`, `AI_SERVICE_URL`,
+`GITHUB_TOKEN_ENCRYPTION_KEY` (api); `VITE_API_URL` (frontend); `GEMINI_API_KEY`,
+`ANTHROPIC_API_KEY`, `VOYAGE_API_KEY` (ai-service). Never commit a real `.env` file — only the
+`.env.example` files are tracked.
+
+**Database migrations**: `cd api && pnpm exec prisma migrate dev` for local development (creates
+a new migration if the schema changed); `pnpm exec prisma migrate deploy` for any real
+deployment (non-interactive, only applies migrations not yet recorded — this is what the `api`
+Docker image runs automatically on container start, and what you'd run once against a managed
+Postgres instance before the first deploy of a new environment).
+
+**Run the frontend**: `cd frontend && pnpm dev` → http://localhost:5173.
+
+**Run the backend (API)**: `cd api && pnpm dev` → http://localhost:4000. This also starts the
+background job worker in the same process — see below.
+
+**Run the AI service**: `cd ai-service && .venv/bin/uvicorn main:app --port 8001` (after the
+one-time `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`) →
+http://localhost:8001.
+
+**Run the background worker**: there is nothing separate to run. The job worker
+(`api/src/services/jobWorker.ts`) is a polling loop started inside the same process as the API
+server (`api/src/server.ts`), so it's already running the moment `pnpm dev` (api) or the `api`
+Docker container is up — see [docs/PHASE_15_JOB_ARCHITECTURE_PLAN.md](docs/PHASE_15_JOB_ARCHITECTURE_PLAN.md).
+
+**Run everything via Docker Compose**: `docker compose up -d --build` → frontend
+http://localhost:4173, API http://localhost:4000, ai-service http://localhost:8001 (internal).
+Full detail: [Full stack via Docker Compose](#full-stack-via-docker-compose-clean-environment-verification).
+
+**Run tests**: `pnpm test` (api + frontend + evaluation unit tests), `pnpm test:integration`,
+`pnpm typecheck`, `pnpm lint`. See [Tests](#tests) for the ai-service pytest suite and the
+one-time test-database setup.
+
+**Future deployment requirements**: see [Production deployment & operations](#production-deployment--operations)
+below — in short, the Vite frontend is a static SPA deployable as-is to any static host (Vercel,
+Netlify, etc.), but the API's background job worker is a long-running in-process polling loop
+and the AI service is a persistent FastAPI/uvicorn process — neither fits a request-scoped
+serverless function without an architecture change, so both need a host that runs a persistent
+container (their existing Dockerfiles already work as-is on e.g. Render/Fly.io/Cloud Run). A
+managed Postgres instance (not the bundled Docker Compose one) is required for any deployment
+beyond local Docker.
+
 ## What works today
 
 - Register, log in, log out, and check the current session (`/auth/*`).

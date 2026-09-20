@@ -19,6 +19,8 @@ Copy the relevant section of `.env.example` to a real `.env` file in that packag
 | `DATABASE_POOL_MAX` | No | `10` | Maximum Postgres connection-pool size (see `api/src/lib/prisma.ts`). |
 | `DATABASE_POOL_IDLE_TIMEOUT_MS` | No | `30000` | How long an idle pooled connection is kept before being closed. |
 | `DATABASE_CONNECT_TIMEOUT_MS` | No | `10000` | How long a new connection attempt waits before failing. |
+| `TRUST_PROXY_HOPS` | No | `0` | Number of reverse proxies in front of the API whose `X-Forwarded-For` is trusted (`app.set("trust proxy", n)`). Must be set (e.g. `1`) behind a proxy such as the Caddy in `docker/`, otherwise every client shares the proxy's IP and the rate limiters throttle all users as one. |
+| `SESSION_COOKIE_SAMESITE` | No | `lax` | `lax` \| `strict` \| `none`. `lax` is correct whenever frontend and API share a site (local dev, Compose, the same-origin Caddy deployment). `none` (HTTPS only) is for a frontend on a different site and gives up `lax`'s CSRF protection — explicit opt-in only. |
 
 ### Production-only guardrails
 

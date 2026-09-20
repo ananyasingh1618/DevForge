@@ -61,6 +61,31 @@ describe("envSchema — general validation", () => {
   });
 });
 
+describe("envSchema — reverse-proxy and cookie settings", () => {
+  it("defaults to no proxy trust and a SameSite=lax session cookie, even in production", () => {
+    const result = envSchema.safeParse({ ...validBase, NODE_ENV: "production" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.TRUST_PROXY_HOPS).toBe(0);
+      expect(result.data.SESSION_COOKIE_SAMESITE).toBe("lax");
+    }
+  });
+
+  it("accepts an explicit proxy hop count and SameSite opt-in", () => {
+    const result = envSchema.safeParse({ ...validBase, TRUST_PROXY_HOPS: "1", SESSION_COOKIE_SAMESITE: "none" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.TRUST_PROXY_HOPS).toBe(1);
+      expect(result.data.SESSION_COOKIE_SAMESITE).toBe("none");
+    }
+  });
+
+  it("rejects a negative hop count and an unknown SameSite value", () => {
+    expect(envSchema.safeParse({ ...validBase, TRUST_PROXY_HOPS: "-1" }).success).toBe(false);
+    expect(envSchema.safeParse({ ...validBase, SESSION_COOKIE_SAMESITE: "maybe" }).success).toBe(false);
+  });
+});
+
 describe("envSchema — production-only guardrails", () => {
   const validProd = {
     ...validBase,

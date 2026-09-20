@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AppShell } from "../components/AppShell.js";
-import { ErrorState, LoadingState } from "../components/StateViews.js";
-import { RepositoryConnectionSection } from "../components/RepositoryConnectionSection.js";
-import { CodebaseIndexSection } from "../components/CodebaseIndexSection.js";
+import { Badge } from "../components/Badge.js";
+import { Card } from "../components/Card.js";
+import { ErrorState } from "../components/StateViews.js";
+import { SkeletonPage } from "../components/Skeleton.js";
+import { IconDatabase, IconGithub } from "../components/icons.js";
 import { ApiError } from "../services/apiClient.js";
 import { getProjectRequest } from "../services/projectsApi.js";
-import type { Project } from "../types/project.js";
+import type { Project, ProjectStatus } from "../types/project.js";
 
 type LoadState =
   | { status: "loading" }
@@ -14,12 +16,16 @@ type LoadState =
   | { status: "error"; message: string }
   | { status: "ready"; project: Project };
 
+const statusTone: Record<ProjectStatus, "neutral" | "success"> = {
+  planning: "neutral",
+  active: "success",
+  archived: "neutral",
+};
+
 export function ProjectSettings() {
   const { id } = useParams<{ id: string }>();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
-  // Only sets state from the async continuation, never synchronously — see
-  // the matching comment in Projects.tsx.
   const fetchProject = useCallback(() => {
     if (!id) return;
     getProjectRequest(id)
@@ -42,35 +48,92 @@ export function ProjectSettings() {
     fetchProject();
   }, [fetchProject]);
 
+  if (state.status === "loading") {
+    return (
+      <AppShell projectId={id}>
+        <SkeletonPage />
+      </AppShell>
+    );
+  }
+
+  if (state.status === "not-found") {
+    return (
+      <AppShell>
+        <ErrorState message="Project not found." />
+      </AppShell>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <AppShell projectId={id}>
+        <ErrorState message={state.message} onRetry={retry} />
+      </AppShell>
+    );
+  }
+
+  const { project } = state;
+
   return (
-    <AppShell>
-      {state.status === "loading" && <LoadingState label="Loading project…" />}
-
-      {state.status === "not-found" && <ErrorState message="Project not found." />}
-
-      {state.status === "error" && <ErrorState message={state.message} onRetry={retry} />}
-
-      {state.status === "ready" && (
+    <AppShell projectId={project.id} projectName={project.name}>
+      <div className="animate-fade-in flex max-w-2xl flex-col gap-6">
         <div>
-          <Link
-            to={`/projects/${state.project.id}`}
-            className="text-sm text-text-muted hover:text-text"
-          >
-            &larr; {state.project.name}
-          </Link>
-          <h1 className="mt-2 text-xl font-semibold text-text">Project settings</h1>
-
-          <h2 className="mt-10 text-sm font-medium text-text-muted">GitHub repository</h2>
-          <div className="mt-3">
-            <RepositoryConnectionSection projectId={state.project.id} />
-          </div>
-
-          <h2 className="mt-10 text-sm font-medium text-text-muted">Codebase index</h2>
-          <div className="mt-3">
-            <CodebaseIndexSection projectId={state.project.id} />
-          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-text">Settings</h1>
+          <p className="mt-1.5 text-sm text-text-muted">Project details and where to manage them.</p>
         </div>
-      )}
+
+        <Card className="flex flex-col gap-4">
+          <h2 className="text-sm font-semibold text-text">About this project</h2>
+          <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-text-muted">Name</dt>
+              <dd className="mt-0.5 text-text">{project.name}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-muted">Status</dt>
+              <dd className="mt-0.5">
+                <Badge tone={statusTone[project.status]}>{project.status}</Badge>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-muted">Description</dt>
+              <dd className="mt-0.5 text-text">{project.description || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-muted">Created</dt>
+              <dd className="mt-0.5 text-text">{new Date(project.createdAt).toLocaleString()}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-text-muted">Project ID</dt>
+              <dd className="mt-0.5 font-mono text-xs text-text-muted">{project.id}</dd>
+            </div>
+          </dl>
+        </Card>
+
+        <Card className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-text">Manage elsewhere</h2>
+          <p className="text-sm text-text-muted">
+            The GitHub connection and codebase index each have their own dedicated page, with more
+            room for status detail and history.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link
+              to={`/projects/${project.id}/repository`}
+              className="flex flex-1 items-center gap-2.5 rounded-lg border border-border px-3 py-2.5 text-sm text-text transition-colors hover:border-accent hover:bg-accent-soft"
+            >
+              <IconGithub className="h-4 w-4 text-text-muted" />
+              Repository connection
+            </Link>
+            <Link
+              to={`/projects/${project.id}/indexing`}
+              className="flex flex-1 items-center gap-2.5 rounded-lg border border-border px-3 py-2.5 text-sm text-text transition-colors hover:border-accent hover:bg-accent-soft"
+            >
+              <IconDatabase className="h-4 w-4 text-text-muted" />
+              Codebase indexing
+            </Link>
+          </div>
+        </Card>
+      </div>
     </AppShell>
   );
 }

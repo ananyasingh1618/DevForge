@@ -105,7 +105,7 @@ describe("CodeSearch — no repository state", () => {
 });
 
 describe("CodeSearch — no index state", () => {
-  it("shows a gate explaining indexing is required, linking to Settings", async () => {
+  it("shows a gate explaining indexing is required, linking to the Indexing page", async () => {
     mockedProjectsApi.getProjectRequest.mockResolvedValue({ project: PROJECT });
     mockedRepositoryApi.getRepositoryConnectionRequest.mockResolvedValue({
       connection: {
@@ -130,9 +130,9 @@ describe("CodeSearch — no index state", () => {
     renderPage();
 
     expect(await screen.findByText("Codebase not indexed yet")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to Settings" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Go to indexing" })).toHaveAttribute(
       "href",
-      "/projects/p1/settings",
+      "/projects/p1/indexing",
     );
   });
 });

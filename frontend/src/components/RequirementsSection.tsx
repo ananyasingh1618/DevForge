@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { Badge } from "./Badge.js";
 import { Button } from "./Button.js";
 import { Card } from "./Card.js";
+import { RequirementAccordion } from "./RequirementAccordion.js";
 import { EmptyState, ErrorState, LoadingState } from "./StateViews.js";
+import { IconClock, IconSparkles } from "./icons.js";
 import { ApiError } from "../services/apiClient.js";
 import {
   activateRequirementsVersionRequest,
@@ -9,12 +12,21 @@ import {
   listRequirementsVersionsRequest,
   updateRequirementsVersionRequest,
 } from "../services/requirementsApi.js";
-import type { RequirementItem, RequirementsContent, RequirementsVersion } from "../types/requirements.js";
+import type { RequirementsContent, RequirementsVersion } from "../types/requirements.js";
 
 type ListState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; versions: RequirementsVersion[] };
+
+const EXAMPLE_IDEAS = [
+  "A collaborative code review tool that highlights security vulnerabilities and suggests fixes automatically.",
+  "A SaaS dashboard that lets small teams track on-call incidents and generates a postmortem draft.",
+  "A CLI that scaffolds a REST API from a plain-English description of its resources.",
+];
+
+const MIN_IDEA_LENGTH = 10;
+const MAX_IDEA_LENGTH = 2000;
 
 function linesToList(text: string): string[] {
   return text
@@ -25,40 +37,6 @@ function linesToList(text: string): string[] {
 
 function listToLines(items: string[]): string {
   return items.join("\n");
-}
-
-const priorityStyles: Record<RequirementItem["priority"], string> = {
-  high: "bg-danger/15 text-danger",
-  medium: "bg-surface-2 text-text-muted",
-  low: "bg-surface-2 text-text-muted",
-};
-
-function RequirementItemCard({ item }: { item: RequirementItem }) {
-  return (
-    <div className="rounded-md border border-border p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-text">
-          {item.id}: {item.title}
-        </span>
-        <div className="flex shrink-0 gap-1.5">
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${priorityStyles[item.priority]}`}>
-            {item.priority}
-          </span>
-          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-text-muted">
-            {item.source}
-          </span>
-        </div>
-      </div>
-      <p className="mt-1 text-sm text-text-muted">{item.description}</p>
-      {item.acceptanceCriteria.length > 0 && (
-        <ul className="mt-2 list-inside list-disc text-xs text-text-muted">
-          {item.acceptanceCriteria.map((criterion, i) => (
-            <li key={i}>{criterion}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 function IdeaForm({
@@ -76,31 +54,54 @@ function IdeaForm({
 
   return (
     <div className="flex flex-col gap-3">
-      <label htmlFor="requirements-idea" className="text-sm font-medium text-text">
-        Project idea
-      </label>
+      <div className="flex items-center justify-between">
+        <label htmlFor="requirements-idea" className="text-sm font-medium text-text">
+          Project idea
+        </label>
+        <span className="font-mono text-[11px] text-text-faint">
+          {idea.length}/{MAX_IDEA_LENGTH}
+        </span>
+      </div>
       <textarea
         id="requirements-idea"
-        rows={4}
+        rows={7}
         value={idea}
+        maxLength={MAX_IDEA_LENGTH}
         onChange={(e) => setIdea(e.target.value)}
         placeholder="Describe the idea in a few sentences — what it does, who it's for..."
-        className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted focus-visible:outline-none"
+        className="rounded-lg border border-border bg-surface-2 px-3.5 py-3 text-sm leading-relaxed text-text placeholder:text-text-faint transition-colors focus-visible:border-accent focus-visible:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25"
       />
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-text-faint">Example prompts</p>
+        <div className="flex flex-col gap-1.5">
+          {EXAMPLE_IDEAS.map((example) => (
+            <button
+              key={example}
+              type="button"
+              onClick={() => setIdea(example)}
+              className="rounded-lg border border-border bg-surface px-3 py-2 text-left text-xs text-text-muted transition-colors hover:border-accent hover:bg-accent-soft hover:text-text"
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+      </div>
       {error && (
-        <p className="text-sm text-danger" role="alert">
+        <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
           {error}
         </p>
       )}
-      <div>
+      <div className="flex items-center gap-3">
         <Button
           type="button"
           loading={submitting}
-          disabled={idea.trim().length < 10}
+          disabled={idea.trim().length < MIN_IDEA_LENGTH}
           onClick={() => onSubmit(idea.trim())}
         >
+          <IconSparkles className="h-4 w-4" />
           {submitLabel}
         </Button>
+        <span className="text-xs text-text-faint">Generated by your configured AI provider</span>
       </div>
     </div>
   );
@@ -114,7 +115,7 @@ function IdeaForm({
  * cascading-render risk; see the matching comment in Projects.tsx from the
  * Foundation phase).
  */
-function VersionDetail({
+function VersionDocument({
   projectId,
   version,
   onActivated,
@@ -159,21 +160,24 @@ function VersionDetail({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-text-muted">
-          Version {version.version}
-          {version.isActive && " (active)"}
-        </h3>
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-5">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-text">
+            Version {version.version}
+            {version.isActive && " (active)"}
+          </h2>
+        </div>
         {!version.isActive && (
-          <Button type="button" variant="secondary" loading={activating} onClick={handleActivate}>
+          <Button type="button" variant="secondary" size="sm" loading={activating} onClick={handleActivate}>
             Make active
           </Button>
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="req-summary" className="text-sm font-medium text-text">
+      <section className="flex flex-col gap-1.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-text-faint">Summary</h3>
+        <label htmlFor="req-summary" className="sr-only">
           Project summary
         </label>
         <textarea
@@ -181,14 +185,14 @@ function VersionDetail({
           rows={3}
           value={draft.projectSummary}
           onChange={(e) => setDraft({ ...draft, projectSummary: e.target.value })}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none"
+          className="rounded-lg border border-border bg-surface-2 px-3.5 py-2.5 text-[15px] leading-relaxed text-text focus-visible:border-accent focus-visible:outline-none"
         />
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         {(
           [
-            ["users", "Users"],
+            ["users", "User roles"],
             ["features", "Features"],
             ["risks", "Risks"],
             ["constraints", "Constraints"],
@@ -197,7 +201,8 @@ function VersionDetail({
           ] as const
         ).map(([field, label]) => (
           <div key={field} className="flex flex-col gap-1.5">
-            <label htmlFor={`req-${field}`} className="text-sm font-medium text-text">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-faint">{label}</h3>
+            <label htmlFor={`req-${field}`} className="sr-only">
               {label}
             </label>
             <textarea
@@ -206,42 +211,43 @@ function VersionDetail({
               value={listToLines(draft[field])}
               onChange={(e) => setDraft({ ...draft, [field]: linesToList(e.target.value) })}
               placeholder="One per line"
-              className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted focus-visible:outline-none"
+              className="rounded-lg border border-border bg-surface-2 px-3.5 py-2.5 text-sm text-text placeholder:text-text-faint focus-visible:border-accent focus-visible:outline-none"
             />
           </div>
         ))}
-      </div>
+      </section>
 
-      <div>
-        <h3 className="text-sm font-medium text-text">
-          Functional requirements ({draft.functionalRequirements.length})
+      <section>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-text-faint">
+          Functional requirements <span className="text-text-faint">({draft.functionalRequirements.length})</span>
         </h3>
-        <div className="mt-2 flex flex-col gap-2">
-          {draft.functionalRequirements.map((item) => (
-            <RequirementItemCard key={item.id} item={item} />
+        <div className="mt-2.5 flex flex-col gap-2">
+          {draft.functionalRequirements.map((item, i) => (
+            <RequirementAccordion key={item.id} item={item} index={i} />
           ))}
         </div>
-      </div>
+      </section>
 
       {draft.nonFunctionalRequirements.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium text-text">
-            Non-functional requirements ({draft.nonFunctionalRequirements.length})
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-faint">
+            Non-functional requirements{" "}
+            <span className="text-text-faint">({draft.nonFunctionalRequirements.length})</span>
           </h3>
-          <div className="mt-2 flex flex-col gap-2">
-            {draft.nonFunctionalRequirements.map((item) => (
-              <RequirementItemCard key={item.id} item={item} />
+          <div className="mt-2.5 flex flex-col gap-2">
+            {draft.nonFunctionalRequirements.map((item, i) => (
+              <RequirementAccordion key={item.id} item={item} index={i} />
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {saveError && (
-        <p className="text-sm text-danger" role="alert">
-          {saveError}
-        </p>
-      )}
-      <div>
+      <div className="flex items-center gap-3 border-t border-border pt-5">
+        {saveError && (
+          <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
+            {saveError}
+          </p>
+        )}
         <Button type="button" loading={saving} onClick={handleSave}>
           Save changes
         </Button>
@@ -255,7 +261,6 @@ export function RequirementsSection({ projectId }: { projectId: string }) {
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
-  const [showNewAnalysis, setShowNewAnalysis] = useState(false);
 
   const fetchVersions = useCallback(() => {
     listRequirementsVersionsRequest(projectId)
@@ -292,7 +297,6 @@ export function RequirementsSection({ projectId }: { projectId: string }) {
           : { status: "ready", versions: [version] },
       );
       setSelectedVersionId(version.id);
-      setShowNewAnalysis(false);
     } catch (err) {
       setAnalyzeError(
         err instanceof ApiError ? err.message : "Something went wrong. Please try again.",
@@ -325,85 +329,81 @@ export function RequirementsSection({ projectId }: { projectId: string }) {
 
   if (state.versions.length === 0) {
     return (
-      <EmptyState
-        title="No requirements yet"
-        description="Describe the project idea and DevForge will analyze it into structured, versioned requirements."
-        action={
-          <div className="mx-auto w-full max-w-md text-left">
-            <IdeaForm
-              onSubmit={handleAnalyze}
-              submitting={analyzing}
-              error={analyzeError}
-              submitLabel="Analyze"
-            />
-          </div>
-        }
-      />
+      <Card>
+        {analyzing ? (
+          <LoadingState label="Analyzing your idea — this can take up to a minute…" />
+        ) : (
+          <EmptyState
+            icon={<IconSparkles className="h-5 w-5" />}
+            title="No requirements yet"
+            description="Describe the project idea and DevForge will analyze it into structured, versioned requirements."
+            action={
+              <div className="mx-auto w-full max-w-md text-left">
+                <IdeaForm
+                  onSubmit={handleAnalyze}
+                  submitting={analyzing}
+                  error={analyzeError}
+                  submitLabel="Analyze"
+                />
+              </div>
+            }
+          />
+        )}
+      </Card>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row">
-      <div className="w-full shrink-0 lg:w-56">
-        <h3 className="text-sm font-medium text-text-muted">Versions</h3>
-        <ul className="mt-2 flex flex-col gap-1">
-          {state.versions.map((v) => (
-            <li key={v.id}>
-              <button
-                type="button"
-                onClick={() => setSelectedVersionId(v.id)}
-                className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
-                  v.id === selectedVersionId
-                    ? "bg-surface-2 text-text"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text"
-                }`}
-              >
-                <span>v{v.version}</span>
-                {v.isActive && (
-                  <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-xs font-medium text-accent">
-                    active
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex w-full shrink-0 flex-col gap-5 lg:w-[22rem]">
+        <Card>
+          <h3 className="text-sm font-semibold text-text">New analysis</h3>
+          <p className="mt-1 text-xs text-text-muted">Creates a new version and makes it active. Existing versions are kept.</p>
+          <div className="mt-3">
+            <IdeaForm onSubmit={handleAnalyze} submitting={analyzing} error={analyzeError} submitLabel="Analyze" />
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-medium text-text">Versions</h3>
+          <ul className="mt-2.5 flex flex-col gap-1">
+            {state.versions.map((v) => (
+              <li key={v.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedVersionId(v.id)}
+                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
+                    v.id === selectedVersionId
+                      ? "bg-accent-soft text-accent"
+                      : "text-text-muted hover:bg-surface-2 hover:text-text"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span>v{v.version}</span>
+                    {v.isActive && <Badge tone="accent">active</Badge>}
                   </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-        <Button
-          type="button"
-          variant="secondary"
-          className="mt-4 w-full"
-          onClick={() => setShowNewAnalysis((s) => !s)}
-        >
-          New analysis
-        </Button>
+                  <span className="flex items-center gap-1 text-[11px] text-text-faint">
+                    <IconClock className="h-3 w-3" />
+                    {new Date(v.createdAt).toLocaleDateString()}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
       </div>
 
       <div className="min-w-0 flex-1">
-        {showNewAnalysis && (
-          <Card className="mb-6">
-            <h3 className="text-sm font-medium text-text">Run a new analysis</h3>
-            <p className="mt-1 text-xs text-text-muted">
-              Creates a new version and makes it active. Existing versions are kept.
-            </p>
-            <div className="mt-3">
-              <IdeaForm
-                onSubmit={handleAnalyze}
-                submitting={analyzing}
-                error={analyzeError}
-                submitLabel="Analyze"
-              />
-            </div>
-          </Card>
-        )}
-
         {selectedVersion && (
-          <VersionDetail
-            key={selectedVersion.id}
-            projectId={projectId}
-            version={selectedVersion}
-            onActivated={(updated) => replaceVersion(updated, true)}
-            onSaved={(updated) => replaceVersion(updated, false)}
-          />
+          <Card>
+            <VersionDocument
+              key={selectedVersion.id}
+              projectId={projectId}
+              version={selectedVersion}
+              onActivated={(updated) => replaceVersion(updated, true)}
+              onSaved={(updated) => replaceVersion(updated, false)}
+            />
+          </Card>
         )}
       </div>
     </div>

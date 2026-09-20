@@ -44,9 +44,12 @@ export function ProjectNew() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-lg">
-        <h1 className="text-lg font-semibold text-text">New project</h1>
-        <Card className="mt-4">
+      <div className="animate-fade-in mx-auto flex max-w-lg flex-col gap-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-text">New project</h1>
+          <p className="mt-1.5 text-sm text-text-muted">Give it a name — you can flesh out the idea next.</p>
+        </div>
+        <Card>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
             <Input
               label="Name"
@@ -64,12 +67,12 @@ export function ProjectNew() {
                 rows={4}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted focus-visible:outline-none"
+                className="resize-none rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-muted focus-visible:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25"
               />
             </div>
 
             {formError && (
-              <p className="text-sm text-danger" role="alert">
+              <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
                 {formError}
               </p>
             )}

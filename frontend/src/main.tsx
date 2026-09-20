@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import { App } from "./App.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
+import { ToastProvider } from "./components/Toast.js";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -11,8 +13,12 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <ToastProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ToastProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

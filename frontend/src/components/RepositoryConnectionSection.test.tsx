@@ -1,17 +1,22 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { RepositoryConnectionSection } from "./RepositoryConnectionSection.js";
 import { ApiError } from "../services/apiClient.js";
 import * as repositoryApi from "../services/repositoryApi.js";
+import * as codebaseIndexApi from "../services/codebaseIndexApi.js";
 import type { RepositoryConnection } from "../types/repository.js";
 
 vi.mock("../services/repositoryApi.js");
+vi.mock("../services/codebaseIndexApi.js");
 
 const mockedRepositoryApi = vi.mocked(repositoryApi);
+const mockedCodebaseIndexApi = vi.mocked(codebaseIndexApi);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedCodebaseIndexApi.getCodebaseIndexRequest.mockResolvedValue({ index: null });
 });
 
 function makeConnection(overrides: Partial<RepositoryConnection> = {}): RepositoryConnection {
@@ -38,7 +43,11 @@ function makeConnection(overrides: Partial<RepositoryConnection> = {}): Reposito
 describe("RepositoryConnectionSection — disconnected state", () => {
   it("shows the dependency-free empty state with a connect form", async () => {
     mockedRepositoryApi.getRepositoryConnectionRequest.mockResolvedValue({ connection: null });
-    render(<RepositoryConnectionSection projectId="p1" />);
+    render(
+      <MemoryRouter>
+        <RepositoryConnectionSection projectId="p1" />
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByText("No repository connected")).toBeInTheDocument();
     expect(screen.getByLabelText("Owner")).toBeInTheDocument();
@@ -55,7 +64,11 @@ describe("RepositoryConnectionSection — disconnected state", () => {
         "GitHub integration is not configured.",
       ),
     );
-    render(<RepositoryConnectionSection projectId="p1" />);
+    render(
+      <MemoryRouter>
+        <RepositoryConnectionSection projectId="p1" />
+      </MemoryRouter>,
+    );
     await screen.findByText("No repository connected");
 
     const user = userEvent.setup();
@@ -73,7 +86,11 @@ describe("RepositoryConnectionSection — disconnected state", () => {
 describe("RepositoryConnectionSection — list load failure", () => {
   it("shows an error state with retry", async () => {
     mockedRepositoryApi.getRepositoryConnectionRequest.mockRejectedValue(new Error("network down"));
-    render(<RepositoryConnectionSection projectId="p1" />);
+    render(
+      <MemoryRouter>
+        <RepositoryConnectionSection projectId="p1" />
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByText("Couldn't load the repository connection.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
@@ -91,7 +108,11 @@ describe("RepositoryConnectionSection — connected state", () => {
         { name: "develop", protected: false },
       ],
     });
-    render(<RepositoryConnectionSection projectId="p1" />);
+    render(
+      <MemoryRouter>
+        <RepositoryConnectionSection projectId="p1" />
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByText("octocat/Hello-World")).toBeInTheDocument();
     expect(screen.getByText("https://github.com/octocat/Hello-World")).toBeInTheDocument();
@@ -110,7 +131,11 @@ describe("RepositoryConnectionSection — connected state", () => {
     mockedRepositoryApi.verifyRepositoryAccessRequest.mockRejectedValue(
       new ApiError(401, "GITHUB_INVALID_CREDENTIALS", "The GitHub token is invalid or expired."),
     );
-    render(<RepositoryConnectionSection projectId="p1" />);
+    render(
+      <MemoryRouter>
+        <RepositoryConnectionSection projectId="p1" />
+      </MemoryRouter>,
+    );
     await screen.findByText("octocat/Hello-World");
 
     const user = userEvent.setup();
@@ -132,7 +157,11 @@ describe("RepositoryConnectionSection — connected state", () => {
     mockedRepositoryApi.updateRepositoryBranchRequest.mockResolvedValue({
       connection: makeConnection({ selectedBranch: "develop" }),
     });
-    render(<RepositoryConnectionSection projectId="p1" />);
+    render(
+      <MemoryRouter>
+        <RepositoryConnectionSection projectId="p1" />
+      </MemoryRouter>,
+    );
     await screen.findByText("octocat/Hello-World");
 
     const user = userEvent.setup();
@@ -147,11 +176,18 @@ describe("RepositoryConnectionSection — connected state", () => {
     });
     mockedRepositoryApi.listRepositoryBranchesRequest.mockResolvedValue({ branches: [] });
     mockedRepositoryApi.disconnectRepositoryRequest.mockResolvedValue(undefined);
-    render(<RepositoryConnectionSection projectId="p1" />);
+    render(
+      <MemoryRouter>
+        <RepositoryConnectionSection projectId="p1" />
+      </MemoryRouter>,
+    );
     await screen.findByText("octocat/Hello-World");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Disconnect" }));
 
     expect(await screen.findByText("No repository connected")).toBeInTheDocument();
   });

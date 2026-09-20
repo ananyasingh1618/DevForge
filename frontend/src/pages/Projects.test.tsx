@@ -44,7 +44,7 @@ describe("Projects page", () => {
         {
           id: "p1",
           ownerId: "1",
-          name: "DevForge",
+          name: "Acme Web App",
           description: "AI software engineering platform",
           status: "planning",
           createdAt: new Date().toISOString(),
@@ -54,7 +54,7 @@ describe("Projects page", () => {
     });
     renderProjects();
 
-    expect(await screen.findByText("DevForge")).toBeInTheDocument();
+    expect(await screen.findByText("Acme Web App")).toBeInTheDocument();
     expect(screen.getByText("AI software engineering platform")).toBeInTheDocument();
     expect(screen.getByText("planning")).toBeInTheDocument();
   });

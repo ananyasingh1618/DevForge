@@ -26,6 +26,12 @@ import { env } from "./env.js";
 export function createApp() {
   const app = express();
 
+  // Behind a reverse proxy (e.g. the Caddy in docker/), req.ip must be the
+  // real client, not the proxy, or every user shares one rate-limit bucket.
+  if (env.TRUST_PROXY_HOPS > 0) {
+    app.set("trust proxy", env.TRUST_PROXY_HOPS);
+  }
+
   // Secure headers (Phase 16, Milestone 16.5): HSTS, X-Content-Type-Options,
   // X-Frame-Options, a conservative default CSP, etc. — this API serves
   // only JSON, never HTML, so helmet's defaults are appropriate as-is with

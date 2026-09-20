@@ -139,18 +139,25 @@ describe("CodeReview — blocked states", () => {
     renderPage();
 
     expect(await screen.findByText("No repository connected")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Connect a repository" })).toHaveAttribute(
+      "href",
+      "/projects/p1/repository",
+    );
     expect(mockedCodebaseIndexApi.getCodebaseIndexRequest).not.toHaveBeenCalled();
     expect(mockedCodeReviewApi.listReviewsRequest).not.toHaveBeenCalled();
   });
 
-  it("shows a gate when no codebase is indexed, linking to Settings", async () => {
+  it("shows a gate when no codebase is indexed, linking to the Indexing page", async () => {
     mockedProjectsApi.getProjectRequest.mockResolvedValue({ project: PROJECT });
     mockedRepositoryApi.getRepositoryConnectionRequest.mockResolvedValue({ connection: makeConnection() });
     mockedCodebaseIndexApi.getCodebaseIndexRequest.mockResolvedValue({ index: null });
     renderPage();
 
     expect(await screen.findByText("Codebase not indexed yet")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to Settings" })).toHaveAttribute("href", "/projects/p1/settings");
+    expect(screen.getByRole("link", { name: "Go to indexing" })).toHaveAttribute(
+      "href",
+      "/projects/p1/indexing",
+    );
     expect(mockedCodeReviewApi.listReviewsRequest).not.toHaveBeenCalled();
   });
 
@@ -244,6 +251,10 @@ describe("CodeReview — results state", () => {
     const findingCard = findingTitle.closest("div")!.parentElement as HTMLElement;
     expect(within(findingCard).getByText("medium", { selector: "span" })).toBeInTheDocument();
     expect(within(findingCard).getByText("validation", { selector: "span" })).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(within(findingCard).getByRole("button", { name: /Show recommendation/ }));
+
     expect(within(findingCard).getByText(/Validate argument types/)).toBeInTheDocument();
     expect(within(findingCard).getByText("src/app.ts")).toBeInTheDocument();
     expect(within(findingCard).getByText("add")).toBeInTheDocument();

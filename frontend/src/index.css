@@ -1,29 +1,42 @@
 @import "tailwindcss";
 
 /*
- * DevForge design tokens. Dark-first (a mature developer tool, not a
- * generic light dashboard), with a light-mode override driven by the
- * user's OS preference. Tailwind v4 turns each --color-* variable below
- * into utility classes automatically (e.g. --color-accent -> bg-accent,
+ * DevForge design tokens — a restrained, premium developer-tool palette
+ * (near-black surfaces, a single indigo accent, soft off-white text),
+ * dark-first with a light-mode override driven by the user's OS
+ * preference. Tailwind v4 turns each --color-* variable below into
+ * utility classes automatically (e.g. --color-accent -> bg-accent,
  * text-accent, border-accent).
  */
 @theme {
-  --color-bg: #0a0a0f;
-  --color-surface: #131318;
-  --color-surface-2: #1c1c24;
-  --color-border: #27272f;
-  --color-text: #e8e8ec;
-  --color-text-muted: #9494a3;
-  --color-accent: #6366f1;
-  --color-accent-hover: #7779f5;
+  --color-bg: #08080b;
+  --color-surface: #0e0e13;
+  --color-surface-2: #16161d;
+  --color-surface-3: #1e1e27;
+  --color-border: #232330;
+  --color-border-strong: #2f2f3d;
+  --color-text: #ededf1;
+  --color-text-muted: #93939f;
+  --color-text-faint: #5c5c68;
+  --color-accent: #6d6af8;
+  --color-accent-hover: #7f7cfa;
   --color-accent-fg: #ffffff;
-  --color-danger: #f87171;
-  --color-success: #4ade80;
+  --color-accent-soft: #6d6af81a;
+  --color-danger: #f0576b;
+  --color-danger-soft: #f0576b1a;
+  --color-warning: #e8a13a;
+  --color-warning-soft: #e8a13a1a;
+  --color-success: #3fc088;
+  --color-success-soft: #3fc0881a;
 
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    "Inter var", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono:
-    ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.02);
+  --shadow-elevated: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.03);
+  --shadow-popover: 0 8px 24px -6px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.04);
 }
 
 :root {
@@ -32,16 +45,34 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --color-bg: #fafafa;
+    --color-bg: #f7f7f9;
     --color-surface: #ffffff;
-    --color-surface-2: #f2f2f5;
-    --color-border: #e2e2e8;
-    --color-text: #16161d;
-    --color-text-muted: #6b6b7a;
-    --color-accent: #4f46e5;
-    --color-accent-hover: #4338ca;
+    --color-surface-2: #f1f1f4;
+    --color-surface-3: #e7e7ec;
+    --color-border: #e2e2e9;
+    --color-border-strong: #d3d3dc;
+    --color-text: #15151a;
+    --color-text-muted: #63636f;
+    --color-text-faint: #9a9aa5;
+    --color-accent: #5451e0;
+    --color-accent-hover: #4744c9;
+    --color-accent-soft: #5451e014;
+    --color-danger-soft: #dc26451a;
+    --color-warning-soft: #d9770614;
+    --color-success-soft: #16a34a14;
+    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 0 0 1px rgb(0 0 0 / 0.03);
+    --shadow-elevated: 0 12px 32px -8px rgb(0 0 0 / 0.12), 0 0 0 1px rgb(0 0 0 / 0.04);
+    --shadow-popover: 0 8px 24px -6px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.05);
     color-scheme: light;
   }
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -49,7 +80,9 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Consistent, visible focus ring for keyboard navigation across all
@@ -58,4 +91,72 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background-color: var(--color-accent);
+  color: var(--color-accent-fg);
+}
+
+/* Slim, unobtrusive scrollbars matching the surface palette. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--color-bg);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+.animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-surface-2) 0%,
+    var(--color-surface-3) 50%,
+    var(--color-surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

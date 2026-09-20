@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { Badge } from "./Badge.js";
 import { Button } from "./Button.js";
 import { Card } from "./Card.js";
 import { EmptyState, ErrorState, LoadingState } from "./StateViews.js";
+import { IndexingProgress } from "./IndexingProgress.js";
+import { IconChevronRight, IconDatabase } from "./icons.js";
 import { ApiError } from "../services/apiClient.js";
 import { getRepositoryConnectionRequest } from "../services/repositoryApi.js";
 import {
@@ -18,11 +21,11 @@ import type {
   IndexedFile,
 } from "../types/codebaseIndex.js";
 
-const statusStyles: Record<CodebaseIndex["status"], string> = {
-  completed: "bg-accent/15 text-accent",
-  indexing: "bg-surface-2 text-text-muted",
-  pending: "bg-surface-2 text-text-muted",
-  failed: "bg-danger/15 text-danger",
+const statusTone: Record<CodebaseIndex["status"], "accent" | "neutral" | "danger"> = {
+  completed: "accent",
+  indexing: "neutral",
+  pending: "neutral",
+  failed: "danger",
 };
 
 const parseStatusLabels: Record<FileParseStatus, string> = {
@@ -75,17 +78,22 @@ function FileRow({
         onClick={onToggle}
         className="flex w-full items-center justify-between gap-2 text-left text-sm text-text hover:text-accent"
       >
-        <span className="truncate font-mono">{file.path}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <IconChevronRight
+            className={`h-3.5 w-3.5 shrink-0 text-text-faint transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
+          <span className="truncate font-mono">{file.path}</span>
+        </span>
         <span className="shrink-0 text-xs text-text-muted">{parseStatusLabels[file.parseStatus]}</span>
       </button>
       {file.parseStatus === "parse_error" && file.parseError && (
-        <p className="pl-4 text-xs text-danger">{file.parseError}</p>
+        <p className="pl-5 text-xs text-danger">{file.parseError}</p>
       )}
       {expanded && (
-        <div className="mt-1">
-          {symbolsLoading && <p className="pl-4 text-xs text-text-muted">Loading symbols…</p>}
+        <div className="mt-1 pl-5">
+          {symbolsLoading && <p className="text-xs text-text-muted">Loading symbols…</p>}
           {symbolsError && (
-            <p className="pl-4 text-xs text-danger" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {symbolsError}
             </p>
           )}
@@ -246,18 +254,23 @@ export function CodebaseIndexSection({ projectId }: { projectId: string }) {
 
   if (state.status === "no-repository") {
     return (
-      <EmptyState
-        title="No repository connected"
-        description="Connect a GitHub repository above before indexing its codebase."
-      />
+      <Card>
+        <EmptyState
+          icon={<IconDatabase className="h-5 w-5" />}
+          title="No repository connected"
+          description="Connect a GitHub repository above before indexing its codebase."
+        />
+      </Card>
     );
   }
 
   if (!state.index) {
     return (
       <Card className="flex flex-col gap-4">
-        <p className="text-sm text-text-muted">
-          Ready to index the connected repository's selected branch.
+        <p className="text-sm text-text-muted">Ready to index the connected repository's selected branch.</p>
+        <p className="text-xs text-text-faint">
+          Indexing fetches each file, parses it into symbols, and prepares it for search —
+          required before Q&amp;A or Code Review can ground an answer in real code.
         </p>
         {indexError && (
           <p className="text-sm text-danger" role="alert">
@@ -276,7 +289,7 @@ export function CodebaseIndexSection({ projectId }: { projectId: string }) {
   const index = state.index;
 
   return (
-    <Card className="flex flex-col gap-4">
+    <Card className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-medium text-text">{index.branch}</h3>
@@ -284,31 +297,49 @@ export function CodebaseIndexSection({ projectId }: { projectId: string }) {
             <p className="font-mono text-xs text-text-muted">{index.commitSha.slice(0, 12)}</p>
           )}
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles[index.status]}`}>
+        <Badge tone={statusTone[index.status]} dot>
           {index.status}
-        </span>
+        </Badge>
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <div className="rounded-xl border border-border bg-surface-2/40 p-4">
+        <IndexingProgress index={index} />
+      </div>
+
+      <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
         <div>
-          <dt className="text-text-muted">Files</dt>
-          <dd className="text-text">{index.fileCount}</dd>
+          <dt className="text-xs text-text-muted">Files</dt>
+          <dd className="mt-0.5 text-text">{index.fileCount}</dd>
         </div>
         <div>
-          <dt className="text-text-muted">Parsed</dt>
-          <dd className="text-text">{index.parsedFileCount}</dd>
+          <dt className="text-xs text-text-muted">Parsed</dt>
+          <dd className="mt-0.5 text-text">{index.parsedFileCount}</dd>
         </div>
         <div>
-          <dt className="text-text-muted">Failed</dt>
-          <dd className="text-text">{index.failedFileCount}</dd>
+          <dt className="text-xs text-text-muted">Failed</dt>
+          <dd className="mt-0.5 text-text">{index.failedFileCount}</dd>
         </div>
         <div>
-          <dt className="text-text-muted">Last run</dt>
-          <dd className="text-text">
+          <dt className="text-xs text-text-muted">Started</dt>
+          <dd className="mt-0.5 text-text">
+            {index.startedAt ? new Date(index.startedAt).toLocaleString() : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-text-muted">Last run</dt>
+          <dd className="mt-0.5 text-text">
             {index.completedAt ? new Date(index.completedAt).toLocaleString() : "Never"}
           </dd>
         </div>
       </dl>
+
+      {index.status === "completed" && (
+        <p className="rounded-lg border border-border bg-surface-2/60 px-3.5 py-2.5 text-xs text-text-muted">
+          Code chunking and embedding generation happen automatically on first use — the first
+          search, question, or review against this index prepares them, and every request after
+          that reuses the result.
+        </p>
+      )}
 
       {index.truncated && (
         <p className="text-xs text-text-muted">
@@ -329,8 +360,8 @@ export function CodebaseIndexSection({ projectId }: { projectId: string }) {
         </p>
       )}
 
-      <div>
-        <Button type="button" variant="secondary" loading={indexing} onClick={() => void handleReindex()}>
+      <div className="border-t border-border pt-4">
+        <Button type="button" variant="secondary" size="sm" loading={indexing} onClick={() => void handleReindex()}>
           Reindex
         </Button>
       </div>

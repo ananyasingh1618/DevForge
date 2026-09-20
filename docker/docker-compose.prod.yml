@@ -1,0 +1,116 @@
+# DevForge — free local "production" stack, publicly reachable only through a
+# Cloudflare Quick Tunnel (scripts/start-tunnel.sh).
+#
+#   Internet -> Cloudflare Quick Tunnel -> 127.0.0.1:8090 -> web (Caddy)
+#                                                             |- static SPA
+#                                                             '- /api/* -> api -> postgres
+#                                                                          '-> ai-service
+#
+# Only `web` publishes a port, and only on the loopback interface. postgres,
+# ai-service and api have no host ports at all: they are reachable solely
+# from other containers on this project's private Docker network.
+#
+# Run via scripts/start-prod.sh (it creates the gitignored .env.production).
+# Separate project name + volume from the dev docker-compose.yml, so the two
+# never share containers, ports or data.
+name: devforge-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: devforge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/start-prod.sh to generate .env.production}
+      POSTGRES_DB: devforge
+    volumes:
+      - devforge_prod_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devforge -d devforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+
+  ai-service:
+    build:
+      context: ../ai-service
+    restart: unless-stopped
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health').status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    mem_limit: 384m
+
+  api:
+    build:
+      context: ..
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # The image's CMD runs `prisma migrate deploy` before starting, so the
+      # schema is always current when the API begins serving.
+      DATABASE_URL: postgresql://devforge:${POSTGRES_PASSWORD}@postgres:5432/devforge
+      SESSION_SECRET: ${SESSION_SECRET:?run scripts/start-prod.sh to generate .env.production}
+      # Same-origin deployment: CORS is not exercised. Kept a valid URL only
+      # because the API requires one.
+      FRONTEND_ORIGIN: http://localhost:8090
+      AI_SERVICE_URL: http://ai-service:8001
+      GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:?run scripts/start-prod.sh to generate .env.production}
+      LOG_LEVEL: warn
+      TRUST_PROXY_HOPS: "1"
+      SESSION_COOKIE_SAMESITE: lax
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: 512m
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # Loopback only: the tunnel (cloudflared, on this Mac) connects here;
+      # nothing on the LAN can.
+      - "127.0.0.1:${WEB_PORT:-8090}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /data
+      - /config
+    # The caddy binary carries the cap_net_bind_service file capability; with
+    # everything dropped it cannot even exec, so keep exactly that one.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    user: "65534:65534"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 64m
+
+volumes:
+  devforge_prod_pgdata:

@@ -35,6 +35,18 @@ const baseEnvSchema = z.object({
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
   DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   DATABASE_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  // Number of reverse proxies in front of the API whose X-Forwarded-For the
+  // API should trust (app.ts). 0 (default) = the API is reached directly.
+  // Behind a proxy this MUST be set (e.g. 1 for a single Caddy) — without it
+  // every client shares the proxy's IP, so the rate limiters (which key on
+  // req.ip) would throttle all users together as one.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
+  // SameSite attribute of the session cookie. "lax" is right whenever the
+  // frontend and API share a site (local dev, Docker Compose, or the
+  // same-origin Caddy deployment). "none" is only for a frontend hosted on a
+  // different site than the API (it requires HTTPS) and gives up the CSRF
+  // protection "lax" provides, so it must be an explicit opt-in.
+  SESSION_COOKIE_SAMESITE: z.enum(["lax", "strict", "none"]).default("lax"),
 });
 
 /** Well-known, obviously-copy-pasted-from-an-example placeholder values

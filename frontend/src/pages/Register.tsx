@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../components/Button.js";
 import { Input } from "../components/Input.js";
 import { Card } from "../components/Card.js";
+import { IconSparkles } from "../components/icons.js";
 import { useAuth } from "../hooks/useAuth.js";
 import { ApiError } from "../services/apiClient.js";
 
@@ -50,56 +51,65 @@ export function Register() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-16">
-      <Card>
-        <h1 className="text-xl font-semibold text-text">Create your account</h1>
-        <p className="mt-1 text-sm text-text-muted">Start building with DevForge.</p>
+      <div className="animate-fade-in flex flex-col gap-6">
+        <div className="flex items-center justify-center gap-2 text-text">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-fg">
+            <IconSparkles className="h-5 w-5" />
+          </span>
+          <span className="text-[17px] font-semibold tracking-tight">DevForge</span>
+        </div>
 
-        <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
-          <Input
-            label="Name (optional)"
-            type="text"
-            autoComplete="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Input
-            label="Email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            error={fieldErrors.email}
-          />
-          <Input
-            label="Password"
-            type="password"
-            autoComplete="new-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={fieldErrors.password}
-            hint={fieldErrors.password ? undefined : "At least 10 characters."}
-          />
+        <Card>
+          <h1 className="text-xl font-semibold text-text">Create your account</h1>
+          <p className="mt-1 text-sm text-text-muted">Start building with DevForge.</p>
 
-          {formError && (
-            <p className="text-sm text-danger" role="alert">
-              {formError}
-            </p>
-          )}
+          <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
+            <Input
+              label="Name (optional)"
+              type="text"
+              autoComplete="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Input
+              label="Email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              error={fieldErrors.email}
+            />
+            <Input
+              label="Password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              error={fieldErrors.password}
+              hint={fieldErrors.password ? undefined : "At least 10 characters."}
+            />
 
-          <Button type="submit" loading={submitting} className="mt-2 w-full">
-            Create account
-          </Button>
-        </form>
+            {formError && (
+              <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
+                {formError}
+              </p>
+            )}
 
-        <p className="mt-6 text-center text-sm text-text-muted">
-          Already have an account?{" "}
-          <Link to="/login" className="font-medium text-accent hover:underline">
-            Log in
-          </Link>
-        </p>
-      </Card>
+            <Button type="submit" loading={submitting} className="mt-2 w-full">
+              Create account
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center text-sm text-text-muted">
+            Already have an account?{" "}
+            <Link to="/login" className="font-medium text-accent hover:underline">
+              Log in
+            </Link>
+          </p>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -7,6 +7,9 @@ import { Projects } from "./pages/Projects.js";
 import { ProjectNew } from "./pages/ProjectNew.js";
 import { ProjectOverview } from "./pages/ProjectOverview.js";
 import { ProjectSettings } from "./pages/ProjectSettings.js";
+import { Requirements } from "./pages/Requirements.js";
+import { Repository } from "./pages/Repository.js";
+import { Indexing } from "./pages/Indexing.js";
 import { CodeSearch } from "./pages/CodeSearch.js";
 import { CodebaseQa } from "./pages/CodebaseQa.js";
 import { CodeReview } from "./pages/CodeReview.js";
@@ -42,6 +45,30 @@ export function App() {
           element={
             <RequireAuth>
               <ProjectOverview />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/projects/:id/requirements"
+          element={
+            <RequireAuth>
+              <Requirements />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/projects/:id/repository"
+          element={
+            <RequireAuth>
+              <Repository />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/projects/:id/indexing"
+          element={
+            <RequireAuth>
+              <Indexing />
             </RequireAuth>
           }
         />
